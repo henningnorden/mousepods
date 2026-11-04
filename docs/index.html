@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MousePods — AirPods 3 head tracking on Linux · Apple RemoteHID documented</title>
+<meta name="description" content="Your AirPods are a mouse. First public documentation of how AirPods 3 expose their motion sensors (Apple RemoteHID over AACP), with a Linux head mouse, a live demo of real sensor data and an interactive protocol decoder.">
+<meta name="keywords" content="AirPods 3 head tracking, AirPods Linux, AACP, Apple Accessory Protocol, RemoteHID, HID over AACP, RTBuddy, devmotion6, AirPods mouse, reverse engineering">
+<meta name="author" content="Matteo Gaudioso (starman-tech)">
+<meta property="og:title" content="MousePods — your AirPods are a mouse">
+<meta property="og:description" content="AirPods 3 head tracking on Linux, and the first public write-up of Apple RemoteHID (HID over AACP).">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://starman-tech.github.io/mousepods/">
+<meta property="og:image" content="https://starman-tech.github.io/mousepods/screenshots/app-motion.png">
+<link rel="icon" href="brand/icon.svg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+ {"@type":"SoftwareSourceCode","name":"MousePods","codeRepository":"https://github.com/starman-tech/mousepods",
+  "programmingLanguage":"Python","license":"https://opensource.org/licenses/MIT","operatingSystem":"Linux",
+  "author":{"@type":"Person","name":"Matteo Gaudioso","alternateName":"starman-tech","url":"https://github.com/starman-tech"},
+  "description":"Linux head mouse for AirPods 3 and AirPods Pro using their motion sensors, without an Apple device."},
+ {"@type":"TechArticle","headline":"AirPods 3 motion sensors over Apple RemoteHID (HID over AACP)","datePublished":"2026-11-04",
+  "author":{"@type":"Person","name":"Matteo Gaudioso"},"url":"https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md",
+  "about":["AirPods 3","Apple Accessory Protocol","RemoteHID","head tracking","Bluetooth L2CAP"],
+  "abstract":"AirPods 3 ignore SensorDataWX and expose their sensors as virtual HID devices through Apple RemoteHID on the RTBuddy 0x800 channel. They are hidden at the Linux default L2CAP MTU of 672 and appear at 2582. HostConnect, DeviceConnect, then SetReport of feature report 1 (report interval in microseconds) starts the stream, at up to about 210 Hz."}
+]}
+</script>
+<style>
+:root{--bg:#fbfbfd;--card:#fff;--card2:#f2f2f7;--text:#1d1d1f;--text2:#6e6e73;--line:rgba(0,0,0,.08);--accent:#0071e3;
+  --green:#34c759;--orange:#ff9f0a;--purple:#af52de;--shadow:0 2px 6px rgba(0,0,0,.04),0 18px 40px rgba(0,0,0,.07)}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--card2:#2c2c2e;--text:#f5f5f7;--text2:#98989d;
+  --line:rgba(255,255,255,.1);--accent:#2997ff;--green:#30d158;--shadow:0 2px 6px rgba(0,0,0,.5),0 18px 40px rgba(0,0,0,.5)}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Segoe UI",Roboto,sans-serif;background:var(--bg);
+  color:var(--text);-webkit-font-smoothing:antialiased;letter-spacing:-.01em;line-height:1.5}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+nav{position:sticky;top:0;z-index:5;backdrop-filter:saturate(180%) blur(20px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:22px;height:52px;font-size:14px}
+nav b{display:flex;align-items:center;gap:8px;font-weight:650;margin-right:auto}
+nav a{color:var(--text)}
+.hero{text-align:center;padding:90px 0 50px}
+.hero h1{font-size:clamp(44px,8vw,84px);font-weight:750;letter-spacing:-.035em;line-height:1.03}
+.hero h1 span{background:linear-gradient(90deg,#0a84ff,#bf5af2,#ff375f);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{font-size:clamp(18px,2.4vw,24px);color:var(--text2);max-width:760px;margin:22px auto 0}
+.cta{display:flex;gap:14px;justify-content:center;margin-top:32px;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 22px;border-radius:999px;font-weight:600;font-size:16px}
+.btn.p{background:var(--accent);color:#fff}.btn.s{background:var(--card2);color:var(--text)}.btn:hover{text-decoration:none;filter:brightness(1.05)}
+.badge{display:inline-block;margin-top:26px;padding:6px 14px;border-radius:999px;background:var(--card2);font-size:13px;font-weight:600;color:var(--text2)}
+section{padding:64px 0}
+h2{font-size:clamp(30px,4.5vw,46px);font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-bottom:14px}
+.lead{color:var(--text2);font-size:19px;max-width:760px;margin-bottom:34px}
+.grid{display:grid;gap:18px}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:860px){.g3,.g2{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:22px;padding:26px;box-shadow:var(--shadow)}
+.card h3{font-size:20px;font-weight:650;margin-bottom:8px;letter-spacing:-.02em}
+.card p{color:var(--text2)}
+.num{font-size:44px;font-weight:750;letter-spacing:-.03em;background:linear-gradient(90deg,#0a84ff,#5e5ce6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin-bottom:10px}
+code,.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:13px}
+code{background:var(--card2);padding:2px 6px;border-radius:6px}
+pre{background:var(--card2);border-radius:14px;padding:18px;overflow:auto;font-size:13px;line-height:1.6}
+/* démo */
+.demo{display:grid;grid-template-columns:1fr 1.3fr;gap:18px}@media(max-width:860px){.demo{grid-template-columns:1fr}}
+.stage{height:320px;perspective:900px;display:grid;place-items:center;border-radius:18px;background:radial-gradient(circle at 50% 40%,var(--card2),transparent 70%)}
+.pod{position:relative;width:1px;height:1px;transform-style:preserve-3d}
+.part{position:absolute;transform-style:preserve-3d}
+.face{position:absolute;background:linear-gradient(160deg,#fff,#d2d2d8);border:1px solid rgba(0,0,0,.08)}
+.ctrl{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap;color:var(--text2);font-size:14px}
+.ctrl button{border:0;background:var(--card2);color:var(--text);font:inherit;font-weight:600;padding:8px 14px;border-radius:10px;cursor:pointer}
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--card2);font-size:12px;font-weight:600}
+canvas{width:100%;display:block}
+.legend{display:flex;gap:16px;color:var(--text2);font-size:13px;margin-top:8px}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+/* décodeur */
+textarea{width:100%;min-height:110px;font:13px "SF Mono",ui-monospace,Menlo,monospace;background:var(--card2);color:var(--text);border:0;border-radius:14px;padding:14px;resize:vertical}
+.out{margin-top:14px}
+.out table{width:100%;border-collapse:collapse;font-size:14px}
+.out td,.out th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.out th{color:var(--text2);font-weight:600;font-size:12px}
+.out .k{color:var(--text2);white-space:nowrap}
+.examples{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.examples button{border:0;background:var(--card2);color:var(--text);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer}
+table.find{width:100%;border-collapse:collapse}table.find td{padding:14px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.find td:first-child{width:38px;font-weight:700;color:var(--text2)}
+.new{color:#fff;background:var(--green);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px}
+.shots img{width:100%;border-radius:16px;box-shadow:var(--shadow)}
+footer{padding:40px 0 70px;color:var(--text2);font-size:13px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<nav><div class="wrap"><b><img src="brand/icon.svg" width="24" height="24" alt="">MousePods</b>
+  <a href="#findings">Findings</a><a href="#demo">Live data</a><a href="#decoder">Decoder</a><a href="#install">Install</a>
+  <a href="https://github.com/starman-tech/mousepods">GitHub</a></div></nav>
+
+<header class="hero"><div class="wrap">
+  <h1>Your AirPods<br><span>are a mouse.</span></h1>
+  <p>Head tracking and motion sensors from AirPods 3 and AirPods Pro, on Linux, without an Apple device. Including the first public documentation of <b>Apple RemoteHID</b>, the protocol AirPods 3 use to expose their sensors.</p>
+  <div class="cta"><a class="btn p" href="https://github.com/starman-tech/mousepods">View on GitHub</a><a class="btn s" href="https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md">Read the findings</a></div>
+  <div class="badge">Reverse-engineered with Claude · November 2026</div>
+</div></header>
+
+<section><div class="wrap">
+  <div class="grid g3">
+    <div class="card"><div class="num">0 → 1</div><h3>AirPods 3, on Linux</h3><p>Until now, every open-source head tracker listed AirPods 3 as untested or unsupported. They now stream motion to a plain PC.</p></div>
+    <div class="card"><div class="num">~210 Hz</div><h3>Instead of 25 Hz</h3><p>The sample interval is a HID feature report in microseconds. Down to ~5 ms between samples.</p></div>
+    <div class="card"><div class="num">8</div><h3>Hidden sensors</h3><p>devmotion6, accel, gyro, cma, kadabra, mando, neorelay, iedrelay: virtual HID devices inside the buds.</p></div>
+  </div>
+</div></section>
+
+<section id="findings"><div class="wrap">
+  <h2>What nobody had written down.</h2>
+  <p class="lead">Three findings explain why AirPods 3 looked unsupported. Each one is backed by real captures and tests. The full list, with the open questions, is in <a href="https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md">DISCOVERIES.md</a>.</p>
+  <div class="card"><table class="find">
+    <tr><td>1</td><td><b>AirPods 3 ignore SensorDataWX</b><span class="new">NEW</span><br><span style="color:var(--text2)">Every published start packet (services 1–31, 79, any order) gets no data and no acknowledgement. Their capabilities reply lacks the "sensor data v2" entry (0xE0).</span></td></tr>
+    <tr><td>2</td><td><b>They speak Apple RemoteHID on RTBuddy 0x800</b><span class="new">NEW</span><br><span style="color:var(--text2)">Each sensor is a virtual HID device. Sub-packet header u32: deviceID (7 bits) · length (10) · kind (3). <code>HostConnect</code> → <code>DeviceConnect</code> + HID descriptor → <code>SetReport(feature 1 = interval µs)</code> → <code>InputReport</code>. <a href="https://github.com/starman-tech/mousepods/blob/main/docs/REMOTEHID-PROTOCOL.md">Wire format →</a></span></td></tr>
+    <tr><td>3</td><td><b>The L2CAP MTU hides the sensors</b><span class="new">NEW</span><br><span style="color:var(--text2)">At Linux's default receive MTU (672), only descriptors that fit are announced, and none of the motion ones fit. At 2582 (the iOS value), all eight appear.</span></td></tr>
+    <tr><td>4</td><td><b>The motion block, with units</b><br><span style="color:var(--text2)">Same 58 bytes as on AirPods Pro: quaternion Q15, gyro ≈ 0.122 °/s per LSB, gravity and user acceleration ≈ 1000 per g.</span></td></tr>
+    <tr><td>5</td><td><b>How the buds power their sensors</b><span class="new">NEW</span><br><span style="color:var(--text2)">Off in the case. The fused stream freezes when a bud lies still. Streams are cancelled when the primary bud changes.</span></td></tr>
+  </table></div>
+</div></section>
+
+<section id="demo"><div class="wrap">
+  <h2>Real AirPods 3 data, replayed.</h2>
+  <p class="lead">1,873 samples recorded from <code>devmotion6</code> over RemoteHID, with the head turning left and right, then up and down, then tilting. This is the raw stream, decoded in your browser.</p>
+  <div class="demo">
+    <div class="card"><div class="stage"><div class="pod" id="pod"></div></div>
+      <div class="ctrl"><button id="play">Pause</button><span class="pill" id="phase">—</span><span class="mono" id="time"></span></div></div>
+    <div class="card"><canvas id="chart" height="300"></canvas>
+      <div class="legend"><span><i style="background:#0a84ff"></i>gyro X</span><span><i style="background:#30d158"></i>gyro Y</span><span><i style="background:#ff9f0a"></i>gyro Z</span><span>°/s, sensor frame</span></div></div>
+  </div>
+</div></section>
+
+<section id="decoder"><div class="wrap">
+  <h2>RemoteHID decoder.</h2>
+  <p class="lead">Paste an AACP frame (hex) to decode it: RemoteHID sub-packets, DeviceConnect plists, InputReports with the motion block, SensorDataWX protobuf, or the common opcodes. It runs locally in your browser; nothing is sent anywhere.</p>
+  <div class="card">
+    <div class="examples"><button data-ex="hc">HostConnect</button><button data-ex="start">Start devmotion6 @100 Hz</button><button data-ex="ann">DeviceConnect (real)</button><button data-ex="input">InputReport (real)</button><button data-ex="wx">SensorDataWX start</button></div>
+    <textarea id="hex" spellcheck="false" placeholder="04 00 04 00 17 00 00 08 00 00 …"></textarea>
+    <div class="out" id="out"></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>A real app, too.</h2>
+  <p class="lead">Battery, live 3D orientation, every setting applied live, guided calibration (head, bud in hand, pointer by aiming at the corners), and a sensor explorer for each RemoteHID device.</p>
+  <div class="grid g2 shots"><img src="screenshots/app-motion.png" alt="Motion page"><img src="screenshots/app-sensors.png" alt="Sensor explorer"></div>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <h2>Try it.</h2>
+  <p class="lead">Linux with BlueZ, paired AirPods, no root. A browser can't do it: Web Bluetooth only speaks BLE, and AirPods use Classic Bluetooth L2CAP.</p>
+<pre>git clone https://github.com/starman-tech/mousepods && cd mousepods
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python airpods_mouse_controller.py --ui</pre>
+  <div class="grid g2" style="margin-top:18px">
+    <div class="card"><h3>Built with Claude</h3><p>Reverse-engineered by Matteo Gaudioso with <b>Claude</b> (Anthropic) as an AI pair engineer. Claude ran the probes, read the public research, disassembled a clone firmware statically, and wrote the code and the tests. Matteo held the AirPods, made the calls and checked every result on real hardware.</p></div>
+    <div class="card"><h3>Standing on shoulders</h3><p><a href="https://github.com/librepods-org/librepods">LibrePods</a>, <a href="https://github.com/pabloaul/apple-wireshark">apple-wireshark</a>, <a href="https://github.com/Gheop/mutix">mutix</a>, <a href="https://github.com/arctumn/ntpods">ntpods</a>, <a href="https://github.com/spacedouut/OpenHuilian">OpenHuilian</a>. Their work on AirPods Pro made this possible.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">MIT © 2026 Matteo Gaudioso · <a href="https://github.com/starman-tech">starman-tech</a> · Not affiliated with Apple. AirPods is a trademark of Apple Inc. · <a href="https://github.com/starman-tech/mousepods/blob/main/CITATION.cff">Cite this work</a></div></footer>
+
+<script>
+const $=s=>document.querySelector(s);
+// ---------------- modèle 3D
+function box(w,h,d,x,y,z,r){const g=document.createElement("div");g.className="part";g.style.transform=`translate3d(${x}px,${y}px,${z}px)`;
+  [[w,h,`translateZ(${d/2}px)`],[w,h,`rotateY(180deg) translateZ(${d/2}px)`],[d,h,`rotateY(90deg) translateZ(${w/2}px)`],[d,h,`rotateY(-90deg) translateZ(${w/2}px)`],[w,d,`rotateX(90deg) translateZ(${h/2}px)`],[w,d,`rotateX(-90deg) translateZ(${h/2}px)`]]
+  .forEach(([fw,fh,t])=>{const f=document.createElement("div");f.className="face";f.style.cssText=`width:${fw}px;height:${fh}px;left:${-fw/2}px;top:${-fh/2}px;transform:${t};border-radius:${r}px`;g.appendChild(f)});return g}
+const pod=$("#pod");pod.appendChild(box(78,70,62,0,-40,0,30));pod.appendChild(box(22,120,22,8,52,0,11));
+const quat=a=>{const x=a[0]/32768,y=a[1]/32768,z=a[2]/32768;return[Math.sqrt(Math.max(0,1-x*x-y*y-z*z)),x,y,z]};
+const qmul=(a,b)=>[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+const qmat=([w,x,y,z])=>[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y),0,2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x),0,2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y),0,0,0,0,1];
+// ---------------- démo
+let D=null,i=0,playing=true,last=0,t0=0;const PH={s:"still",y:"turn left/right",p:"look up/down",r:"tilt to the shoulders"};
+const cv=$("#chart"),cx=cv.getContext("2d");
+fetch("demo/motion.json").then(r=>r.json()).then(j=>{D=j.rows;requestAnimationFrame(tick)});
+$("#play").onclick=()=>{playing=!playing;$("#play").textContent=playing?"Pause":"Play"};
+function tick(ts){if(!D)return;if(playing){if(!last)last=ts;const dt=(ts-last)/1000;last=ts;t0+=dt;if(t0>D[D.length-1][0]){t0=0;i=0}
+  while(i<D.length-1&&D[i][0]<t0)i++;}else last=ts;
+  const r=D[i],q0=quat(D[0].slice(2,5)),c=[q0[0],-q0[1],-q0[2],-q0[3]],q=qmul(c,quat(r.slice(2,5)));
+  pod.style.transform=`scale(1.3) matrix3d(${qmat(q).join(",")})`;$("#phase").textContent=PH[r[1]]||r[1];$("#time").textContent=r[0].toFixed(1)+" s";
+  draw();requestAnimationFrame(tick)}
+function draw(){const W=cv.clientWidth,H=300,dpr=devicePixelRatio||1;if(cv.width!==W*dpr){cv.width=W*dpr;cv.height=H*dpr}cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,W,H);
+  const css=getComputedStyle(document.documentElement);const a=Math.max(0,i-300),seg=D.slice(a,i+1),mx=250;
+  cx.strokeStyle=css.getPropertyValue("--line");cx.fillStyle=css.getPropertyValue("--text2");cx.font="11px -apple-system,sans-serif";
+  [-1,-.5,0,.5,1].forEach(f=>{const y=H/2-f*(H/2-12);cx.beginPath();cx.moveTo(34,y);cx.lineTo(W,y);cx.stroke();cx.fillText(Math.round(f*mx),0,y+4)});
+  ["#0a84ff","#30d158","#ff9f0a"].forEach((col,k)=>{cx.strokeStyle=col;cx.lineWidth=2;cx.beginPath();
+    seg.forEach((r,j)=>{const x=34+j*(W-34)/300,v=r[5+k]*0.122,y=H/2-Math.max(-1,Math.min(1,v/mx))*(H/2-12);j?cx.lineTo(x,y):cx.moveTo(x,y)});cx.stroke()})}
+// ---------------- décodeur
+const EX={hc:"04 00 04 00 17 00 00 08 00 00 08 00 00 05 00 00 00 02 00 00",
+ start:"04 00 04 00 17 00 00 08 00 00 0e 00 00 06 00 00 07 05 06 00 02 01 10 27 00 00",
+ wx:"04 00 04 00 17 00 00 00 10 00 0f 00 08 73 42 0b 08 10 10 02 1a 05 01 40 9c 00 00",
+ input:"04 00 04 00 17 00 00 08 00 00 43 00 00 2a 00 00 87 1f 04 00 00 01 28 e2 05 e4 96 01 00 00 03 00 83 55 6a 38 05 00 00 00 00 f3 45 2a e6 52 11 fa ff f3 ff 03 00 17 83 17 83 17 83 f1 ff 13 00 13 00 24 fe b6 fc bb fe 56 be c1 38 90 01 00 00",
+ ann:null};
+const OPS={0x04:"Battery",0x06:"Ear detection",0x09:"Control command",0x0d:"Noise control",0x0f:"Request notifications",0x17:"RTBuddy (sensors)",0x19:"Stem press",0x1d:"Device info",0x2b:"Stream state",0x4d:"Feature flags"};
+const KIND={0:"Connect",1:"Disconnect",2:"InputReport",3:"SetReport",4:"GetReport",5:"DeviceConfirmConnect"};
+const DEV={1:"kadabra",2:"mando",3:"neorelay",4:"accel",5:"gyro",6:"cma",7:"devmotion6",8:"iedrelay"};
+fetch("demo/announce.hex").then(r=>r.text()).then(t=>{EX.ann=t.trim().match(/../g).join(" ")}).catch(()=>{});
+document.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{$("#hex").value=EX[b.dataset.ex]||"";decode()});
+$("#hex").oninput=decode;
+const hx=b=>[...b].map(x=>x.toString(16).padStart(2,"0")).join(" ");
+const u16=(b,o)=>b[o]|b[o+1]<<8,u32=(b,o)=>(b[o]|b[o+1]<<8|b[o+2]<<16|b[o+3]<<24)>>>0,i16=(b,o)=>{const v=u16(b,o);return v>32767?v-65536:v};
+function row(k,v){return `<tr><td class="k">${k}</td><td>${v}</td></tr>`}
+function block(b,o){const q=quat([i16(b,o+20),i16(b,o+22),i16(b,o+24)]);const g=[0,1,2].map(k=>i16(b,o+26+2*k)),ua=[0,1,2].map(k=>i16(b,o+38+2*k)),gr=[0,1,2].map(k=>i16(b,o+44+2*k));
+  return row("motion block","58 bytes (same layout as SensorDataWX)")+row("attitude (quaternion)",q.map(v=>v.toFixed(3)).join(", ")+"  <span class=k>w, x, y, z</span>")
+   +row("rotation rate",g.map(v=>(v*0.122).toFixed(1)+" °/s").join(" · "))+row("user acceleration",ua.map(v=>(v/1000).toFixed(3)+" g").join(" · "))
+   +row("gravity",gr.map(v=>(v/1000).toFixed(3)+" g").join(" · "))}
+function varint(b,i){let v=0,s=0;while(i<b.length){const c=b[i++];v+=(c&127)*2**s;if(!(c&128))return[v,i];s+=7}return[v,i]}
+function pb(b,depth=0){let i=0,out="";const names={1:"seq",2:"log_type",3:"another_sensor_stream",4:"request_all_descriptors",5:"descriptor",7:"cmd",8:"service_settings",9:"start_ack",12:"cmd_ack"};
+  while(i<b.length){let k;[k,i]=varint(b,i);const f=k>>3,wt=k&7,nm=depth?`field ${f}`:(names[f]||`field ${f}`);
+    if(wt===0){let v;[v,i]=varint(b,i);out+=row("&nbsp;".repeat(depth*4)+nm,v)}
+    else if(wt===2){let n;[n,i]=varint(b,i);const sub=b.slice(i,i+n);i+=n;out+=row("&nbsp;".repeat(depth*4)+nm,`${n} bytes`)+(depth<2?pb(sub,depth+1):"")}
+    else break}return out}
+function decode(){const s=$("#hex").value.replace(/[^0-9a-fA-F]/g,"");if(s.length<8){$("#out").innerHTML="";return}
+  const b=new Uint8Array(s.match(/../g).map(x=>parseInt(x,16)));let h="";
+  if(b[0]===0&&b[1]===0&&b[2]===4)h+=row("type","AACP handshake");
+  else if(b[0]===4&&b[2]===4){const op=b[4];h+=row("opcode",`0x${op.toString(16).padStart(2,"0")} · ${OPS[op]||"?"}`);
+    if(op===0x17&&b.length>=12){const desc=u32(b,6),len=u16(b,10),body=b.slice(12,12+len);
+      if(desc===0x800){h+=row("RTBuddy descriptor","0x00000800 · <b>Sensor / RemoteHID</b>")+row("body",`version ${body[0]} · generation ${body[1]} · side ${body[3]>>1}`);
+        let i=4;while(i+4<=body.length){const H=u32(body,i),dev=H&127,n=(H>>>7)&1023,kind=(H>>>17)&7,resp=(H>>>21)&1;if(n<4)break;const pl=body.slice(i+4,i+n);
+          h+=`<tr><th colspan=2>sub-packet · header ${hx(body.slice(i,i+4))}</th></tr>`+row("device",`${dev} ${DEV[dev]?"· "+DEV[dev]:""}`)+row("kind",`${kind} · <b>${KIND[kind]}${kind===0&&n===4?" (HostConnect)":kind===0?" (DeviceConnect)":""}</b>${resp?" · response":""}`)+row("length",n);
+          if(kind===0&&n>4){const x=new TextDecoder().decode(pl);const sv=(x.match(/AccessoryService<\/key>\s*<string>(\w+)/)||[])[1],mr=(x.match(/MaxReportSize<\/key>\s*<integer>(\d+)/)||[])[1];h+=row("AccessoryService",sv||"?")+row("MaxReportSize",mr||"?")+row("plist",`${pl.length} bytes (HID report descriptor inside)`)}
+          if(kind===3||kind===4){h+=row("report type",["input","output","feature"][pl[0]]||pl[0]);if(pl.length>1)h+=row("report ID",pl[1]+(pl[1]===1&&pl[0]===2?" · Report Interval":""));if(kind===3&&pl.length>=6)h+=row("value",u32(pl,2)+(pl[1]===1?" µs → "+(u32(pl,2)?Math.round(1e6/u32(pl,2))+" Hz":"stop"):""))}
+          if(kind===2){h+=row("report type",pl[0]);if(pl.length>=51)h+=block(pl,1);else h+=row("data",hx(pl))}
+          i+=n}}
+      else if(desc===0x100000){h+=row("RTBuddy descriptor","0x00100000 · <b>SensorDataWX</b> (protobuf, AirPods Pro / 4)")+pb(body)}
+      else h+=row("RTBuddy descriptor","0x"+desc.toString(16).padStart(8,"0"))}
+    else h+=row("payload",hx(b.slice(6,70)))}
+  else h+=row("?","not an AACP frame");
+  $("#out").innerHTML=`<table>${h}</table>`}
+$("#hex").value=EX.start;decode();
+</script>
+</body>
+</html>

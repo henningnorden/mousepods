@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use these findings or this software, please cite them as below."
+title: "MousePods: AirPods 3 head tracking on Linux and the Apple RemoteHID (HID over AACP) protocol"
+abstract: >-
+  First public documentation of how AirPods (3rd generation, product ID 0x2013) expose their motion sensors:
+  Apple RemoteHID over AACP (RTBuddy descriptor 0x800), the HostConnect / DeviceConnect / SetReport sequence,
+  the sensor catalog (devmotion6, accel, gyro, cma, kadabra, mando, neorelay, iedrelay), the L2CAP MTU gating that
+  hides them at the Linux default, sample rates up to about 210 Hz, and a Linux mouse/pointer built on top of it.
+authors:
+  - family-names: Gaudioso
+    given-names: Matteo
+    alias: starman-tech
+date-released: 2026-11-04
+version: 1.0.0
+license: MIT
+repository-code: "https://github.com/starman-tech/mousepods"
+url: "https://starman-tech.github.io/mousepods/"
+keywords:
+  - AirPods 3
+  - AirPods head tracking
+  - AACP
+  - Apple Accessory Protocol
+  - RemoteHID
+  - HID over AACP
+  - RTBuddy
+  - devmotion6
+  - reverse engineering
+  - Bluetooth L2CAP
+  - Linux
+  - head mouse

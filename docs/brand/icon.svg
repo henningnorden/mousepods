@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/><stop offset="1" stop-color="#5e5ce6"/>
+    </linearGradient>
+    <linearGradient id="pod" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dcdce2"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- AirPod -->
+  <path d="M46 30c-10 0-17 8-17 18s7 17 16 17h3v29c0 5 3 8 7 8s7-3 7-8V47c0-10-7-17-16-17z" fill="url(#pod)"/>
+  <circle cx="44" cy="46" r="5" fill="#1d1d1f" opacity=".85"/>
+  <!-- curseur -->
+  <path d="M74 52l30 12-13 4 9 14-6 4-9-14-9 10z" fill="#ffffff" stroke="#1d1d1f" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- ondes de mouvement -->
+  <path d="M70 38c5-4 12-4 17 0" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".8"/>
+  <path d="M65 30c8-7 19-7 27 0" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".5"/>
+</svg>

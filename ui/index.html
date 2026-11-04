@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirPods Mouse</title>
+<style>
+:root{
+  --bg:#f5f5f7; --panel:rgba(255,255,255,.72); --card:#ffffff; --card2:#f2f2f7; --text:#1d1d1f; --text2:#6e6e73;
+  --line:rgba(0,0,0,.08); --accent:#0071e3; --green:#34c759; --orange:#ff9f0a; --red:#ff3b30; --purple:#af52de;
+  --teal:#30b0c7; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06); --side:rgba(246,246,248,.78);
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#000; --panel:rgba(28,28,30,.72); --card:#1c1c1e; --card2:#2c2c2e; --text:#f5f5f7; --text2:#98989d;
+  --line:rgba(255,255,255,.09); --accent:#0a84ff; --green:#30d158; --orange:#ff9f0a; --red:#ff453a;
+  --purple:#bf5af2; --teal:#40c8e0; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 30px rgba(0,0,0,.35); --side:rgba(22,22,24,.82);
+}}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Segoe UI",Cantarell,Roboto,sans-serif;
+  background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;font-size:14px;letter-spacing:-.01em;
+  display:flex;overflow:hidden}
+.mono{font-family:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;font-size:12px}
+/* ---------- barre latérale */
+aside{width:236px;flex:none;background:var(--side);backdrop-filter:saturate(180%) blur(30px);
+  border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 10px 18px}
+.brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#fff,#d9d9de);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.06),0 2px 6px rgba(0,0,0,.12);display:grid;place-items:center}
+@media (prefers-color-scheme: dark){.brand .logo{background:linear-gradient(145deg,#3a3a3c,#1c1c1e)}}
+.brand b{font-size:15px;font-weight:650;display:block}
+.brand small{color:var(--text2);font-size:12px}
+nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;color:var(--text);
+  text-decoration:none;font-weight:500;cursor:pointer;user-select:none}
+nav a:hover{background:var(--line)}
+nav a.on{background:var(--accent);color:#fff}
+nav a .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:12px;flex:none}
+nav a.on .ic{background:rgba(255,255,255,.22)!important}
+.side-foot{margin-top:auto;padding:10px;color:var(--text2);font-size:12px;line-height:1.5}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);margin-right:6px;vertical-align:1px}
+.dot.ok{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 25%,transparent)}
+.dot.warn{background:var(--orange)}
+/* ---------- contenu */
+main{flex:1;overflow-y:auto;padding:30px 38px 60px}
+.page{display:none;max-width:1080px;margin:0 auto;animation:fade .25s ease}
+.page.on{display:block}
+.shot .page{animation:none!important}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+h1{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:4px}
+.sub{color:var(--text2);margin-bottom:22px;font-size:14px}
+h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin:26px 4px 10px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+.card{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px;position:relative}
+.card h3{font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card .hint{color:var(--text2);font-size:12.5px;line-height:1.45}
+.big{font-size:30px;font-weight:650;letter-spacing:-.02em}
+.kv{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);gap:14px}
+.kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text2)}.kv span:last-child{text-align:right;font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--card2);font-size:12px;font-weight:600}
+.pill.g{color:var(--green)}.pill.o{color:var(--orange)}.pill.r{color:var(--red)}.pill.b{color:var(--accent)}
+/* boutons */
+.btn{appearance:none;border:0;background:var(--card2);color:var(--text);font:inherit;font-weight:600;padding:9px 16px;
+  border-radius:10px;cursor:pointer;transition:transform .08s,filter .15s}
+.btn:hover{filter:brightness(.97)}.btn:active{transform:scale(.97)}
+.btn.p{background:var(--accent);color:#fff}.btn.d{background:color-mix(in srgb,var(--red) 14%,var(--card2));color:var(--red)}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+/* contrôle segmenté */
+.seg{display:inline-flex;background:var(--card2);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--text);font:inherit;font-weight:500;padding:7px 14px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.15);font-weight:600}
+@media (prefers-color-scheme: dark){.seg button.on{background:#636366}}
+/* interrupteur */
+.sw{position:relative;width:46px;height:28px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:var(--card2);border-radius:999px;transition:.2s;cursor:pointer;box-shadow:inset 0 0 0 1px var(--line)}
+.sw span:before{content:"";position:absolute;width:24px;height:24px;left:2px;top:2px;background:#fff;border-radius:50%;
+  box-shadow:0 2px 4px rgba(0,0,0,.2);transition:.2s}
+.sw input:checked+span{background:var(--green)}.sw input:checked+span:before{transform:translateX(18px)}
+/* curseurs */
+.set{display:grid;grid-template-columns:1fr 200px 64px;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+.set:last-child{border-bottom:0}
+.set label{font-weight:500}.set label small{display:block;color:var(--text2);font-weight:400;font-size:12px;margin-top:2px}
+.set output{text-align:right;color:var(--text2);font-variant-numeric:tabular-nums}
+.set.toggle{grid-template-columns:1fr auto}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:var(--card2);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.06);cursor:pointer}
+select,input[type=text],input[type=number]{font:inherit;background:var(--card2);color:var(--text);border:0;border-radius:8px;padding:7px 10px}
+/* batterie */
+.bat{display:flex;flex-direction:column;align-items:center;gap:8px}
+.ring{width:84px;height:84px}
+.ring circle{fill:none;stroke-width:8}.ring .bg{stroke:var(--card2)}.ring .fg{stroke:var(--green);stroke-linecap:round;
+  transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .6s}
+.bat b{font-size:15px}.bat small{color:var(--text2);font-size:12px}
+/* 3D */
+.stage{height:300px;perspective:900px;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,var(--card2),transparent 70%);border-radius:12px}
+.pod{position:relative;width:1px;height:1px;transform-style:preserve-3d;transition:transform .03s linear}
+.pod .part{position:absolute;transform-style:preserve-3d}
+.face{position:absolute;background:linear-gradient(160deg,#ffffff,#d4d4d9);border:1px solid rgba(0,0,0,.08);backface-visibility:visible}
+@media (prefers-color-scheme: dark){.face{background:linear-gradient(160deg,#f0f0f3,#b9b9c0)}}
+.axisx,.axisy,.axisz{position:absolute;height:3px;width:120px;left:0;top:0;transform-origin:0 50%;border-radius:2px}
+.axisx{background:var(--red)}.axisy{background:var(--green);transform:rotateZ(-90deg)}.axisz{background:var(--accent);transform:rotateY(90deg)}
+canvas{width:100%;display:block}
+.legend{display:flex;gap:16px;color:var(--text2);font-size:12px;margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.screen{aspect-ratio:16/10;background:var(--card2);border-radius:10px;position:relative;overflow:hidden}
+.screen .c{position:absolute;width:14px;height:14px;margin:-7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 25%,transparent)}
+.screen .t{position:absolute;width:10px;height:10px;margin:-5px;border-radius:50%;border:2px solid var(--orange)}
+.vec{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--card2);border-radius:3px;position:relative;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;left:50%;background:var(--accent);border-radius:3px}
+/* calibration */
+.calib-hero{text-align:center;padding:34px 20px}
+.calib-hero .instr{font-size:26px;font-weight:650;margin:16px 0 8px;letter-spacing:-.02em;min-height:70px}
+.steps{display:flex;gap:6px;justify-content:center;margin-top:16px}
+.steps i{width:28px;height:5px;border-radius:3px;background:var(--card2)}.steps i.done{background:var(--green)}.steps i.cur{background:var(--accent)}
+.pring{width:150px;height:150px;margin:0 auto}
+.pring circle{fill:none;stroke-width:10}.pring .bg{stroke:var(--card2)}.pring .fg{stroke:var(--accent);stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .12s}
+/* tables */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--text2);font-weight:600;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.log{max-height:520px;overflow:auto}
+.log td{white-space:nowrap}.log td.hx{white-space:normal;word-break:break-all}
+.tx{color:var(--accent)}.rx{color:var(--green)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel);
+  backdrop-filter:blur(20px);padding:10px 18px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transition:.25s;font-weight:600}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.empty{color:var(--text2);text-align:center;padding:26px}
+.disc li{margin:0 0 10px 18px;line-height:1.5}
+code{background:var(--card2);padding:1px 6px;border-radius:5px}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 4a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3h.5v8a1.5 1.5 0 0 0 3 0V7a3 3 0 0 0-3-3H7zM17 4a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-.5v8a1.5 1.5 0 0 1-3 0V7a3 3 0 0 1 3-3h.5z"/></svg></div>
+    <div><b>AirPods Mouse</b><small id="side-model">—</small></div>
+  </div>
+  <nav id="nav">
+    <a data-p="overview" class="on"><span class="ic" style="background:#0a84ff">◉</span>Aperçu</a>
+    <a data-p="motion"><span class="ic" style="background:#30d158">∿</span>Mouvement</a>
+    <a data-p="settings"><span class="ic" style="background:#8e8e93">⚙︎</span>Réglages</a>
+    <a data-p="calib"><span class="ic" style="background:#ff9f0a">◎</span>Calibration</a>
+    <a data-p="sensors"><span class="ic" style="background:#af52de">⌬</span>Capteurs</a>
+    <a data-p="device"><span class="ic" style="background:#ff375f">ⓘ</span>AirPods</a>
+    <a data-p="log"><span class="ic" style="background:#5e5ce6">≡</span>Journal</a>
+    <a data-p="about"><span class="ic" style="background:#30b0c7">★</span>Découvertes</a>
+  </nav>
+  <div class="side-foot"><div><span class="dot" id="side-dot"></span><span id="side-status">—</span></div>
+    <div id="side-rate" class="mono" style="margin-top:4px"></div></div>
+</aside>
+
+<main>
+<!-- =============================== APERÇU -->
+<section class="page on" id="p-overview">
+  <h1 id="ov-name">AirPods</h1>
+  <div class="sub" id="ov-sub">Connexion…</div>
+  <div class="grid g4" id="ov-bat"></div>
+  <h2>Contrôle</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Curseur</h3>
+      <div class="row" style="justify-content:space-between;margin-bottom:14px">
+        <div><div class="big" id="ov-state">—</div><div class="hint" id="ov-state-sub"></div></div>
+        <button class="btn p" id="ov-toggle">Pause</button>
+      </div>
+      <div class="row"><button class="btn" data-cmd="recenter">Recentrer</button>
+        <button class="btn" data-cmd="scroll" id="ov-scroll">Mode défilement</button></div>
+    </div>
+    <div class="card">
+      <h3>Mode & source</h3>
+      <div class="kv"><span>Mode</span><span><div class="seg" data-key="mode">
+        <button data-v="souris">Souris</button><button data-v="pointeur">Pointeur</button><button data-v="glisse">Glisse</button></div></span></div>
+      <div class="kv"><span>Source</span><span><div class="seg" data-key="source">
+        <button data-v="auto">Auto</button><button data-v="head">Tête</button><button data-v="case">Boîtier</button><button data-v="hand">En main</button></div></span></div>
+      <div class="hint" id="ov-src-hint" style="margin-top:10px"></div>
+      <div class="hint" style="margin-top:6px"><b>Souris</b> : tourner/incliner (tête, boîtier, AirPod) · <b>Pointeur</b> : viser l'écran comme un laser · <b>Glisse</b> : boîtier à plat poussé sur la table</div>
+    </div>
+  </div>
+  <h2>Liaison</h2>
+  <div class="grid g4">
+    <div class="card"><div class="hint">Mesures / seconde</div><div class="big" id="ov-rate">—</div></div>
+    <div class="card"><div class="hint">Coupures (&gt;50 ms, 2 s)</div><div class="big" id="ov-gaps">—</div></div>
+    <div class="card"><div class="hint">Protocole</div><div style="font-size:17px;font-weight:650;margin-top:6px" id="ov-proto">—</div></div>
+    <div class="card"><div class="hint">Profil d'axes</div><div style="font-size:17px;font-weight:650;margin-top:6px" id="ov-prof">—</div></div>
+  </div>
+</section>
+
+<!-- =============================== MOUVEMENT -->
+<section class="page" id="p-motion">
+  <h1>Mouvement</h1><div class="sub">Données brutes et calculées, en direct.</div>
+  <div class="grid g2">
+    <div class="card"><h3>Orientation (quaternion de l'écouteur) <button class="btn sm" id="m-zero" style="margin-left:auto">Zéro</button></h3>
+      <div class="stage"><div class="pod" id="pod">
+        <div class="axisx"></div><div class="axisy"></div><div class="axisz"></div>
+      </div></div></div>
+    <div class="card"><h3>Curseur</h3>
+      <div class="screen" id="scr"><div class="t" id="scr-t"></div><div class="c" id="scr-c"></div></div>
+      <div class="kv" style="margin-top:8px"><span>Vitesse curseur</span><span class="mono" id="m-vel">—</span></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Vitesses angulaires (°/s)</h3>
+    <canvas id="chart" height="220"></canvas>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Lacet (horizontal)</span><span><i style="background:var(--green)"></i>Tangage (vertical)</span><span><i style="background:var(--orange)"></i>Roulis (inclinaison)</span></div>
+  </div>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><h3>Gyroscope (°/s, repère écouteur)</h3><div class="vec" id="m-w"></div></div>
+    <div class="card"><h3>Gravité (g, repère écouteur)</h3><div class="vec" id="m-g"></div></div>
+    <div class="card"><h3>Biais gyroscope</h3><div class="vec" id="m-b"></div><div class="hint" id="m-bok" style="margin-top:8px"></div></div>
+    <div class="card"><h3>Accélération (m/s², sans gravité)</h3><div class="vec" id="m-a"></div></div>
+    <div class="card"><h3>Glisse : vitesse estimée (cm/s)</h3><div class="vec" id="m-gv"></div></div>
+  </div>
+</section>
+
+<!-- =============================== RÉGLAGES -->
+<section class="page" id="p-settings">
+  <h1>Réglages</h1><div class="sub">Tout s'applique instantanément.</div>
+  <div class="card"><h3>Sensibilité</h3>
+    <div class="set"><label>Horizontale</label><input type="range" data-k="sensitivity_x" min="0.1" max="5" step="0.05"><output></output></div>
+    <div class="set"><label>Verticale</label><input type="range" data-k="sensitivity_y" min="0.1" max="5" step="0.05"><output></output></div>
+    <div class="set toggle"><label>Inverser l'horizontale</label><label class="sw"><input type="checkbox" data-k="invert_x"><span></span></label></div>
+    <div class="set toggle"><label>Inverser la verticale</label><label class="sw"><input type="checkbox" data-k="invert_y"><span></span></label></div>
+  </div>
+  <h2>Mode souris</h2>
+  <div class="card">
+    <div class="set"><label>Vitesse<small>pixels par degré de rotation</small></label><input type="range" data-k="souris.px_per_deg" min="2" max="80" step="0.5"><output></output></div>
+    <div class="set"><label>Accélération<small>les gestes rapides vont plus loin</small></label><input type="range" data-k="souris.acceleration" min="0" max="4" step="0.05"><output></output></div>
+    <div class="set"><label>Zone morte<small>°/s ignorés (stabilité)</small></label><input type="range" data-k="souris.rate_deadzone_dps" min="0" max="15" step="0.1"><output></output></div>
+  </div>
+  <h2>Mode pointeur</h2>
+  <div class="card">
+    <div class="set"><label>Amplitude<small>% de l'écran par degré</small></label><input type="range" data-k="pointeur.screen_pct_per_deg" min="0.3" max="10" step="0.05"><output></output></div>
+  </div>
+  <h2>Mode glisse (boîtier à plat sur la table)</h2>
+  <div class="card">
+    <div class="set"><label>Vitesse<small>pixels par centimètre glissé</small></label><input type="range" data-k="glisse.px_per_cm" min="5" max="200" step="1"><output></output></div>
+    <div class="set"><label>Seuil de mouvement<small>m/s² ignorés (bruit)</small></label><input type="range" data-k="glisse.accel_deadzone" min="0" max="0.6" step="0.01"><output></output></div>
+    <div class="set"><label>Détection d'arrêt<small>m/s² sous lesquels le boîtier est considéré immobile</small></label><input type="range" data-k="glisse.still_acc" min="0.1" max="1.5" step="0.05"><output></output></div>
+    <div class="set"><label>Inertie<small>secondes ; plus grand = glisse plus longtemps</small></label><input type="range" data-k="glisse.leak_s" min="0.2" max="6" step="0.1"><output></output></div>
+  </div>
+  <h2>Fluidité</h2>
+  <div class="card">
+    <div class="set"><label>Lissage<small>0 = brut, 1 = très lisse</small></label><input type="range" data-k="smoothing" min="0" max="1" step="0.01"><output></output></div>
+    <div class="set"><label>Retard d'affichage<small>secondes ; plus petit = plus réactif</small></label><input type="range" data-k="render_lag_s" min="0" max="0.15" step="0.005"><output></output></div>
+    <div class="set"><label>Fréquence capteur<small>µs entre mesures (5000 = 200 Hz)</small></label><input type="range" data-k="sensor_interval_us" min="5000" max="40000" step="1000"><output></output></div>
+    <div class="set"><label>Rafraîchissement curseur<small>images par seconde</small></label><input type="range" data-k="render_hz" min="30" max="240" step="10"><output></output></div>
+  </div>
+  <h2>Clics</h2>
+  <div class="card">
+    <div class="set toggle"><label>Pression sur la tige<small>simple = clic gauche · double = clic droit · triple = défilement · long = pause</small></label><label class="sw"><input type="checkbox" data-k="stem.enabled"><span></span></label></div>
+    <div class="set toggle"><label>Inclinaison rapide<small>épaule droite = clic gauche · épaule gauche = clic droit</small></label><label class="sw"><input type="checkbox" data-k="roll_click.enabled"><span></span></label></div>
+    <div class="set"><label>Seuil d'inclinaison<small>degrés</small></label><input type="range" data-k="roll_click.trigger_deg" min="6" max="40" step="1"><output></output></div>
+    <div class="set toggle"><label>Clic par immobilité<small>le curseur clique s'il reste immobile</small></label><label class="sw"><input type="checkbox" data-k="dwell_click.enabled"><span></span></label></div>
+    <div class="set"><label>Durée d'immobilité<small>secondes</small></label><input type="range" data-k="dwell_click.time_s" min="0.4" max="3" step="0.1"><output></output></div>
+    <div class="set"><label>Vitesse de défilement</label><input type="range" data-k="scroll.lines_per_deg" min="0.05" max="1.5" step="0.05"><output></output></div>
+  </div>
+  <h2>Système</h2>
+  <div class="card">
+    <div class="set toggle"><label>Notifications</label><label class="sw"><input type="checkbox" data-k="notifications"><span></span></label></div>
+    <div class="set"><label>Gyroscope<small>°/s par unité (étalonnage d'échelle)</small></label><input type="range" data-k="gyro_dps_per_lsb" min="0.03" max="0.5" step="0.001"><output></output></div>
+  </div>
+</section>
+
+<!-- =============================== CALIBRATION -->
+<section class="page" id="p-calib">
+  <h1>Calibration</h1><div class="sub">Un profil par modèle et par source (tête, boîtier, en main). Environ 15 secondes.</div>
+  <div class="card calib-hero">
+    <div class="row" style="justify-content:center;gap:14px">
+      <div class="seg" id="cal-flow"><button data-v="souris">Rotation (souris)</button><button data-v="pointeur">Pointeur + coins</button><button data-v="glisse">Glisse sur table</button></div>
+      <div class="seg" id="cal-src"><button data-v="auto" class="on">Auto</button><button data-v="head">Tête</button><button data-v="case">Boîtier</button><button data-v="hand">En main</button></div>
+    </div>
+    <div class="instr" id="cal-instr">Prêt à calibrer</div>
+    <div class="hint" id="cal-hint">Le curseur est mis en pause pendant la calibration.</div>
+    <div class="hint" id="cal-msg" style="color:var(--orange);margin-top:8px;font-weight:600"></div>
+    <svg class="pring" viewBox="0 0 120 120" style="margin-top:18px"><circle class="bg" cx="60" cy="60" r="50"/><circle class="fg" id="cal-ring" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>
+    <div class="steps" id="cal-steps"></div>
+    <div class="row" style="justify-content:center;margin-top:22px"><button class="btn p" id="cal-start">Commencer</button><button class="btn" id="cal-cancel">Annuler</button></div>
+  </div>
+  <h2>Profils enregistrés</h2>
+  <div class="card"><table><thead><tr><th>Profil</th><th>Contenu</th></tr></thead><tbody id="cal-prof"></tbody></table></div>
+</section>
+
+<!-- =============================== CAPTEURS -->
+<section class="page" id="p-sensors">
+  <h1>Capteurs</h1><div class="sub">Services capteurs publiés par les AirPods via Apple RemoteHID (HID sur AACP). Interrogez-les et démarrez-les individuellement.</div>
+  <div class="grid g2" id="sens-list"></div>
+  <h2>Réponses Get/SetReport</h2>
+  <div class="card"><table><thead><tr><th>Il y a</th><th>Type</th><th>Device</th><th>Données</th></tr></thead><tbody id="sens-replies"></tbody></table></div>
+</section>
+
+<!-- =============================== AIRPODS -->
+<section class="page" id="p-device">
+  <h1>AirPods</h1><div class="sub">Informations remontées par les écouteurs.</div>
+  <div class="grid g2">
+    <div class="card"><h3>Identité</h3><div id="dev-info"></div></div>
+    <div class="card"><h3>État</h3><div id="dev-state"></div></div>
+  </div>
+  <h2>Réglages internes (opcode 0x09)</h2>
+  <div class="card"><table><thead><tr><th>ID</th><th>Nom</th><th>Valeur</th></tr></thead><tbody id="dev-ctl"></tbody></table>
+    <div class="hint" style="margin-top:12px">Avancé : envoyer une commande de contrôle. Ces réglages sont stockés dans les AirPods.</div>
+    <div class="row" style="margin-top:8px"><input type="text" id="ctl-id" placeholder="ID (ex. 0x17)" style="width:120px"><input type="text" id="ctl-val" placeholder="valeurs (ex. 0 0 0 0)" style="width:180px"><button class="btn sm" id="ctl-send">Envoyer</button></div>
+  </div>
+  <h2>Avancé</h2>
+  <div class="card"><div class="hint">Envoyer un paquet AAP brut (hex). À vos risques.</div>
+    <div class="row" style="margin-top:8px"><input type="text" id="raw-hex" class="mono" placeholder="04 00 04 00 ..." style="flex:1"><button class="btn sm" id="raw-send">Envoyer</button><button class="btn sm d" id="reconnect">Reconnecter</button></div></div>
+</section>
+
+<!-- =============================== JOURNAL -->
+<section class="page" id="p-log">
+  <h1>Journal</h1><div class="sub">Paquets AAP échangés (1 paquet de mouvement sur 100 affiché).</div>
+  <div class="card" style="margin-bottom:16px"><h3>Compteurs par opcode</h3><div class="row" id="log-counts"></div></div>
+  <div class="card log"><table><thead><tr><th>Heure</th><th>Sens</th><th>Op</th><th>Long.</th><th>Données</th></tr></thead><tbody id="log-body"></tbody></table></div>
+</section>
+
+<!-- =============================== DÉCOUVERTES -->
+<section class="page" id="p-about">
+  <h1>Découvertes</h1><div class="sub">Ce qu'on a appris en rétro-ingénierie — détails dans REVERSE_ENGINEERING.md.</div>
+  <div class="card"><ul class="disc">
+    <li><b>Accélération utilisateur</b> [38:44] (gravité retirée, ~1000 = 1 g) : bruit ≈ 0,02 g au repos — assez propre pour le mode Glisse avec remise à zéro à chaque arrêt.</li>
+    <li><b>MTU L2CAP</b> : avec 672 octets (défaut Linux), les AirPods 3 cachent leurs capteurs ; à <code>2582</code> (comme iOS) ils publient <i>devmotion6, accel, gyro, cma, kadabra</i>.</li>
+    <li><b>Apple RemoteHID</b> (canal RTBuddy <code>0x800</code>) : chaque capteur est un périphérique HID virtuel. En-tête de sous-paquet u32 : deviceID (7 bits), longueur (10 bits), type (3 bits).</li>
+    <li><b>HostConnect</b> <code>00 gg 00 00 | 00 02 00 00</code> → les AirPods publient leurs capteurs (DeviceConnect + plist + descripteur HID).</li>
+    <li><b>SetReport feature 1 = Report Interval (µs)</b> sur devmotion6 → flux de mouvement jusqu'à ~200 Hz.</li>
+    <li>Bloc de 58 octets commun aux AirPods 3 et Pro : quaternion Q15 [20:26], gyroscope [26:32] (~0,122 °/s par unité), accélération [38:44], gravité [44:50] (~1000 = 1 g).</li>
+    <li>AirPods Pro 2 : protocole <i>SensorDataWX</i> (protobuf, <code>0x100000</code>) — ACTIVITY(14) puis DEVMOTION6(16).</li>
+  </ul></div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let T={}, S={}, page="overview", series=[], q0=null;
+const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),1600)}
+const SRC={head:"Tête",case:"Boîtier",hand:"En main",auto:"Auto"};
+// ---------- navigation
+function go(p){page=p;$$("#nav a").forEach(x=>x.classList.toggle("on",x.dataset.p===p));
+  $$(".page").forEach(e=>e.classList.toggle("on",e.id==="p-"+p));if(location.hash!=="#"+p)history.replaceState(null,"","#"+p);refreshState()}
+$$("#nav a").forEach(a=>a.onclick=()=>go(a.dataset.p));
+window.addEventListener("load",()=>{const h=location.hash.slice(1);if(h&&document.getElementById("p-"+h))go(h)});
+// ---------- commandes
+$$("[data-cmd]").forEach(b=>b.onclick=()=>{post("/api/cmd",{cmd:b.dataset.cmd});toast(b.textContent)});
+$("#ov-toggle").onclick=()=>post("/api/cmd",{cmd:"toggle"});
+function setCfg(obj,msg){post("/api/config",obj).then(()=>msg&&toast(msg))}
+$$(".seg[data-key]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  setCfg({[seg.dataset.key]:b.dataset.v},(seg.dataset.key==="mode"?"Mode ":"Source ")+b.textContent);
+  seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b))}));
+// ---------- réglages
+function getK(cfg,k){return k.split(".").reduce((o,p)=>o&&o[p],cfg)}
+function mkObj(k,v){const p=k.split(".");return p.length===1?{[k]:v}:{[p[0]]:{[p[1]]:v}}}
+let editing=null;
+$$("#p-settings input").forEach(inp=>{
+  const k=inp.dataset.k;
+  const out=inp.parentElement.querySelector("output");
+  if(inp.type==="range"){inp.oninput=()=>{editing=k;out.textContent=fmt(+inp.value,inp.step)};
+    inp.onchange=()=>{setCfg(mkObj(k,+inp.value));setTimeout(()=>editing=null,800)}}
+  else inp.onchange=()=>setCfg(mkObj(k,inp.checked),"Enregistré");
+});
+function fmt(v,step){const d=(step+"").includes(".")?(step+"").split(".")[1].length:0;return v.toFixed(Math.min(d,3))}
+function fillSettings(cfg){$$("#p-settings input").forEach(inp=>{const k=inp.dataset.k;if(k===editing)return;const v=getK(cfg,k);
+  if(inp.type==="range"){if(v!==undefined){inp.value=v;inp.parentElement.querySelector("output").textContent=fmt(+v,inp.step)}}
+  else inp.checked=!!v})}
+// ---------- calibration
+let calSrc="auto",calFlow=null;
+$$("#cal-flow button").forEach(b=>b.onclick=()=>{calFlow=b.dataset.v;$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x===b))});
+$$("#cal-src button").forEach(b=>b.onclick=()=>{calSrc=b.dataset.v;$$("#cal-src button").forEach(x=>x.classList.toggle("on",x===b))});
+$("#cal-start").onclick=()=>{post("/api/calib",{action:"start",source:calSrc,flow:calFlow||T.mode});toast("Calibration lancée")};
+$("#cal-cancel").onclick=()=>{post("/api/calib",{action:"cancel"});toast("Calibration annulée")};
+// ---------- appareil
+$("#ctl-send").onclick=()=>{const id=parseInt($("#ctl-id").value);const vals=$("#ctl-val").value.trim().split(/\s+/).filter(Boolean).map(x=>parseInt(x));
+  if(isNaN(id))return toast("ID invalide");post("/api/control",{ident:id,values:vals});toast("Commande envoyée")};
+$("#raw-send").onclick=()=>{post("/api/raw",{hex:$("#raw-hex").value});toast("Paquet envoyé")};
+$("#reconnect").onclick=()=>{post("/api/reconnect");toast("Reconnexion…")};
+$("#m-zero").onclick=()=>{q0=quat(T.att)};
+// ---------- quaternion -> CSS
+function quat(a){if(!a)return[1,0,0,0];const x=a[0]/32768,y=a[1]/32768,z=a[2]/32768;const w=Math.sqrt(Math.max(0,1-x*x-y*y-z*z));return[w,x,y,z]}
+function qmul(a,b){return[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]]}
+function qmat(q){const[w,x,y,z]=q;return[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y),0,2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x),0,2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y),0,0,0,0,1]}
+// modèle 3D d'un AirPod (tête + tige) en boîtes CSS
+function box(w,h,d,x,y,z,r){const g=document.createElement("div");g.className="part";g.style.transform=`translate3d(${x}px,${y}px,${z}px)`;
+  const F=[[w,h,`translateZ(${d/2}px)`],[w,h,`rotateY(180deg) translateZ(${d/2}px)`],[d,h,`rotateY(90deg) translateZ(${w/2}px)`],[d,h,`rotateY(-90deg) translateZ(${w/2}px)`],[w,d,`rotateX(90deg) translateZ(${h/2}px)`],[w,d,`rotateX(-90deg) translateZ(${h/2}px)`]];
+  F.forEach(([fw,fh,t])=>{const f=document.createElement("div");f.className="face";f.style.cssText=`width:${fw}px;height:${fh}px;left:${-fw/2}px;top:${-fh/2}px;transform:${t};border-radius:${r}px`;g.appendChild(f)});return g}
+const pod=$("#pod");pod.appendChild(box(78,70,62,0,-40,0,30));pod.appendChild(box(22,120,22,8,52,0,11));
+// ---------- graphique
+const cv=$("#chart"),cx=cv.getContext("2d");
+function drawChart(){const W=cv.clientWidth,H=220,dpr=devicePixelRatio||1;if(cv.width!==W*dpr){cv.width=W*dpr;cv.height=H*dpr}
+  cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,W,H);const css=getComputedStyle(document.documentElement);
+  let mx=60;series.forEach(s=>s.forEach(v=>mx=Math.max(mx,Math.abs(v))));mx=Math.min(Math.ceil(mx/30)*30,600);
+  cx.strokeStyle=css.getPropertyValue("--line");cx.lineWidth=1;cx.fillStyle=css.getPropertyValue("--text2");cx.font="11px -apple-system,sans-serif";
+  [-1,-.5,0,.5,1].forEach(f=>{const y=H/2-f*(H/2-10);cx.beginPath();cx.moveTo(30,y);cx.lineTo(W,y);cx.stroke();cx.fillText(Math.round(f*mx),0,y+4)});
+  const cols=["--accent","--green","--orange"];
+  for(let k=0;k<3;k++){cx.strokeStyle=css.getPropertyValue(cols[k]);cx.lineWidth=2;cx.lineJoin="round";cx.beginPath();
+    series.forEach((s,i)=>{const x=30+i*(W-30)/Math.max(series.length-1,1),y=H/2-s[k]/mx*(H/2-10);i?cx.lineTo(x,y):cx.moveTo(x,y)});cx.stroke()}}
+function vec(el,v,scale,unit){el.innerHTML=["X","Y","Z"].map((n,i)=>{const p=Math.max(-1,Math.min(1,v[i]/scale))*50;
+  return `<span>${n}</span><div class="bar"><i style="left:${p<0?50+p:50}%;width:${Math.abs(p)}%"></i></div><span class="mono">${(+v[i]).toFixed(unit)}</span>`}).join("")}
+// ---------- rendu télémétrie
+function ring(level,color){const c=2*Math.PI*36;return `<svg class="ring" viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-level/100)}" style="stroke:${color}"/><text x="42" y="47" text-anchor="middle" font-size="16" font-weight="650" fill="currentColor">${level}%</text></svg>`}
+function renderTelemetry(){
+  const t=T;const ok=t.connected&&t.live;
+  $("#side-dot").className="dot "+(ok?"ok":t.connected?"warn":"");
+  $("#side-status").textContent=ok?"Mesures en direct":(t.status||"—");
+  $("#side-rate").textContent=t.connected?`${t.rate} Hz · ${SRC[t.source]||""}`:"";
+  if(page==="overview"){
+    $("#ov-state").textContent=t.paused?"En pause":(t.calib&&t.calib.active?"Calibration":"Actif");
+    $("#ov-state-sub").textContent=`${({souris:"Mode souris",pointeur:"Mode pointeur",glisse:"Mode glisse"})[t.mode]} · source ${SRC[t.source]}${t.scroll?" · défilement":""}`;
+    $("#ov-toggle").textContent=t.paused?"Reprendre":"Pause";
+    $("#ov-rate").textContent=t.connected?t.rate:"—";
+    $("#ov-gaps").textContent=t.connected?t.gaps:"—";$("#ov-gaps").style.color=t.gaps>3?"var(--orange)":"";
+    $$(".seg[data-key=mode] button").forEach(b=>b.classList.toggle("on",b.dataset.v===t.mode));
+    $$(".seg[data-key=source] button").forEach(b=>b.classList.toggle("on",b.dataset.v===t.source_cfg));
+    $("#ov-src-hint").textContent=`Détecté : ${({ear:"écouteurs portés",case:"écouteurs dans le boîtier",out:"écouteur hors de l'oreille"})[t.place]||"—"} → source ${SRC[t.source]}`;
+    const bats=(t.battery||[]).map(b=>{const col=b.level<=20?"var(--red)":b.state==="en charge"?"var(--green)":"var(--accent)";
+      return `<div class="card bat">${b.state==="déconnecté"?'<div class="ring" style="display:grid;place-items:center;color:var(--text2)">—</div>':ring(b.level,col)}<b>${b.part}</b><small>${b.state}</small></div>`});
+    const ear=t.ear?`<div class="card bat"><div class="ring" style="display:grid;place-items:center;font-size:30px">🎧</div><b>Oreilles</b><small>${t.ear.join(" · ")}</small></div>`:"";
+    $("#ov-bat").innerHTML=bats.join("")+ear||'<div class="card empty">En attente des AirPods…</div>';
+  }
+  if(page==="motion"){
+    let q=quat(t.att);if(q0){const c=[q0[0],-q0[1],-q0[2],-q0[3]];q=qmul(c,q)}
+    pod.style.transform=`scale(1.25) matrix3d(${qmat(q).join(",")})`;
+    vec($("#m-w"),t.w,200,1);vec($("#m-g"),t.g,1,2);vec($("#m-b"),t.bias,10,2);vec($("#m-a"),t.acc||[0,0,0],5,2);vec($("#m-gv"),(t.glide_v||[0,0]).concat([0]),40,1);
+    $("#m-bok").textContent=t.bias_ok?"Corrigé automatiquement (appareil immobile détecté)":"En attente d'un moment d'immobilité…";
+    const tg=t.target||[.5,.5],cu=t.cur||[.5,.5];
+    $("#scr-t").style.left=tg[0]*100+"%";$("#scr-t").style.top=tg[1]*100+"%";$("#scr-t").style.display=t.mode==="pointeur"?"":"none";
+    if(t.mode==="pointeur"){$("#scr-c").style.left=cu[0]*100+"%";$("#scr-c").style.top=cu[1]*100+"%"}
+    else{scrPos[0]=Math.min(100,Math.max(0,scrPos[0]+t.vel[0]/1920*100/30));scrPos[1]=Math.min(100,Math.max(0,scrPos[1]+t.vel[1]/1200*100/30));
+      $("#scr-c").style.left=scrPos[0]+"%";$("#scr-c").style.top=scrPos[1]+"%"}
+    $("#m-vel").textContent=`${t.vel[0]}, ${t.vel[1]} px/s`;
+    series=series.concat(t.series.slice(-3)).slice(-240);drawChart();
+  }
+  if(page==="calib"||t.calib){renderCalib(t.calib)}
+}
+const scrPos=[50,50];
+function renderCalib(c){
+  const steps=$("#cal-steps");
+  if(!c){steps.innerHTML="";$("#cal-ring").style.strokeDashoffset=314.16;return}
+  $("#cal-instr").textContent=c.text;$("#cal-msg").textContent=c.message||"";
+  const FL={souris:"Rotation",pointeur:"Pointeur + coins",glisse:"Glisse sur table"};
+  $("#cal-hint").textContent=c.done?`Profil « ${c.key} » enregistré et appliqué.`:`${FL[c.flow]} · source ${SRC[c.source]} — étape ${Math.min(c.index+1,c.total)}/${c.total}`;
+  $("#cal-ring").style.strokeDashoffset=314.16*(1-c.progress);
+  $("#cal-ring").style.stroke=c.done?"var(--green)":["still","back"].includes(c.step)?"var(--green)":"var(--accent)";
+  steps.innerHTML=Array.from({length:c.total},(_,i)=>`<i class="${i<c.index?"done":i===c.index?"cur":""}"></i>`).join("");
+}
+// ---------- mode anonyme (?anon) : pour les captures d'écran publiques
+function anonymize(s){const c=JSON.parse(JSON.stringify(s));if(c.addr)c.addr="XX:XX:XX:XX:XX:XX";
+  c.info=(c.info||[]).map(i=>({label:i.label,value:/Nom/.test(i.label)?"AirPods":/série|Serial/i.test(i.label)?"••••••••••":i.value}));
+  c.log=(c.log||[]).filter(l=>l.op===0x17||l.op===-1);return c}
+// ---------- rendu état (1 Hz)
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"})[c])}
+const ANON=location.search.includes("anon");if(ANON)document.documentElement.classList.add("shot");
+function renderState(){
+  const s=ANON?anonymize(S):S;
+  $("#side-model").textContent=s.model||"—";
+  const name=(s.info||[]).find(i=>i.label==="Nom");
+  $("#ov-name").textContent=name?name.value:(s.model||"AirPods");
+  $("#ov-sub").textContent=s.addr?`${s.model||""} · ${s.addr}`:"Recherche des AirPods…";
+  $("#ov-proto").textContent=s.protocol||"—";
+  $("#ov-prof").innerHTML=s.profile_key?(s.calibrated?`<span class="pill g">✓ ${esc(s.profile_key)}</span>`:`<span class="pill o">À calibrer</span>`):"—";
+  if(s.config)fillSettings(s.config);
+  if(page==="calib"){
+    if(!calFlow)$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x.dataset.v===(T.mode||"souris")));
+    const f=a=>(a||[]).map(v=>(+v).toFixed(2)).join(", ");
+    $("#cal-prof").innerHTML=Object.entries(s.profiles||{}).map(([k,p])=>`<tr><td><b>${esc(k)}</b></td><td class="mono">${p.right?`glisse · droite [${f(p.right)}] · avant [${f(p.fwd)}]`:`axe latéral [${f(p.lat)}] · lacet ${p.yaw_sign} · roulis ${p.roll_sign}${p.range?` · coins ←${p.range.x_neg}° →${p.range.x_pos}° ↑${p.range.y_pos}° ↓${p.range.y_neg}°`:""}`}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">Aucun profil</td></tr>'}
+  if(page==="sensors")renderSensors(s);
+  if(page==="device"){
+    $("#dev-info").innerHTML=(s.info||[]).map(i=>`<div class="kv"><span>${esc(i.label)}</span><span class="mono">${esc(i.value)}</span></div>`).join("")||'<div class="empty">—</div>';
+    $("#dev-state").innerHTML=[["Adresse",s.addr],["Modèle",s.model],["Product ID","0x"+(s.pid||"")],["Protocole capteurs",s.protocol],["Intervalle capteur",(s.interval_us||"—")+" µs"],
+      ["Écouteurs",(s.ear||[]).join(" · ")],...(s.battery||[]).map(b=>["Batterie "+b.part.toLowerCase(),b.level+" % · "+b.state]),["Contrôleur actif depuis",Math.round((s.uptime||0)/60)+" min"]]
+      .map(([k,v])=>`<div class="kv"><span>${k}</span><span>${esc(v??"—")}</span></div>`).join("");
+    $("#dev-ctl").innerHTML=(s.controls||[]).map(c=>`<tr><td class="mono">0x${c.ident.toString(16).padStart(2,"0")}</td><td>${esc(c.name)}</td><td class="mono">${c.values.map(v=>v.toString(16).padStart(2,"0")).join(" ")}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">—</td></tr>';
+  }
+  if(page==="log"){
+    $("#log-counts").innerHTML=Object.entries(s.counts||{}).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="pill">${k} · ${v}</span>`).join("");
+    $("#log-body").innerHTML=(s.log||[]).slice().reverse().map(l=>`<tr><td class="mono">${new Date(l.t*1000).toLocaleTimeString()}</td><td class="${l.dir}">${l.dir==="tx"?"→ AirPods":"← AirPods"}</td><td class="mono">${l.op>=0?"0x"+l.op.toString(16).padStart(2,"0"):"—"}</td><td>${l.len}</td><td class="mono hx">${esc(l.hex)}</td></tr>`).join("");
+  }
+}
+function renderSensors(s){
+  const list=$("#sens-list");
+  if(!(s.services||[]).length){list.innerHTML='<div class="card empty">Aucun service RemoteHID (AirPods Pro : protocole SensorDataWX, sans services HID).</div>';return}
+  const open=document.activeElement&&list.contains(document.activeElement);if(open)return;
+  list.innerHTML=s.services.map(sv=>`<div class="card"><h3>${esc(sv.name)} <span class="pill b">id ${sv.dev}</span>${sv.motion?'<span class="pill g">utilisé pour la souris</span>':""}</h3>
+    <div class="hint" style="margin-bottom:10px">${esc(sv.desc)}${sv.max_report?` · rapport max ${sv.max_report} o`:""}</div>
+    <table><thead><tr><th>Rapport</th><th>ID</th><th>Bits</th><th>Usages</th></tr></thead><tbody>${sv.reports.map(r=>`<tr><td>${r.kind}</td><td>${r.id}</td><td>${r.bits}</td><td>${esc(r.usages.join(", "))}</td></tr>`).join("")}</tbody></table>
+    <div class="kv"><span>Rapports reçus</span><span>${sv.count}${sv.last_age!=null?` · dernier il y a ${sv.last_age} s`:""}</span></div>
+    ${sv.last_hex?`<div class="mono hint" style="word-break:break-all;margin:6px 0 10px">${esc(sv.last_hex)}</div>`:""}
+    <div class="row"><select id="iv-${sv.dev}"><option value="5000">200 Hz</option><option value="10000" selected>100 Hz</option><option value="20000">50 Hz</option><option value="40000">25 Hz</option><option value="100000">10 Hz</option></select>
+      <button class="btn sm p" onclick="sensor(${sv.dev},'start')">Démarrer</button><button class="btn sm" onclick="sensor(${sv.dev},'stop')">Arrêter</button>
+      ${sv.reports.filter(r=>r.kind==="feature").map(r=>`<button class="btn sm" onclick="sensor(${sv.dev},'get',${r.id})">Lire F${r.id}</button>`).join("")}</div></div>`).join("");
+  $("#sens-replies").innerHTML=(s.replies||[]).slice().reverse().map(r=>`<tr><td>${r.age} s</td><td>${r.kind}</td><td>${r.dev}</td><td class="mono">${esc(r.hex)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">—</td></tr>';
+}
+window.sensor=(dev,action,report)=>{const iv=$("#iv-"+dev);post("/api/sensor",{dev,action,interval:iv?+iv.value:10000,report:report||1});
+  toast(action==="get"?"Lecture demandée":action==="start"?"Flux démarré":"Flux arrêté");setTimeout(refreshState,400)};
+// ---------- boucles
+function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState()}).catch(()=>{})}
+setInterval(refreshState,1000);refreshState();
+function connect(){const es=new EventSource("/api/stream");es.onmessage=e=>{T=JSON.parse(e.data);renderTelemetry()};
+  es.onerror=()=>{es.close();$("#side-dot").className="dot";$("#side-status").textContent="Contrôleur arrêté";setTimeout(connect,1500)}}
+connect();
+</script>
+</body>
+</html>

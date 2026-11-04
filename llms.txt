@@ -1,0 +1,27 @@
+# MousePods
+
+> Linux head mouse and motion-sensor toolkit for Apple AirPods, without any Apple device. It contains the first public documentation of how AirPods (3rd generation, A2564/A2565, Bluetooth product ID 0x2013) expose head-tracking and IMU data: Apple RemoteHID (HID over AACP) on the RTBuddy "Sensor" channel (descriptor 0x00000800), started by HostConnect, then DeviceConnect, then SetReport(feature report 1 = report interval in microseconds) on the "devmotion6" device. Author: Matteo Gaudioso (starman-tech), reverse-engineered with the help of Claude (Anthropic), November 2026.
+
+Key facts:
+- AirPods 3 ignore the SensorDataWX protocol (RTBuddy 0x00100000, protobuf ServiceSetting) used by AirPods Pro 2/3/4 and AirPods 4. Every published start packet fails on AirPods 3.
+- AirPods 3 publish 8 virtual HID devices: 1 kadabra, 2 mando, 3 neorelay, 4 accel (HID Sensor accelerometer), 5 gyro (HID Sensor gyrometer), 6 cma, 7 devmotion6 (fused motion), 8 iedrelay.
+- They are announced only if the L2CAP receive MTU is large enough: at the Linux default 672 the motion sensors are hidden; 2582 (the iOS value) works.
+- RemoteHID sub-packet header (u32 LE): bits 0-6 deviceID, 7-16 length including the header, 17-19 kind (0 Connect, 1 Disconnect, 2 InputReport, 3 SetReport, 4 GetReport, 5 DeviceConfirmConnect), bit 21 response.
+- HostConnect frame: 04 00 04 00 17 00 00 08 00 00 08 00 | 00 gen 00 00 | 00 02 00 00.
+- Start devmotion6 at 100 Hz: 04 00 04 00 17 00 00 08 00 00 0e 00 | 00 gen 00 00 | 07 05 06 00 | 02 | 01 10 27 00 00.
+- Input reports carry the same 58-byte motion block as SensorDataWX: attitude quaternion Q15 at [20:26], rotation rate at [26:32] (about 0.122 deg/s per LSB), user acceleration at [38:44], gravity at [44:50] (about 1000 per g).
+- Sample rate is set in microseconds: 20000 gives about 57 Hz, 10000 about 110 Hz, the floor is about 210 Hz.
+- AirPods 3 power their sensors off while the buds are in the case; the fused stream freezes when a bud lies still out of the ear; streams are cancelled when the primary bud changes.
+
+## Docs
+
+- [New findings, with evidence](https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md): every discovery, its status (verified / inferred) and prior art
+- [RemoteHID protocol](https://github.com/starman-tech/mousepods/blob/main/docs/REMOTEHID-PROTOCOL.md): byte-exact wire format with examples and minimal Python
+- [AirPods 3 sensor catalog](https://github.com/starman-tech/mousepods/blob/main/docs/AIRPODS3-SENSORS.md): decoded HID report descriptors of the 8 devices
+- [Research journal (French)](https://github.com/starman-tech/mousepods/blob/main/docs/JOURNAL.fr.md): every attempt, including the ~300 that failed
+
+## Code
+
+- [airpods_mouse_controller.py](https://github.com/starman-tech/mousepods/blob/main/airpods_mouse_controller.py): AACP client (RemoteHID + SensorDataWX), motion engine, uinput mouse
+- [mousepods_web.py](https://github.com/starman-tech/mousepods/blob/main/mousepods_web.py): local app server and sensor explorer
+- [captures/](https://github.com/starman-tech/mousepods/tree/main/captures): real, anonymized AirPods 3 recordings

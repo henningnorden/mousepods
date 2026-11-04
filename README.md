@@ -1,0 +1,140 @@
+<p align="center">
+  <img src="docs/brand/icon.svg" width="96" alt="MousePods icon">
+</p>
+
+<h1 align="center">MousePods</h1>
+
+<p align="center">
+  <b>Your AirPods are a mouse.</b><br>
+  Head tracking and motion sensors from AirPods 3 and AirPods Pro, on Linux, without an Apple device.<br>
+  Including the first public documentation of Apple's <b>RemoteHID</b> protocol, the way AirPods 3 expose their sensors.
+</p>
+
+<p align="center">
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-BlueZ%205.7x-1d1d1f?logo=linux&logoColor=white">
+  <img alt="Wayland and X11" src="https://img.shields.io/badge/Wayland%20%7C%20X11-uinput-0a84ff">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-34c759">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-37%20passing-34c759">
+  <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-ff9f0a"></a>
+</p>
+
+<p align="center">
+  <a href="https://starman-tech.github.io/mousepods/">Website</a> ·
+  <a href="docs/DISCOVERIES.md">New findings</a> ·
+  <a href="docs/REMOTEHID-PROTOCOL.md">RemoteHID protocol</a> ·
+  <a href="docs/AIRPODS3-SENSORS.md">AirPods 3 sensors</a> ·
+  <a href="README.fr.md">Français</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/app-motion.png" width="800" alt="The MousePods app: live motion data from AirPods 3">
+</p>
+
+---
+
+## What's new here
+
+Before this project, **no public tool could get head-tracking data out of AirPods 3**. LibrePods, librepods-rs, pods-head-tracker,
+airpods-head-track and aap-head-tracker all list them as untested or unsupported. The reason turned out to be three
+things nobody had written down:
+
+| Finding | |
+|---|---|
+| AirPods 3 **ignore** the SensorDataWX protocol that AirPods Pro 2/3/4 and AirPods 4 use | [§2](docs/DISCOVERIES.md#2-airpods-3-do-not-speak-sensordatawx) |
+| They expose their sensors as **virtual HID devices through Apple RemoteHID** (RTBuddy channel `0x800`). The wire format is now fully documented | [protocol](docs/REMOTEHID-PROTOCOL.md) |
+| At the Linux default L2CAP MTU (672), the motion sensors are **not announced at all**. They appear at 2582, the value iOS uses | [§6](docs/DISCOVERIES.md#6-the-mtu-hides-the-sensors) |
+
+Along the way: the complete AirPods 3 sensor catalog (`devmotion6`, `accel`, `gyro`, `cma`, `kadabra`…), sample rates up to
+**~210 Hz** instead of 25 Hz, the scales of the motion block, and how the buds power their sensors on and off.
+**→ All findings, with evidence and an honest "not isolated yet" list: [docs/DISCOVERIES.md](docs/DISCOVERIES.md).**
+
+## How it works
+
+```
+ AirPods 3 ──── L2CAP 0x1001 (AACP, MTU 2582) ────▶ AAPClient ──▶ MotionEngine ──▶ Controller ──▶ /dev/uinput ──▶ cursor
+   │  HostConnect ◀─────────────────────────────────┤             gyro + gravity     souris / pointeur        (Wayland, X11)
+   │  DeviceConnect ×8 (HID descriptors) ──────────▶│             → yaw · pitch · roll    / glisse
+   │  SetReport feature 1 = 10 000 µs ◀─────────────┤                                       │
+   │  InputReport @ 100 Hz (58-byte block) ────────▶│                         http://127.0.0.1:8737  (app)
+ AirPods Pro 2 ── same, through SensorDataWX (protobuf, 0x100000) ──┘
+```
+
+1. **Connect** without root: L2CAP PSM `0x1001`, encrypted link, receive MTU 2582.
+2. **Start the sensor**: RemoteHID for AirPods 3, SensorDataWX for AirPods Pro / 4. Detected automatically.
+3. **Compute motion that doesn't depend on how the bud is held**: yaw is the rotation around the *vertical* (taken from the gravity vector), pitch the rotation around a lateral axis learned during calibration. Gyro bias is re-estimated whenever the device is still.
+4. **Move the cursor** through a virtual `uinput` device (works on Wayland), rendered at 120 Hz with One-Euro smoothing.
+
+## Modes
+
+| Mode | Move | Feels like |
+|---|---|---|
+| **Souris** (mouse) | turn / tilt your head, or a bud in your hand | an air mouse, with acceleration |
+| **Pointeur** (pointer) | aim at the screen | a laser pointer. Calibrated by aiming at two corners: aim at a corner and the cursor lands there |
+| **Glisse** (glide) | slide a bud flat on the table | an inertial mouse. Experimental: see the limits below |
+
+Clicks: stem press, quick head tilt (optional), or dwell. Shortcuts: `Ctrl+Alt+C` recenter · `Ctrl+Alt+P` pause · `Ctrl+Alt+M` mode · `Ctrl+Alt+S` scroll.
+
+## The app
+
+A local app in the style of macOS Settings (light and dark): battery rings, live 3D orientation, rate charts, every setting applied
+live, guided calibration, a **sensor explorer** to start and query each RemoteHID device, the AirPods' internal settings and a raw packet log.
+
+<p align="center">
+  <img src="docs/screenshots/app-sensors.png" width="49%" alt="Sensor explorer">
+  <img src="docs/screenshots/app-calib.png" width="49%" alt="Calibration">
+</p>
+
+## Install
+
+```bash
+git clone https://github.com/starman-tech/mousepods && cd mousepods
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python airpods_mouse_controller.py --ui            # opens the app, starts the controller
+.venv/bin/python airpods_mouse_controller.py --install-hotkeys   # GNOME shortcuts (optional)
+```
+
+Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/dev/uinput` (granted to the logged-in user by
+`uaccess` on most desktop distributions). No root.
+
+```bash
+.venv/bin/python airpods_mouse_controller.py --diag          # live rates in the terminal, no cursor control
+.venv/bin/python -m unittest discover -s tests               # 37 tests, no hardware needed
+```
+
+## Status: what is real, what is not
+
+| | |
+|---|---|
+| ✅ AirPods 3 motion stream (RemoteHID), up to ~210 Hz | verified on hardware |
+| ✅ AirPods Pro 2 motion stream (SensorDataWX), 25 Hz | verified on hardware |
+| ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 37 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
+| ⚠️ Pointer mode with corner calibration | tested in simulation only |
+| ⚠️ Glide mode | works stroke by stroke. On real slides: drift of 4 cm over 5 strokes after tuning, on **one** capture. A bud is round and rolls, and its sensors freeze when it lies still: it will never match an optical mouse |
+| ❌ Case as a mouse (buds inside) | impossible on AirPods 3: the sensors are powered off in the case |
+| ❓ Apple PnP DeviceID | changed before the first success; probably not needed (the MTU is), not isolated yet |
+| ❓ Other models (AirPods 2, Pro 1, Max) | untested |
+
+## Built with Claude
+
+I reverse-engineered this together with **Claude** (Anthropic), used as an AI pair engineer in Claude Code. In one afternoon, Claude:
+- ran the Bluetooth probes and the ~300 blind attempts that failed;
+- sent background agents through LibrePods, the Wireshark dissector, the OpenHuilian clone firmware (static disassembly) and the iOS `RemoteHID.framework` pseudocode;
+- found the MTU and RemoteHID keys, wrote the controller, the app and the tests;
+- kept the [journal](docs/JOURNAL.fr.md) of every attempt.
+
+I held the AirPods, made the calls and checked every result on real hardware. The method, failures included, is in the journal.
+
+## Credits
+
+This builds on public work: [LibrePods](https://github.com/librepods-org/librepods) (AACP and the SensorDataWX start packets),
+[pabloaul/apple-wireshark](https://github.com/pabloaul/apple-wireshark) (RTBuddy dissector and `rtbuddy.proto`),
+[Gheop/mutix](https://github.com/Gheop/mutix) and LibrePods PR #887 (layout of the 58-byte block),
+[arctumn/ntpods](https://github.com/arctumn/ntpods) (MTU gating, on AirPods Pro 3 heart rate),
+[spacedouut/OpenHuilian](https://github.com/spacedouut/OpenHuilian) (clone firmware) and the public iOS 26.1 restore dump
+by EthanArbuckle. No code was copied from these projects.
+
+## License
+
+[MIT](LICENSE) © 2026 Matteo Gaudioso. Not affiliated with Apple. AirPods is a trademark of Apple Inc.
+
+If you use these findings, please cite them ([CITATION.cff](CITATION.cff)).

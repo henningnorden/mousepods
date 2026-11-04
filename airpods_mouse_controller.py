@@ -1,0 +1,1684 @@
+#!/usr/bin/env python3
+"""
+airpods_mouse_controller.py — AirPods -> souris / pointeur (Linux, Wayland ou X11).
+
+  * AirPods 3        : protocole Apple RemoteHID (HID sur AACP, RTBuddy 0x800), jusqu'à ~200 Hz.
+  * AirPods Pro 2/3/4: protocole SensorDataWX (RTBuddy 0x100000).
+  * Mouvement : gyroscope + gravité des écouteurs -> lacet autour de la VERTICALE, tangage autour
+    d'un axe latéral appris en calibration. Marche quelle que soit l'orientation :
+    écouteurs portés (tête), écouteurs dans le boîtier ouvert, ou un AirPod tenu en main.
+  * Modes : "souris" (la vitesse du geste déplace le curseur, avec accélération)
+            "pointeur" (la direction visée = position à l'écran, comme un laser).
+  * Injection : /dev/uinput (python-evdev). Réglages rechargés à chaud depuis config.json.
+
+Usage :
+  airpods_mouse_controller.py                  lance le contrôleur
+  airpods_mouse_controller.py --settings       panneau de réglages (curseurs en direct)
+  airpods_mouse_controller.py --calibrate      calibration à l'écran (tête / boîtier / main)
+  airpods_mouse_controller.py --diag           affiche les vitesses/angles en direct
+  airpods_mouse_controller.py --send CMD       recenter|toggle|pause|resume|scroll|mode|quit
+  airpods_mouse_controller.py --install-hotkeys  raccourcis GNOME (Ctrl+Alt+C/P/S/M)
+"""
+import argparse
+import json
+import logging
+import math
+import os
+import re
+import select
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CONFIG_PATH = os.path.join(HERE, "config.json")
+CTRL_SOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "airpods-mouse.sock")
+log = logging.getLogger("airpods-mouse")
+
+# =========================================================================== configuration
+DEFAULTS = {
+    "device_address": "auto",
+    "auto_connect": True,
+    "mode": "souris",              # "souris" | "pointeur" | "glisse"
+    "source": "auto",              # "auto" | "head" | "case" | "hand"
+    "sensitivity_x": 1.0,
+    "sensitivity_y": 1.0,
+    "invert_x": False,
+    "invert_y": False,
+    "smoothing": 0.35,             # 0 = brut, 1 = très lisse
+    "render_hz": 120,
+    "render_lag_s": 0.025,
+    "sensor_interval_us": 10000,   # 10000 = 100 Hz (moins de coupures Bluetooth que 200 Hz)
+    "gyro_dps_per_lsb": 0.122,
+    "souris": {"px_per_deg": 20.0, "acceleration": 1.0, "rate_deadzone_dps": 2.5},
+    "pointeur": {"screen_pct_per_deg": 3.0, "rate_deadzone_dps": 0.6},
+    "glisse": {"px_per_cm": 40.0, "accel_deadzone": 0.2, "still_acc": 0.4, "still_dps": 40.0,
+               "still_time_s": 0.12, "leak_s": 3.0},
+    "bias": {"still_range_dps": 3.0, "still_time_s": 0.4, "rate": 0.03},
+    "stem": {"enabled": True, "single": "left_click", "double": "right_click",
+             "triple": "toggle_scroll", "long": "toggle_pause"},
+    "roll_click": {"enabled": False, "trigger_deg": 15.0, "max_duration_s": 0.6,
+                   "right": "left_click", "left": "right_click"},
+    "dwell_click": {"enabled": False, "time_s": 1.0, "radius_px": 12, "min_move_px": 60},
+    "scroll": {"lines_per_deg": 0.25},
+    "notifications": True,
+    "profiles": {},
+}
+TUNABLE_SECTIONS = ("souris", "pointeur", "glisse", "bias", "stem", "roll_click", "dwell_click", "scroll")
+DEFAULT_PROFILE = {"yaw_sign": 1, "lat": [0.0, 0.0, 1.0], "pitch_sign": 1, "roll_sign": 1}
+SOURCE_NAMES = {"head": "tête", "case": "boîtier", "hand": "main"}
+
+
+def deep_merge(base, over):
+    for k, v in over.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict) and isinstance(base.get(k), dict) and k != "profiles":
+            base[k].update(v)
+        else:
+            base[k] = v
+    return base
+
+
+def load_config(path):
+    cfg = json.loads(json.dumps(DEFAULTS))
+    if os.path.exists(path):
+        with open(path) as f:
+            deep_merge(cfg, json.load(f))
+    if cfg["mode"] in ("absolute",):
+        cfg["mode"] = "pointeur"
+    elif cfg["mode"] in ("relative",):
+        cfg["mode"] = "souris"
+    return cfg
+
+
+def update_config_file(path, updates):
+    """Fusionne `updates` dans config.json (préserve les autres clés et l'aide)."""
+    user = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            user = json.load(f)
+    for k, v in updates.items():
+        if isinstance(v, dict) and isinstance(user.get(k), dict):
+            user[k].update(v)
+        else:
+            user[k] = v
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(user, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+# =========================================================================== Bluetooth
+def bt_info(addr):
+    try:
+        return subprocess.run(["bluetoothctl", "info", addr], capture_output=True, text=True,
+                              timeout=5).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return ""
+
+
+def apple_audio_devices():
+    out = []
+    try:
+        lines = subprocess.run(["bluetoothctl", "devices", "Paired"], capture_output=True,
+                               text=True, timeout=5).stdout.splitlines()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return out
+    for ln in lines:
+        m = re.match(r"Device ([0-9A-F:]{17}) (.*)", ln.strip())
+        if not m:
+            continue
+        info = bt_info(m.group(1))
+        mod = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", info)
+        if mod:
+            out.append((m.group(1), m.group(2), mod.group(1).lower(), "Connected: yes" in info))
+    return out
+
+
+def product_id(addr):
+    m = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", bt_info(addr))
+    return m.group(1).lower() if m else "0000"
+
+
+# =========================================================================== AAP / RTBuddy
+H = bytes.fromhex
+HDR = b"\x04\x00\x04\x00"
+PKT_HANDSHAKE = H("00000400010002000000000000000000")
+PKT_FEATURES = H("040004004d00d700000000000000")
+PKT_NOTIFICATIONS = H("040004000f00ffffffff")
+WX_PREFIX = H("04000400170000001000")
+SVC_ACTIVITY, SVC_DEVMOTION6 = 0x0E, 0x10
+SOL_BLUETOOTH, BT_SECURITY, BT_SECURITY_MEDIUM = 274, 4, 2
+SOL_L2CAP, L2CAP_OPTIONS = 6, 1
+IOS_MTU = 2582   # avec le MTU Linux par défaut (672) les AirPods n'annoncent pas leurs capteurs
+
+
+def ctrl_cmd(ident, d1=0, d2=0, d3=0, d4=0):
+    return HDR + bytes([0x09, 0x00, ident, d1, d2, d3, d4])
+
+
+PKT_STEM_EVENTS_ON = ctrl_cmd(0x39, 0x0F)
+PKT_STEM_EVENTS_OFF = ctrl_cmd(0x39, 0x00)
+STEM_TYPES = {0x05: "single", 0x06: "double", 0x07: "triple", 0x08: "long"}
+
+# --- Apple RemoteHID (HID sur AACP, descripteur RTBuddy 0x800)
+# corps : [version=0][génération][0][côté*2] puis sous-paquets ; chaque sous-paquet commence par
+# un u32 LE : bits 0-6 deviceID, 7-16 longueur (en-tête inclus), 17-19 type, 21 réponse.
+# types : 0 Connect (HostConnect si vide / DeviceConnect = plist), 1 Disconnect, 2 InputReport,
+#         3 SetReport, 4 GetReport, 5 DeviceConfirmConnect.
+RHID_PREFIX = H("04000400170000080000")
+RHID_CONNECT, RHID_INPUT, RHID_SET, RHID_GET = 0, 2, 3, 4
+HID_FEATURE = 2
+
+
+def rhid_frame(gen, subpackets):
+    body = bytes([0, gen & 0xFF, 0, 0]) + b"".join(subpackets)
+    return RHID_PREFIX + struct.pack("<H", len(body)) + body
+
+
+def rhid_sub(dev, kind, payload=b""):
+    n = 4 + len(payload)
+    return struct.pack("<I", (dev & 0x7F) | ((n & 0x3FF) << 7) | ((kind & 7) << 17)) + payload
+
+
+def rhid_parse(pkt):
+    """[(kind, dev, payload)] d'une trame RemoteHID."""
+    out = []
+    if len(pkt) < 16 or pkt[:10] != RHID_PREFIX:
+        return out
+    body = pkt[12:12 + struct.unpack_from("<H", pkt, 10)[0]]
+    i = 4
+    while i + 4 <= len(body):
+        h = struct.unpack_from("<I", body, i)[0]
+        n = (h >> 7) & 0x3FF
+        if n < 4:
+            break
+        out.append(((h >> 17) & 7, h & 0x7F, body[i + 4:i + n]))
+        i += n
+    return out
+
+
+def _varint(b, i):
+    v = shift = 0
+    while i < len(b):
+        c = b[i]
+        i += 1
+        v |= (c & 0x7F) << shift
+        if not c & 0x80:
+            return v, i
+        shift += 7
+    raise ValueError("varint")
+
+
+def pb_fields(buf):
+    i = 0
+    while i < len(buf):
+        key, i = _varint(buf, i)
+        f, wt = key >> 3, key & 7
+        if wt == 0:
+            v, i = _varint(buf, i)
+        elif wt == 2:
+            n, i = _varint(buf, i)
+            v = buf[i:i + n]
+            i += n
+        elif wt == 5:
+            v, i = buf[i:i + 4], i + 4
+        elif wt == 1:
+            v, i = buf[i:i + 8], i + 8
+        else:
+            return
+        yield f, v
+
+
+def motion_blocks(pkt):
+    """Blocs capteur (58 o) d'un paquet SensorDataWX (souvent plusieurs par paquet)."""
+    if len(pkt) < 12 or pkt[:10] != WX_PREFIX:
+        return []
+    n = struct.unpack_from("<H", pkt, 10)[0]
+    out = []
+    try:
+        for f, v in pb_fields(pkt[12:12 + n]):
+            if f == 7 and isinstance(v, (bytes, bytearray)):
+                svc, blk = None, None
+                for f2, v2 in pb_fields(v):
+                    if f2 == 1:
+                        svc = v2
+                    elif f2 == 3:
+                        blk = v2
+                if blk is not None and len(blk) >= 50 and svc in (SVC_ACTIVITY, SVC_DEVMOTION6, 15):
+                    out.append(blk)
+    except ValueError:
+        pass
+    return out
+
+
+def ear_place(pkt):
+    """Paquet 0x06 -> 'ear' | 'case' | 'out' (0 = oreille, 1 = dehors, 2 = boîtier)."""
+    a, b = pkt[6], pkt[7]
+    if 0 in (a, b):
+        return "ear"
+    if 1 in (a, b):          # un écouteur sorti (l'autre peut rester dans le boîtier) -> en main
+        return "out"
+    if 2 in (a, b):
+        return "case"
+    return "out"
+
+
+class AAPClient:
+    def __init__(self, addr="auto", auto_connect=True, interval_us=10000):
+        self.want = addr
+        self.addr = None if addr == "auto" else addr
+        self.auto_connect = auto_connect
+        self.interval_us = int(interval_us)
+        self.sock = None
+        self.seq = 0x40
+        self.gen = 0
+        self.pid = "0000"
+        self.rhid_devs = {}
+        self.rhid_motion = None
+        self.place = None
+        self.stem_events = []
+        # observabilité (interface)
+        self.rhid_plist = {}         # dev -> plist XML (DeviceConnect)
+        self.rhid_last = {}          # dev -> (temps, payload) dernier InputReport
+        self.rhid_counts = {}        # dev -> nombre d'InputReport
+        self.rhid_replies = []       # [(temps, kind, dev, payload)] réponses Get/SetReport
+        self.rhid_active = {}        # dev -> intervalle des flux démarrés à la main (relancés après réannonce)
+        self.on_raw = None           # callback(direction, paquet)
+
+    def _pick(self):
+        if self.want != "auto":
+            return self.want
+        if self.addr and "Connected: yes" in bt_info(self.addr):   # reconnexion : déjà connu
+            return self.addr
+        devs = apple_audio_devices()
+        con = [d for d in devs if d[3]]
+        if con:
+            return con[0][0]
+        if self.auto_connect:
+            for d in devs:
+                log.info("Tentative de connexion : %s (%s)", d[1], d[0])
+                try:
+                    subprocess.run(["bluetoothctl", "connect", d[0]], capture_output=True,
+                                   text=True, timeout=12)
+                except subprocess.TimeoutExpired:
+                    continue
+                if "Connected: yes" in bt_info(d[0]):
+                    return d[0]
+        raise OSError(112, "aucun AirPods connecté")
+
+    def connect(self):
+        self.addr = self._pick()
+        if self.auto_connect and "Connected: yes" not in bt_info(self.addr):
+            subprocess.run(["bluetoothctl", "connect", self.addr], capture_output=True, text=True,
+                           timeout=20)
+        self.pid = product_id(self.addr)
+        s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
+        try:
+            s.setsockopt(SOL_BLUETOOTH, BT_SECURITY, struct.pack("BB", BT_SECURITY_MEDIUM, 0))
+            opts = bytearray(s.getsockopt(SOL_L2CAP, L2CAP_OPTIONS, 12))
+            struct.pack_into("<H", opts, 2, IOS_MTU)
+            s.setsockopt(SOL_L2CAP, L2CAP_OPTIONS, bytes(opts))
+        except OSError as e:
+            log.debug("options socket : %s", e)
+        s.settimeout(8)
+        try:
+            s.connect((self.addr, 0x1001))
+        except OSError:
+            s.close()
+            raise
+        s.settimeout(None)
+        self.sock = s
+        for p, d in ((PKT_HANDSHAKE, 0.3), (PKT_FEATURES, 0.15), (PKT_NOTIFICATIONS, 0.15)):
+            s.send(p)
+            time.sleep(d)
+        self.rhid_devs, self.rhid_motion = {}, None
+        self.rhid_host_connect()
+        log.info("Canal AAP ouvert avec %s (modèle %s)", self.addr, self.pid)
+
+    def send(self, pkt):
+        if self.sock:
+            if self.on_raw:
+                self.on_raw("tx", pkt)
+            try:
+                self.sock.send(pkt)
+            except OSError as e:
+                log.warning("Envoi AAP impossible : %s", e)
+
+    # ---- SensorDataWX (AirPods Pro / 4)
+    def stream(self, svc, interval_us):
+        self.seq = (self.seq + 1) & 0x7F
+        body = bytes([0x08, self.seq, 0x42, 0x0B, 0x08, svc, 0x10, 0x02, 0x1A, 0x05, 0x01]) + \
+            struct.pack("<I", interval_us)
+        self.send(WX_PREFIX + struct.pack("<H", len(body)) + body)
+
+    # ---- RemoteHID (AirPods 3)
+    def _rhid_send(self, subs):
+        self.gen = (self.gen + 1) & 0xFF
+        self.send(rhid_frame(self.gen, subs))
+
+    def rhid_host_connect(self):
+        self._rhid_send([rhid_sub(0, RHID_CONNECT)])
+
+    def rhid_set_feature(self, dev, report_id, value):
+        self._rhid_send([rhid_sub(dev, RHID_SET, bytes([HID_FEATURE, report_id]) +
+                                  struct.pack("<I", value))])
+
+    def rhid_start(self):
+        dev = self.rhid_devs.get("devmotion6")
+        if dev is not None:
+            self.rhid_set_feature(dev, 1, self.interval_us)   # feature 1 = Report Interval (µs)
+            self.rhid_motion = dev
+
+    def start_tracking(self):
+        if self.pid == "2013" and not self.rhid_devs:   # AirPods 3 : RemoteHID uniquement
+            self.rhid_host_connect()
+            return
+        if self.rhid_devs:
+            if "devmotion6" in self.rhid_devs:
+                self.rhid_start()
+            else:
+                self.rhid_host_connect()
+            return
+        self.stream(SVC_ACTIVITY, 40000)
+        time.sleep(0.25)
+        self.stream(SVC_DEVMOTION6, self.interval_us)
+        self.stream(SVC_ACTIVITY, 0)
+        self.rhid_host_connect()
+
+    def process(self, pkt):
+        """Paquet AAP -> liste de blocs capteur de 58 o ; met à jour place / stem_events."""
+        if pkt[:10] == WX_PREFIX:
+            return motion_blocks(pkt)
+        if pkt[:10] == RHID_PREFIX:
+            blocks = []
+            for kind, dev, pl in rhid_parse(pkt):
+                if kind == RHID_CONNECT and b"<?xml" in pl:
+                    m = re.search(rb"AccessoryService</key><string>(\w+)", pl)
+                    self.rhid_plist[dev] = pl
+                    if m:
+                        name = m.group(1).decode()
+                        new = name not in self.rhid_devs
+                        self.rhid_devs[name] = dev
+                        # une réannonce (ex. changement d'écouteur principal) annule les flux : on relance
+                        if name == "devmotion6":
+                            log.info("Capteur devmotion6 (RemoteHID id %d) %s — démarrage", dev,
+                                     "annoncé" if new else "réannoncé")
+                            self.rhid_start()
+                        if dev in self.rhid_active:
+                            self.rhid_set_feature(dev, 1, self.rhid_active[dev])
+                elif kind == RHID_INPUT:
+                    self.rhid_counts[dev] = self.rhid_counts.get(dev, 0) + 1
+                    self.rhid_last[dev] = (time.monotonic(), pl)
+                    if dev == self.rhid_motion and len(pl) >= 51:
+                        blocks.append(pl[1:])      # pl[0] = type de rapport
+                elif kind in (RHID_SET, RHID_GET):
+                    self.rhid_replies.append((time.monotonic(), kind, dev, pl))
+                    del self.rhid_replies[:-50]
+            return blocks
+        if pkt[:4] == HDR and len(pkt) >= 8:
+            if pkt[4] == 0x06:
+                self.place = ear_place(pkt)
+            elif pkt[4] == 0x19:
+                self.stem_events.append(STEM_TYPES.get(pkt[6], "0x%02x" % pkt[6]))
+        return []
+
+    def close(self, stem_restore=False):
+        if self.sock:
+            try:
+                if self.rhid_motion is not None:
+                    self.rhid_set_feature(self.rhid_motion, 1, 0)
+                self.stream(SVC_DEVMOTION6, 0)
+                if stem_restore:
+                    self.send(PKT_STEM_EVENTS_OFF)
+                time.sleep(0.05)
+                self.sock.close()
+            except OSError:
+                pass
+        self.sock = None
+
+
+# =========================================================================== mesures & maths
+def vdot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def vcross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def vnorm(a):
+    n = math.sqrt(vdot(a, a))
+    return (a[0] / n, a[1] / n, a[2] / n) if n > 1e-9 else tuple(a)
+
+
+def vlen(a):
+    return math.sqrt(vdot(a, a))
+
+
+def vsub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def vscale(a, k):
+    return (a[0] * k, a[1] * k, a[2] * k)
+
+
+def reject(v, axis):
+    """Composante de v perpendiculaire à axis (unitaire)."""
+    return vsub(v, vscale(axis, vdot(v, axis)))
+
+
+def parse_block(blk, dps_per_lsb=0.122):
+    """Bloc 58 o -> (horodatage ns, vitesse angulaire °/s (corps), gravité (corps, ~1000 = 1 g))."""
+    ts = struct.unpack_from("<Q", blk, 1)[0]
+    w = struct.unpack_from("<hhh", blk, 26)
+    g = struct.unpack_from("<hhh", blk, 44)
+    return ts, (w[0] * dps_per_lsb, w[1] * dps_per_lsb, w[2] * dps_per_lsb), (float(g[0]), float(g[1]), float(g[2]))
+
+
+def parse_accel(blk):
+    """Accélération utilisateur (gravité retirée), repère corps, en m/s² (~1000 unités = 1 g)."""
+    a = struct.unpack_from("<hhh", blk, 38)
+    k = 9.81 / 1000.0
+    return (a[0] * k, a[1] * k, a[2] * k)
+
+
+def quat_from_att(att):
+    """Partie vectorielle Q15 [20:26] -> quaternion unitaire (w, x, y, z), ou None."""
+    x, y, z = (c / 32768.0 for c in att)
+    n2 = x * x + y * y + z * z
+    if not 0.01 < n2 < 1.01:
+        return None
+    return (math.sqrt(max(0.0, 1.0 - n2)), x, y, z)
+
+
+def qrot(q, v):
+    """Applique la rotation q (corps -> monde) au vecteur v."""
+    w, x, y, z = q
+    vx, vy, vz = v
+    return (vx * (1 - 2 * (y * y + z * z)) + vy * 2 * (x * y - w * z) + vz * 2 * (x * z + w * y),
+            vx * 2 * (x * y + w * z) + vy * (1 - 2 * (x * x + z * z)) + vz * 2 * (y * z - w * x),
+            vx * 2 * (x * z - w * y) + vy * 2 * (y * z + w * x) + vz * (1 - 2 * (x * x + y * y)))
+
+
+class GlideEngine:
+    """Mode « glisse » : l'appareil posé à plat est poussé sur la table comme une souris.
+
+    * L'accélération (gravité retirée) est ramenée dans le repère de la TABLE grâce au quaternion
+      d'attitude des AirPods : une rotation de l'écouteur pendant le geste ne fausse plus la direction.
+    * Les directions « droite / avant » sont figées au début de chaque geste.
+    * La vitesse est remise à zéro dès l'arrêt (ZUPT) ; la vitesse résiduelle à ce moment est l'erreur
+      accumulée pendant le geste : on rattrape l'écart de position (correction rétroactive).
+    """
+
+    def __init__(self, gcfg, profile=None):
+        self.c = gcfg
+        self.set_profile(profile or {})
+        self.v = [0.0, 0.0]
+        self.still_t = 0.0
+        self.up = None
+        self.a_f = (0.0, 0.0, 0.0)
+        self.in_stroke = False
+        self.stroke_t = 0.0
+        self.axes_w = None
+        self.pending = [0.0, 0.0]          # correction de position (m) à appliquer par le contrôleur
+        self.strokes = 0
+
+    def set_profile(self, p):
+        self.right = vnorm(tuple(p.get("right", (1.0, 0.0, 0.0))))
+        self.fwd = vnorm(tuple(p.get("fwd", (0.0, 1.0, 0.0))))
+
+    def _axes(self, q, up):
+        if q is not None:
+            r = reject(qrot(q, self.right), up)
+            f = reject(qrot(q, self.fwd), up)
+        else:
+            r, f = reject(self.right, up), reject(self.fwd, up)
+        r = vnorm(r)
+        return r, vnorm(reject(f, r))
+
+    def step(self, wc, g, a, dt, q=None):
+        if vlen(g) > 1e-3:
+            gn = vnorm(qrot(q, g) if q is not None else g)
+            self.up = gn if self.up is None else vnorm(tuple(x + 0.1 * (y - x) for x, y in zip(self.up, gn)))
+        if self.up is None:
+            return 0.0, 0.0
+        aw = qrot(q, a) if q is not None else a
+        k = 1.0 - math.exp(-dt / 0.03)                 # lissage ~30 ms du bruit (~0,03 g)
+        self.a_f = tuple(x + k * (y - x) for x, y in zip(self.a_f, aw))
+        ah = reject(self.a_f, self.up)
+        moving = not (vlen(wc) < self.c["still_dps"] and vlen(ah) < self.c["still_acc"])
+        self.still_t = 0.0 if moving else self.still_t + dt
+        if self.still_t >= self.c["still_time_s"]:
+            if self.in_stroke:                        # fin de geste : correction rétroactive
+                self.pending[0] -= self.v[0] * self.stroke_t / 2
+                self.pending[1] -= self.v[1] * self.stroke_t / 2
+                self.strokes += 1
+            self.in_stroke = False
+            self.v = [0.0, 0.0]
+            self.axes_w = self._axes(q, self.up)      # directions mises à jour à l'arrêt seulement
+            return 0.0, 0.0
+        if not self.in_stroke:
+            self.in_stroke, self.stroke_t = True, 0.0
+            if self.axes_w is None:
+                self.axes_w = self._axes(q, self.up)
+        self.stroke_t += dt
+        r, f = self.axes_w
+        ar = soft_deadzone(vdot(ah, r), self.c["accel_deadzone"])
+        af = soft_deadzone(vdot(ah, f), self.c["accel_deadzone"])
+        leak = math.exp(-dt / max(self.c["leak_s"], 0.05))
+        self.v = [(self.v[0] + ar * dt) * leak, (self.v[1] + af * dt) * leak]
+        return self.v[0], self.v[1]
+
+    def take_correction(self):
+        c, self.pending = self.pending, [0.0, 0.0]
+        return c
+
+    def reset(self):
+        self.v = [0.0, 0.0]
+        self.a_f = (0.0, 0.0, 0.0)
+        self.in_stroke = False
+        self.pending = [0.0, 0.0]
+        self.axes_w = None
+
+
+class MotionEngine:
+    """Vitesses (lacet, tangage, roulis) en °/s, indépendantes de l'orientation de l'appareil.
+
+    lacet  = rotation autour de la verticale (donnée par la gravité)
+    tangage = rotation autour de l'axe latéral `lat` (appris en calibration) projeté à l'horizontale
+    roulis = rotation autour de l'axe avant (vertical x latéral)
+    Le biais du gyroscope est ré-estimé automatiquement dès que l'appareil est immobile.
+    """
+
+    def __init__(self, bias_cfg, profile=None):
+        self.bcfg = bias_cfg
+        self.set_profile(profile or DEFAULT_PROFILE)
+        self.bias = (0.0, 0.0, 0.0)
+        self.g = None
+        self.win = []
+        self.gwin = []
+        self.still_t = 0.0
+        self.bias_ok = False
+        self._lat_h = None
+
+    def set_profile(self, p):
+        self.p = {**DEFAULT_PROFILE, **p}
+        self.lat = vnorm(tuple(self.p["lat"]))
+        self._lat_h = None
+
+    def step(self, w, g, dt):
+        if vlen(g) > 1e-3:
+            gn = vnorm(g)
+            self.g = gn if self.g is None else vnorm(tuple(a + 0.15 * (b - a) for a, b in zip(self.g, gn)))
+        if self.g is None:
+            return 0.0, 0.0, 0.0
+        # --- biais : fenêtre glissante ; si l'étendue reste faible assez longtemps -> immobile
+        self.win.append(w)
+        self.gwin.append(self.g)
+        if len(self.win) > 40:
+            del self.win[0]
+            del self.gwin[0]
+        rng = max(max(s[k] for s in self.win) - min(s[k] for s in self.win) for k in range(3))
+        g_move = math.degrees(math.acos(min(1.0, max(-1.0, vdot(self.gwin[0], self.gwin[-1])))))
+        if rng < self.bcfg["still_range_dps"] and g_move < 1.5 and len(self.win) >= 8:
+            self.still_t += dt
+        else:
+            self.still_t = 0.0
+        if self.still_t >= self.bcfg["still_time_s"]:
+            mean = tuple(sum(s[k] for s in self.win) / len(self.win) for k in range(3))
+            # une rotation lente et régulière n'est PAS un biais : on n'accepte que des écarts plausibles
+            jump = vlen(vsub(mean, self.bias))
+            if jump < (20.0 if not self.bias_ok else 5.0):
+                r = 1.0 if not self.bias_ok else self.bcfg["rate"]
+                self.bias = tuple(b + r * (m - b) for b, m in zip(self.bias, mean))
+                self.bias_ok = True
+        wc = vsub(w, self.bias)
+        # --- projection
+        up = self.g
+        yaw = vdot(wc, up)
+        lat_h = reject(self.lat, up)
+        if vlen(lat_h) < 0.25:          # axe latéral presque vertical : garder le précédent
+            lat_h = self._lat_h or lat_h
+        lat_h = vnorm(lat_h)
+        self._lat_h = lat_h
+        wh = reject(wc, up)
+        pitch = vdot(wh, lat_h)
+        roll = vdot(wh, vcross(up, lat_h))
+        return yaw * self.p["yaw_sign"], pitch * self.p["pitch_sign"], roll * self.p["roll_sign"]
+
+
+# --- calibration (fonctions pures, testées)
+class CalibAccumulator:
+    """Intègre les mesures d'une étape de calibration (corps de l'appareil)."""
+
+    def __init__(self, bias, g_ref):
+        self.bias, self.up = bias, vnorm(g_ref)
+        self.yaw = 0.0
+        self.horiz = (0.0, 0.0, 0.0)
+
+    def add(self, w, dt):
+        wc = vsub(w, self.bias)
+        self.yaw += vdot(wc, self.up) * dt
+        self.horiz = tuple(h + c * dt for h, c in zip(self.horiz, reject(wc, self.up)))
+
+    def horiz_deg(self):
+        return vlen(self.horiz)
+
+
+def profile_from_calibration(up, yaw_left_integral, up_horiz_integral, roll_right_integral_vec):
+    """Construit le profil : gauche = lacet négatif, haut = tangage positif, droite = roulis positif."""
+    lat = vnorm(up_horiz_integral)                 # lever la tête = rotation autour de l'axe latéral
+    prof = {"yaw_sign": -1 if yaw_left_integral > 0 else 1, "lat": [round(c, 4) for c in lat],
+            "pitch_sign": 1, "roll_sign": 1}
+    fwd = vcross(vnorm(up), vnorm(reject(lat, vnorm(up))))
+    prof["roll_sign"] = 1 if vdot(roll_right_integral_vec, fwd) > 0 else -1
+    return prof
+
+
+def glide_profile(right_v, fwd_v):
+    """Axes de glisse (repère corps) à partir des vitesses de pointe mesurées."""
+    r = vnorm(right_v)
+    f = vnorm(reject(fwd_v, r))
+    return {"right": [round(c, 4) for c in r], "fwd": [round(c, 4) for c in f]}
+
+
+def corner_range(tl, br):
+    """Angles (lacet, tangage) visés pour les coins haut-gauche et bas-droit -> amplitudes en degrés."""
+    (yl, pt), (yr, pb) = tl, br
+    if not (yl < -2 and yr > 2 and pt > 1 and pb < -1):
+        return None
+    return {"x_neg": round(-yl, 2), "x_pos": round(yr, 2), "y_pos": round(pt, 2), "y_neg": round(-pb, 2)}
+
+
+# =========================================================================== sortie souris
+class Pointer:
+    ABS_MAX = 32767
+
+    def __init__(self):
+        from evdev import UInput, ecodes as e, AbsInfo
+        self.e = e
+        keys = [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]
+        self.rel = UInput({e.EV_KEY: keys, e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL]},
+                          name="AirPods Mouse (souris)", vendor=0x05AC, product=0x2013)
+        info = AbsInfo(value=0, min=0, max=self.ABS_MAX, fuzz=0, flat=0, resolution=0)
+        self.abs = UInput({e.EV_KEY: keys, e.EV_ABS: [(e.ABS_X, info), (e.ABS_Y, info)]},
+                          name="AirPods Mouse (pointeur)", vendor=0x05AC, product=0x2014)
+        self._fx = self._fy = 0.0
+        self._wheel = 0.0
+        self._last_abs = None
+
+    def move_abs(self, fx, fy):
+        e = self.e
+        ix = int(min(max(fx, 0.0), 1.0) * self.ABS_MAX)
+        iy = int(min(max(fy, 0.0), 1.0) * self.ABS_MAX)
+        if (ix, iy) == self._last_abs:
+            return
+        self._last_abs = (ix, iy)
+        self.abs.write(e.EV_ABS, e.ABS_X, ix)
+        self.abs.write(e.EV_ABS, e.ABS_Y, iy)
+        self.abs.syn()
+
+    def move_rel(self, dx, dy):
+        e = self.e
+        self._fx += dx
+        self._fy += dy
+        ix, iy = int(self._fx), int(self._fy)
+        self._fx -= ix
+        self._fy -= iy
+        if ix or iy:
+            if ix:
+                self.rel.write(e.EV_REL, e.REL_X, ix)
+            if iy:
+                self.rel.write(e.EV_REL, e.REL_Y, iy)
+            self.rel.syn()
+            self._last_abs = None
+
+    def click(self, button="left"):
+        e = self.e
+        code = {"left": e.BTN_LEFT, "right": e.BTN_RIGHT, "middle": e.BTN_MIDDLE}[button]
+        for v in (1, 0):
+            self.rel.write(e.EV_KEY, code, v)
+            self.rel.syn()
+            time.sleep(0.015)
+
+    def scroll(self, lines):
+        self._wheel += lines
+        n = int(self._wheel)
+        if n:
+            self._wheel -= n
+            self.rel.write(self.e.EV_REL, self.e.REL_WHEEL, n)
+            self.rel.syn()
+
+    def close(self):
+        self.rel.close()
+        self.abs.close()
+
+
+class NullPointer:
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+
+
+def notify(cfg, text):
+    log.info(text)
+    if cfg.get("notifications") and shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", "-a", "AirPods Mouse", "-t", "1500", "AirPods Mouse", text],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class OneEuro:
+    def __init__(self, mincutoff, beta, dcutoff=1.0):
+        self.mincutoff, self.beta, self.dcutoff = mincutoff, beta, dcutoff
+        self.x = self.dx = None
+
+    @staticmethod
+    def _a(cutoff, dt):
+        return 1.0 / (1.0 + 1.0 / (2 * math.pi * cutoff * dt))
+
+    def __call__(self, x, dt):
+        if self.x is None or dt <= 0:
+            self.x, self.dx = x, 0.0
+            return x
+        dx = (x - self.x) / dt
+        self.dx += self._a(self.dcutoff, dt) * (dx - self.dx)
+        self.x += self._a(self.mincutoff + self.beta * abs(self.dx), dt) * (x - self.x)
+        return self.x
+
+    def reset(self, x=0.0):
+        self.x, self.dx = x, 0.0
+
+
+def soft_deadzone(v, dz):
+    return 0.0 if abs(v) <= dz else math.copysign(abs(v) - dz, v)
+
+
+# =========================================================================== moteur
+class Controller:
+    def __init__(self, cfg, pointer, diag=False, cfg_path=None):
+        self.cfg = cfg
+        self.cfg_path = cfg_path
+        self.ptr = pointer
+        self.diag = diag
+        self.pid = "0000"
+        self.place = "ear"
+        self.engine = MotionEngine(cfg["bias"])
+        self.glide = GlideEngine(cfg["glisse"])
+        self._make_filters()
+        self.paused = False
+        self.scroll_mode = False
+        self.ang = [0.0, 0.0]            # angles intégrés (mode pointeur)
+        self.vel = (0.0, 0.0)            # vitesse curseur px/s (mode souris)
+        self.target = (0.5, 0.5)
+        self.cur = (0.5, 0.5)
+        self.last_ts = None
+        self.last_sample = 0.0
+        self.last_ht = 0.0
+        self.last_start_sent = 0.0
+        self.n = 0
+        self.rates = (0.0, 0.0, 0.0)
+        self.roll_ang = 0.0
+        self.roll_t0 = None
+        self.roll_latched = False
+        self.dwell_anchor = None
+        self.dwell_t0 = 0.0
+        self.dwell_moved = 0.0
+        self.dwell_fired = True
+        self.pos_px = [0.0, 0.0]
+        self._last_print = 0.0
+        self._last_render = time.monotonic()
+        self._cfg_mtime = self._mtime()
+        self.history = []            # [(temps, w, g, (lacet, tangage, roulis), att)] pour l'interface
+        self.sample_hooks = []       # callbacks(w, g, dt) (calibration dans l'interface)
+        self.sample_times = []
+
+    def _make_filters(self):
+        s = min(max(float(self.cfg["smoothing"]), 0.0), 1.0)
+        mc = 8.0 + (0.6 - 8.0) * s
+        self.fy, self.fp = OneEuro(mc, 0.02), OneEuro(mc, 0.02)
+
+    # ---- configuration à chaud
+    def _mtime(self):
+        try:
+            return os.path.getmtime(self.cfg_path) if self.cfg_path else 0
+        except OSError:
+            return 0
+
+    def maybe_reload(self):
+        m = self._mtime()
+        if m and m != self._cfg_mtime:
+            self._cfg_mtime = m
+            try:
+                new = load_config(self.cfg_path)
+            except (OSError, ValueError) as e:
+                log.warning("config.json illisible (%s)", e)
+                return
+            old_mode = self.cfg["mode"]
+            self.cfg.clear()
+            self.cfg.update(new)
+            self.engine.bcfg = self.cfg["bias"]
+            self.glide.c = self.cfg["glisse"]
+            self._make_filters()
+            self._load_profile()
+            if self.cfg["mode"] != old_mode:
+                self.recenter(quiet=True)
+            log.info("Réglages rechargés")
+
+    # ---- source / profil
+    @property
+    def source(self):
+        if self.cfg["source"] != "auto":
+            return self.cfg["source"]
+        return {"ear": "head", "case": "case", "out": "hand"}.get(self.place, "head")
+
+    def profile_key(self):
+        return f"{self.pid}_{self.source}"
+
+    def _load_profile(self):
+        self.glide.set_profile(self.cfg["profiles"].get(f"{self.pid}_glide", {}))
+        prof = self.cfg["profiles"].get(self.profile_key())
+        if prof is None or "lat" not in prof:
+            log.warning("Profil %s non calibré : lance --calibrate dans cette position",
+                        self.profile_key())
+            prof = DEFAULT_PROFILE
+        self.engine.set_profile(prof)
+
+    def set_device(self, pid):
+        self.pid = pid
+        self._load_profile()
+
+    def set_place(self, place):
+        if place != self.place:
+            self.place = place
+            if self.cfg["source"] != "auto":       # source choisie à la main : rien ne bouge
+                return
+            log.info("Position détectée : %s -> source %s", place, SOURCE_NAMES[self.source])
+            self._load_profile()
+            self.recenter(quiet=True)
+
+    # ---- commandes
+    def command(self, cmd):
+        cmd = cmd.strip().lower()
+        if cmd == "recenter":
+            self.recenter()
+        elif cmd in ("toggle", "toggle_pause"):
+            self.set_paused(not self.paused)
+        elif cmd == "pause":
+            self.set_paused(True)
+        elif cmd == "resume":
+            self.set_paused(False)
+        elif cmd in ("scroll", "toggle_scroll"):
+            self.scroll_mode = not self.scroll_mode
+            notify(self.cfg, "Mode défilement" if self.scroll_mode else "Mode curseur")
+        elif cmd in ("mode", "toggle_mode"):
+            order = ["souris", "pointeur", "glisse"]
+            new = order[(order.index(self.cfg["mode"]) + 1) % 3] if self.cfg["mode"] in order else "souris"
+            self.cfg["mode"] = new
+            if self.cfg_path:
+                update_config_file(self.cfg_path, {"mode": new})
+                self._cfg_mtime = self._mtime()
+            self.recenter(quiet=True)
+            notify(self.cfg, f"Mode {new}")
+        elif cmd in ("left_click", "right_click", "middle_click"):
+            if not self.paused:
+                self.ptr.click(cmd.split("_")[0])
+                log.info("Clic %s", cmd.split("_")[0])
+        elif cmd == "reload":
+            self._cfg_mtime = 0
+            self.maybe_reload()
+        elif cmd == "quit":
+            raise KeyboardInterrupt
+        elif cmd not in ("none", ""):
+            log.warning("Commande inconnue : %s", cmd)
+
+    def recenter(self, quiet=False):
+        self.ang = [0.0, 0.0]
+        self.vel = (0.0, 0.0)
+        self.glide.reset()
+        self.fy.reset(0.0)
+        self.fp.reset(0.0)
+        self.target = self.cur = (0.5, 0.5)
+        if not self.diag:
+            self.ptr.move_abs(0.5, 0.5)
+        if not quiet:
+            notify(self.cfg, "Recentré")
+
+    def set_paused(self, p):
+        self.paused = p
+        self.vel = (0.0, 0.0)
+        notify(self.cfg, "Pause" if p else "Contrôle actif")
+
+    @property
+    def inactive(self):
+        return self.paused
+
+    # ---- échantillons
+    def on_packet(self, pkt, aap):
+        now = time.monotonic()
+        for blk in aap.process(pkt):
+            self.last_ht = now
+            self.on_block(blk, now)
+        # l'état oreille oscille quand on tient un écouteur (capteur de proximité) : on attend 1,5 s
+        if aap.place and not getattr(self, "_place_known", False):
+            self._place_known = True              # premier état reçu : appliqué tout de suite
+            self.set_place(aap.place)
+        elif aap.place and aap.place != self.place:
+            if aap.place != getattr(self, "_place_cand", None):
+                self._place_cand, self._place_since = aap.place, now
+            elif now - self._place_since >= 3.0:
+                self.set_place(aap.place)
+        else:
+            self._place_cand = None
+        while aap.stem_events:
+            kind = aap.stem_events.pop(0)
+            log.info("Pression tige : %s", kind)
+            st = self.cfg["stem"]
+            if st["enabled"] and not self.diag:
+                action = st.get(kind, "none")
+                if action in ("toggle_pause", "toggle", "recenter") or not self.paused:
+                    self.command(action)
+
+    def on_block(self, blk, now):
+        ts, w, g = parse_block(blk, self.cfg["gyro_dps_per_lsb"])
+        dt = (ts - self.last_ts) / 1e9 if self.last_ts else 0.0
+        if not 0.0 < dt < 0.15:
+            dt = min(max(now - self.last_sample, 0.001), 0.05) if self.last_sample else 0.01
+        self.last_ts, self.last_sample = ts, now
+        self.n += 1
+        a = parse_accel(blk)
+        self.last_acc = a
+        yaw, pitch, roll = self.engine.step(w, g, dt)
+        for hook in list(self.sample_hooks):
+            hook(w, g, dt, a)
+        self.history.append((now, w, g, (yaw, pitch, roll), struct.unpack_from("<hhh", blk, 20)))
+        if len(self.history) > 1200:
+            del self.history[:200]
+        self.sample_times.append(now)
+        if len(self.sample_times) > 1200:
+            del self.sample_times[:200]
+        if self.cfg["mode"] == "glisse":
+            q = quat_from_att(struct.unpack_from("<hhh", blk, 20))
+            self.on_glide(vsub(w, self.engine.bias), g, a, dt, now, q)
+        else:
+            self.on_rates(yaw, pitch, roll, dt, now)
+
+    def on_glide(self, wc, g, a, dt, now, q=None):
+        c = self.cfg
+        vr, vf = self.glide.step(wc, g, a, dt, q)
+        self.rates = (vr * 100, vf * 100, 0.0)       # cm/s, pour l'affichage
+        corr = self.glide.take_correction()
+        if self.diag or self.inactive:
+            self.vel = (0.0, 0.0)
+            return
+        ix = -1.0 if c["invert_x"] else 1.0
+        iy = -1.0 if c["invert_y"] else 1.0
+        k = c["glisse"]["px_per_cm"] * 100.0           # px par mètre
+        self.vel = (ix * vr * k * c["sensitivity_x"], -iy * vf * k * c["sensitivity_y"])
+        if corr[0] or corr[1]:                        # rattrapage de fin de geste
+            self.ptr.move_rel(ix * corr[0] * k * c["sensitivity_x"], -iy * corr[1] * k * c["sensitivity_y"])
+        if c["dwell_click"]["enabled"]:
+            self.dwell(now)
+
+    def on_rates(self, yaw, pitch, roll, dt, now):
+        c = self.cfg
+        yaw_f, pitch_f = self.fy(yaw, dt), self.fp(pitch, dt)
+        self.rates = (yaw_f, pitch_f, roll)
+        ix = -1.0 if c["invert_x"] else 1.0
+        iy = -1.0 if c["invert_y"] else 1.0
+        if self.diag:
+            if now - self._last_print > 0.1:
+                self._last_print = now
+                print(f"\r[{SOURCE_NAMES[self.source]:7s}] lacet {yaw_f:+7.1f}°/s  tangage {pitch_f:+7.1f}°/s"
+                      f"  roulis {roll:+7.1f}°/s  biais {'ok' if self.engine.bias_ok else '..'}"
+                      f"  éch. {self.n}   ", end="", flush=True)
+            return
+        if self.inactive:
+            self.vel = (0.0, 0.0)
+            return
+        # roulis : clic par inclinaison rapide (intégrateur à fuite)
+        self.roll_ang = self.roll_ang * math.exp(-dt / 0.4) + roll * dt
+        if c["roll_click"]["enabled"] and self.roll_gesture(now):
+            self.vel = (0.0, 0.0)
+            return
+        if self.scroll_mode:
+            self.ptr.scroll(-iy * pitch_f * dt * c["scroll"]["lines_per_deg"] * 4)
+            self.vel = (0.0, 0.0)
+            return
+        if c["mode"] == "souris":
+            s = c["souris"]
+            dz = s["rate_deadzone_dps"]
+            vy_, vp_ = soft_deadzone(yaw_f, dz), soft_deadzone(pitch_f, dz)
+            speed = math.hypot(vy_, vp_)
+            gain = s["px_per_deg"] * (1.0 + s["acceleration"] * min(speed / 60.0, 2.5))
+            self.vel = (ix * vy_ * gain * c["sensitivity_x"], -iy * vp_ * gain * c["sensitivity_y"])
+        else:
+            p = c["pointeur"]
+            dz = p.get("rate_deadzone_dps", 0.6)        # identique à la calibration des coins
+            self.ang[0] += soft_deadzone(yaw_f, dz) * dt
+            self.ang[1] += soft_deadzone(pitch_f, dz) * dt
+            rng = self.engine.p.get("range")
+            if rng:   # calibré en visant les coins : angle du coin -> bord exact de l'écran
+                sx, sy = c["sensitivity_x"], c["sensitivity_y"]
+                xl, xr = rng["x_neg"] / sx, rng["x_pos"] / sx
+                yu, yd = rng["y_pos"] / sy, rng["y_neg"] / sy
+                self.ang[0] = min(max(self.ang[0], -xl), xr)
+                self.ang[1] = min(max(self.ang[1], -yd), yu)
+                fx = 0.5 + 0.5 * (self.ang[0] / xr if self.ang[0] > 0 else self.ang[0] / xl)
+                fy = 0.5 - 0.5 * (self.ang[1] / yu if self.ang[1] > 0 else self.ang[1] / yd)
+                self.target = (0.5 + ix * (fx - 0.5), 0.5 + iy * (fy - 0.5))
+            else:
+                k = p["screen_pct_per_deg"] / 100.0
+                kx, ky = k * c["sensitivity_x"], k * c["sensitivity_y"] * 1.6
+                # pas d'accumulation au-delà des bords : on revient tout de suite en sens inverse
+                lim_x, lim_y = 0.5 / max(kx, 1e-6), 0.5 / max(ky, 1e-6)
+                self.ang[0] = min(max(self.ang[0], -lim_x), lim_x)
+                self.ang[1] = min(max(self.ang[1], -lim_y), lim_y)
+                self.target = (0.5 + ix * self.ang[0] * kx, 0.5 - iy * self.ang[1] * ky)
+        if c["dwell_click"]["enabled"]:
+            self.dwell(now)
+
+    def render(self, now):
+        dt = min(now - self._last_render, 0.1)
+        self._last_render = now
+        if self.diag or self.inactive:
+            return
+        if self.cfg["mode"] in ("souris", "glisse"):
+            # trous dans le flux Bluetooth : on continue sur la lancée 80 ms puis on freine
+            age = now - self.last_sample
+            fade = 1.0 if age < 0.08 else max(0.0, 1.0 - (age - 0.08) / 0.1)
+            dx, dy = self.vel[0] * dt * fade, self.vel[1] * dt * fade
+            if dx or dy:
+                self.ptr.move_rel(dx, dy)
+                self.pos_px[0] += dx
+                self.pos_px[1] += dy
+        else:
+            a = 1.0 - math.exp(-dt / max(self.cfg["render_lag_s"], 0.001))
+            nx = self.cur[0] + (self.target[0] - self.cur[0]) * a
+            ny = self.cur[1] + (self.target[1] - self.cur[1]) * a
+            self.ptr.move_abs(nx, ny)
+            self.pos_px = [nx * 1920, ny * 1200]
+            self.cur = (nx, ny)
+
+    def roll_gesture(self, now):
+        rc = self.cfg["roll_click"]
+        a = abs(self.roll_ang)
+        if self.roll_latched:
+            if a < rc["trigger_deg"] * 0.5:
+                self.roll_latched = False
+            return True
+        if a > 4.0 and self.roll_t0 is None:
+            self.roll_t0 = now
+        elif a < 2.0:
+            self.roll_t0 = None
+        if a >= rc["trigger_deg"] and self.roll_t0 is not None:
+            if now - self.roll_t0 <= rc["max_duration_s"]:
+                action = rc["right"] if self.roll_ang > 0 else rc["left"]
+                log.info("Inclinaison %s -> %s", "droite" if self.roll_ang > 0 else "gauche", action)
+                self.command(action)
+            self.roll_latched = True
+            self.roll_t0 = None
+            return True
+        return a > 4.0
+
+    def dwell(self, now):
+        dc = self.cfg["dwell_click"]
+        x, y = self.pos_px
+        if self.dwell_anchor is None:
+            self.dwell_anchor, self.dwell_t0 = (x, y), now
+            return
+        d = math.hypot(x - self.dwell_anchor[0], y - self.dwell_anchor[1])
+        if d > dc["radius_px"]:
+            self.dwell_moved += d
+            self.dwell_anchor, self.dwell_t0, self.dwell_fired = (x, y), now, False
+        elif not self.dwell_fired and self.dwell_moved >= dc["min_move_px"] and now - self.dwell_t0 >= dc["time_s"]:
+            self.dwell_fired, self.dwell_moved = True, 0.0
+            log.info("Clic par immobilité")
+            self.ptr.click("left")
+
+
+def open_ctrl_socket():
+    try:
+        os.unlink(CTRL_SOCK)
+    except FileNotFoundError:
+        pass
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    s.bind(CTRL_SOCK)
+    os.chmod(CTRL_SOCK, 0o600)
+    return s
+
+
+def run(cfg, cfg_path, diag=False, web_port=8737):
+    ctrl = open_ctrl_socket()
+    ptr = NullPointer() if diag else Pointer()
+    ctl = Controller(cfg, ptr, diag=diag, cfg_path=cfg_path)
+    web = None
+    if web_port:
+        try:
+            import mousepods_web
+            web = mousepods_web.WebUI(ctl, cfg_path, web_port)
+            web.start()
+            log.info("Interface : http://127.0.0.1:%d", web_port)
+        except Exception as e:  # l'interface ne doit jamais empêcher la souris de marcher
+            log.warning("Interface web indisponible : %s", e)
+    stem_on = cfg["stem"]["enabled"] and not diag
+    backoff = 2
+    last_recovery = [-1e9]
+    warned_case = False
+    cfg_addr_hint = [None]
+    log.info("Démarrage — mode %s, source %s", "DIAGNOSTIC" if diag else cfg["mode"], cfg["source"])
+    aap = None
+    try:
+        while True:
+            aap = AAPClient(cfg["device_address"], cfg["auto_connect"], cfg["sensor_interval_us"])
+            if cfg_addr_hint[0]:
+                aap.addr = cfg_addr_hint[0]
+            try:
+                aap.connect()
+            except (OSError, subprocess.TimeoutExpired) as e:
+                log.warning("Connexion impossible (%s) — nouvel essai dans %ss", e, backoff)
+                if web:
+                    web.set_status(f"Recherche des AirPods… ({e})")
+                t_end = time.monotonic() + backoff
+                while time.monotonic() < t_end:
+                    r, _, _ = select.select([ctrl], [], [], min(0.2, max(0.0, t_end - time.monotonic())))
+                    if r:
+                        ctl.command(ctrl.recv(256).decode(errors="ignore"))
+                    if web:
+                        web.process_queue()
+                backoff = min(backoff * 2, 20)
+                continue
+            backoff = 2
+            ctl._place_known = False
+            if web:
+                web.attach(aap)
+            ctl.set_device(aap.pid)
+            if stem_on:
+                aap.send(PKT_STEM_EVENTS_ON)
+            aap.start_tracking()
+            ctl.last_start_sent = ctl.last_ht = time.monotonic()
+            connected_at = time.monotonic()
+            frame = 1.0 / max(int(cfg["render_hz"]), 10)
+            next_frame = time.monotonic()
+            next_reload = time.monotonic() + 1.0
+            try:
+                while True:
+                    r, _, _ = select.select([aap.sock, ctrl], [], [], max(0.0, next_frame - time.monotonic()))
+                    if aap.sock in r:
+                        pkt = aap.sock.recv(8192)
+                        if not pkt:
+                            raise OSError("canal fermé")
+                        if web:
+                            web.feed_packet(pkt)
+                        ctl.on_packet(pkt, aap)
+                    if web:
+                        web.process_queue()
+                    if ctrl in r:
+                        ctl.command(ctrl.recv(256).decode(errors="ignore"))
+                    now = time.monotonic()
+                    if now >= next_frame:
+                        ctl.render(now)
+                        next_frame = now + frame
+                    if now >= next_reload:
+                        next_reload = now + 1.0
+                        ctl.maybe_reload()
+                        if int(cfg["sensor_interval_us"]) != aap.interval_us:
+                            aap.interval_us = int(cfg["sensor_interval_us"])
+                            aap.start_tracking()
+                    wait = 20 if ctl.place == "case" else 4
+                    if now - ctl.last_ht > wait and now - ctl.last_start_sent > wait:
+                        log.info("Pas de données de mouvement — relance du flux")
+                        aap.start_tracking()
+                        ctl.last_start_sent = now
+                    # AirPods bloqués (plus d'annonce des capteurs alors qu'ils sont sortis du boîtier) :
+                    # seule une reconnexion Bluetooth complète les débloque.
+                    if (aap.place in ("ear", "out") and not aap.rhid_devs and aap.pid == "2013"
+                            and now - ctl.last_ht > 10 and now - connected_at > 10
+                            and now - last_recovery[0] > 60):
+                        last_recovery[0] = now
+                        log.warning("Capteurs non annoncés — reconnexion Bluetooth complète")
+                        aap.close()
+                        subprocess.run(["bluetoothctl", "disconnect", aap.addr], capture_output=True, timeout=10)
+                        time.sleep(2)
+                        raise OSError("relance Bluetooth")
+                    if aap.place == "case" and aap.pid == "2013" and not aap.rhid_devs and not warned_case:
+                        warned_case = True
+                        notify(cfg, "AirPods 3 : capteurs coupés dans le boîtier — sors un écouteur")
+            except OSError as e:
+                log.warning("Canal AAP perdu (%s), reconnexion…", e)
+                if web:
+                    web.set_status("Connexion perdue — reconnexion…")
+                prev_addr = aap.addr
+                aap.close()
+                time.sleep(0.3)
+                if cfg["device_address"] == "auto" and prev_addr:
+                    cfg_addr_hint[0] = prev_addr
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if diag:
+            print()
+        if aap:
+            aap.close(stem_restore=stem_on)
+        if web:
+            web.stop()
+        ptr.close()
+        ctrl.close()
+        try:
+            os.unlink(CTRL_SOCK)
+        except OSError:
+            pass
+        log.info("Arrêté")
+
+
+# =========================================================================== lecture capteur (thread, pour les fenêtres)
+class SensorReader(threading.Thread):
+    def __init__(self, cfg):
+        super().__init__(daemon=True)
+        self.cfg = cfg
+        self.lock = threading.Lock()
+        self.samples = []            # (temps, dt, w, g)
+        self.place = None
+        self.pid = "0000"
+        self.status = "Connexion aux AirPods…"
+        self.stop = False
+
+    def run(self):
+        aap = None
+        while not self.stop:
+            aap = AAPClient(self.cfg["device_address"], self.cfg["auto_connect"],
+                            self.cfg["sensor_interval_us"])
+            try:
+                aap.connect()
+                self.pid = aap.pid
+                aap.start_tracking()
+                self.status = "Connecté — en attente des mesures…"
+                last_ts = None
+                last_ht = last_start = time.monotonic()
+                while not self.stop:
+                    r, _, _ = select.select([aap.sock], [], [], 0.2)
+                    now = time.monotonic()
+                    if r:
+                        pkt = aap.sock.recv(8192)
+                        if not pkt:
+                            raise OSError("canal fermé")
+                        for blk in aap.process(pkt):
+                            ts, w, g = parse_block(blk, self.cfg["gyro_dps_per_lsb"])
+                            dt = (ts - last_ts) / 1e9 if last_ts else 0.01
+                            if not 0 < dt < 0.15:
+                                dt = 0.01
+                            last_ts, last_ht = ts, now
+                            with self.lock:
+                                self.samples.append((now, dt, w, g))
+                                del self.samples[:-3000]
+                            self.status = "Mesures reçues"
+                        self.place = aap.place or self.place
+                    if now - last_ht > 4 and now - last_start > 4:
+                        aap.start_tracking()
+                        last_start = now
+                        self.status = "Aucune mesure (écouteurs portés / boîtier ouvert ?)"
+            except (OSError, subprocess.TimeoutExpired) as e:
+                self.status = f"Connexion perdue ({e}) — nouvel essai…"
+                if aap:
+                    aap.close()
+                time.sleep(2)
+        if aap:
+            aap.close()
+
+    def since(self, t0):
+        with self.lock:
+            return [s for s in self.samples if s[0] > t0]
+
+
+# =========================================================================== calibration à l'écran
+CALIB_TEXT = {
+    "head": {"still": "Regarde l'écran et ne bouge plus", "yaw": "Tourne la tête vers la GAUCHE",
+             "pitch": "Lève la tête vers le HAUT", "roll": "Penche la tête vers l'épaule DROITE",
+             "back": "Reviens en face de l'écran et ne bouge plus"},
+    "case": {"still": "Pose le boîtier ouvert à plat, pointé vers l'écran", "yaw": "Tourne le boîtier vers la GAUCHE",
+             "pitch": "Pointe le boîtier vers le HAUT", "roll": "Fais pivoter le boîtier vers la DROITE (comme une clé)",
+             "back": "Reviens pointé vers l'écran, immobile"},
+    "hand": {"still": "Tiens l'AirPod immobile, pointé vers l'écran", "yaw": "Tourne l'AirPod vers la GAUCHE",
+             "pitch": "Pointe l'AirPod vers le HAUT", "roll": "Fais pivoter l'AirPod vers la DROITE (comme une clé)",
+             "back": "Reviens pointé vers l'écran, immobile"},
+}
+CALIB_STEPS = ["still", "yaw", "back", "pitch", "back", "roll", "back"]
+
+
+def calibrate(cfg, cfg_path):
+    import tkinter as tk
+    reader = SensorReader(cfg)
+    reader.start()
+    root = tk.Tk()
+    root.title("AirPods Mouse — Calibration")
+    root.geometry("800x520")
+    root.configure(bg="#111")
+    top = tk.Frame(root, bg="#111")
+    top.pack(pady=(12, 0))
+    src_var = tk.StringVar(value="auto")
+    tk.Label(top, text="Source :", fg="#ccc", bg="#111", font=("Sans", 12)).pack(side="left")
+    for val, txt in (("auto", "auto"), ("head", "tête"), ("case", "boîtier"), ("hand", "AirPod en main")):
+        tk.Radiobutton(top, text=txt, value=val, variable=src_var, fg="#ccc", bg="#111",
+                       selectcolor="#333", font=("Sans", 12)).pack(side="left", padx=4)
+    title = tk.Label(root, text="", fg="#9cf", bg="#111", font=("Sans", 14))
+    title.pack(pady=(14, 4))
+    instr = tk.Label(root, text="", fg="white", bg="#111", font=("Sans", 26, "bold"), justify="center",
+                     wraplength=760)
+    instr.pack(pady=16, expand=True)
+    canvas = tk.Canvas(root, width=640, height=34, bg="#222", highlightthickness=0)
+    canvas.pack(pady=6)
+    status = tk.Label(root, text="", fg="#aaa", bg="#111", font=("Sans", 11))
+    status.pack(pady=4)
+    btn = tk.Button(root, text="Recommencer", font=("Sans", 12))
+    btn.pack(pady=(0, 14))
+
+    st = {}
+
+    def restart():
+        st.clear()
+        st.update(i=0, t0=time.monotonic(), still_since=None, bias=None, up=None, acc=None,
+                  yaw=None, pitch=None, roll=None, done=False, source=None)
+    btn.configure(command=restart)
+    restart()
+
+    def bar(frac, color="#39f"):
+        canvas.delete("all")
+        canvas.create_rectangle(0, 0, int(640 * min(max(frac, 0.0), 1.0)), 34, fill=color, width=0)
+
+    def current_source():
+        if src_var.get() != "auto":
+            return src_var.get()
+        return {"ear": "head", "case": "case", "out": "hand"}.get(reader.place or "ear", "head")
+
+    def finish():
+        prof = profile_from_calibration(st["up"], st["yaw"], st["pitch"], st["roll"])
+        key = f"{reader.pid}_{st['source']}"
+        with open(cfg_path) as f:
+            user = json.load(f)
+        user.setdefault("profiles", {})[key] = prof
+        update_config_file(cfg_path, {"profiles": user["profiles"]})
+        instr.configure(text="✔ Calibration réussie !\nTu peux fermer cette fenêtre.")
+        title.configure(text=f"Profil enregistré : {key}")
+        bar(1, "#3c6")
+        st["done"] = True
+
+    def tick():
+        status.configure(text=f"{reader.status}   |   écouteurs : {reader.place or '?'}")
+        if not st["done"]:
+            now = time.monotonic()
+            samples = reader.since(st["t0"])
+            if st["source"] is None:
+                st["source"] = current_source()
+            src = st["source"]
+            step = CALIB_STEPS[st["i"]]
+            title.configure(text=f"Source : {SOURCE_NAMES[src].upper()}  —  étape {st['i'] + 1}/{len(CALIB_STEPS)}")
+            instr.configure(text=CALIB_TEXT[src][step])
+            if not samples:
+                bar(0)
+            elif step in ("still", "back"):
+                recent = [s for s in samples if s[0] > now - 0.4]
+                ws = [s[2] for s in recent]
+                rng = max((max(w[k] for w in ws) - min(w[k] for w in ws)) for k in range(3)) if len(ws) > 4 else 99
+                if rng < 6.0:
+                    st["still_since"] = st["still_since"] or now
+                    held = now - st["still_since"]
+                    bar(held / 1.0, "#3c6")
+                    if held >= 1.0:
+                        if step == "still":
+                            st["bias"] = tuple(sum(w[k] for w in ws) / len(ws) for k in range(3))
+                            gs = [s[3] for s in recent]
+                            st["up"] = vnorm(tuple(sum(g[k] for g in gs) / len(gs) for k in range(3)))
+                        st["i"] += 1
+                        st["t0"], st["still_since"], st["acc"] = now, None, None
+                else:
+                    st["still_since"] = None
+                    bar(0)
+            else:
+                if st["acc"] is None:
+                    st["acc"] = CalibAccumulator(st["bias"], st["up"])
+                    st["n_used"] = 0
+                for s in samples[st["n_used"]:]:
+                    st["acc"].add(s[2], s[1])
+                st["n_used"] = len(samples)
+                acc = st["acc"]
+                mag = abs(acc.yaw) if step == "yaw" else acc.horiz_deg()
+                need = 20.0
+                bar(mag / need)
+                if mag >= need:
+                    if step == "yaw":
+                        st["yaw"] = acc.yaw
+                    elif step == "pitch":
+                        st["pitch"] = acc.horiz
+                    else:
+                        st["roll"] = acc.horiz
+                    st["i"] += 1
+                    st["t0"], st["still_since"], st["acc"] = now, None, None
+            if st["i"] >= len(CALIB_STEPS):
+                finish()
+        root.after(40, tick)
+
+    tick()
+
+    def close():
+        reader.stop = True
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", close)
+    root.mainloop()
+    reader.stop = True
+
+
+# =========================================================================== panneau de réglages
+def settings_window(cfg_path):
+    import tkinter as tk
+    from tkinter import ttk
+    cfg = load_config(cfg_path)
+    root = tk.Tk()
+    root.title("AirPods Mouse — Réglages")
+    root.geometry("560x820")
+    pending = {"job": None}
+    vars_ = {}
+
+    def save():
+        pending["job"] = None
+        upd = {"mode": vars_["mode"].get(), "source": vars_["source"].get(),
+               "invert_x": vars_["invert_x"].get(), "invert_y": vars_["invert_y"].get(),
+               "souris": {}, "pointeur": {}, "stem": {}, "roll_click": {}, "dwell_click": {}}
+        for key, (sec, var) in sliders.items():
+            v = round(float(var.get()), 4)
+            if sec:
+                upd[sec][key] = v
+            else:
+                upd[key] = int(v) if key == "sensor_interval_us" else v
+        upd["stem"]["enabled"] = vars_["stem"].get()
+        upd["roll_click"]["enabled"] = vars_["roll"].get()
+        upd["dwell_click"]["enabled"] = vars_["dwell"].get()
+        update_config_file(cfg_path, upd)
+        status.configure(text="✔ enregistré — appliqué en direct")
+
+    def changed(*_):
+        status.configure(text="…")
+        if pending["job"]:
+            root.after_cancel(pending["job"])
+        pending["job"] = root.after(250, save)
+
+    frm = ttk.Frame(root, padding=12)
+    frm.pack(fill="both", expand=True)
+    row = [0]
+
+    def section(txt):
+        ttk.Label(frm, text=txt, font=("Sans", 12, "bold")).grid(row=row[0], column=0, columnspan=3,
+                                                                  sticky="w", pady=(10, 2))
+        row[0] += 1
+
+    def radios(name, label, options):
+        ttk.Label(frm, text=label).grid(row=row[0], column=0, sticky="w")
+        v = tk.StringVar(value=cfg[name])
+        f = ttk.Frame(frm)
+        f.grid(row=row[0], column=1, columnspan=2, sticky="w")
+        for val, txt in options:
+            ttk.Radiobutton(f, text=txt, value=val, variable=v, command=changed).pack(side="left", padx=3)
+        vars_[name] = v
+        row[0] += 1
+
+    sliders = {}
+
+    def slider(key, label, lo, hi, sec=None, res=0.01):
+        val = cfg[sec][key] if sec else cfg[key]
+        ttk.Label(frm, text=label).grid(row=row[0], column=0, sticky="w")
+        v = tk.DoubleVar(value=val)
+        s = tk.Scale(frm, from_=lo, to=hi, resolution=res, orient="horizontal", variable=v,
+                     length=300, command=changed)
+        s.grid(row=row[0], column=1, columnspan=2, sticky="we")
+        sliders[key] = (sec, v)
+        row[0] += 1
+
+    def check(name, label, value):
+        v = tk.BooleanVar(value=value)
+        ttk.Checkbutton(frm, text=label, variable=v, command=changed).grid(row=row[0], column=0,
+                                                                          columnspan=3, sticky="w")
+        vars_[name] = v
+        row[0] += 1
+
+    section("Fonctionnement")
+    radios("mode", "Mode", (("souris", "Souris (vitesse)"), ("pointeur", "Pointeur (direction)")))
+    radios("source", "Source", (("auto", "auto"), ("head", "tête"), ("case", "boîtier"), ("hand", "main")))
+    section("Sensibilité")
+    slider("sensitivity_x", "Sensibilité horizontale", 0.1, 5.0)
+    slider("sensitivity_y", "Sensibilité verticale", 0.1, 5.0)
+    check("invert_x", "Inverser horizontal", cfg["invert_x"])
+    check("invert_y", "Inverser vertical", cfg["invert_y"])
+    section("Mode souris")
+    slider("px_per_deg", "Pixels par degré", 2, 80, "souris", 0.5)
+    slider("acceleration", "Accélération", 0, 4, "souris", 0.05)
+    slider("rate_deadzone_dps", "Zone morte (°/s)", 0, 15, "souris", 0.1)
+    section("Mode pointeur")
+    slider("screen_pct_per_deg", "% d'écran par degré", 0.3, 10, "pointeur", 0.05)
+    section("Fluidité")
+    slider("smoothing", "Lissage", 0, 1)
+    slider("render_lag_s", "Retard d'affichage (s)", 0.0, 0.15, None, 0.005)
+    slider("sensor_interval_us", "Intervalle capteur (µs) — 5000 = 200 Hz", 5000, 40000, None, 1000)
+    section("Clics")
+    check("stem", "Pression sur la tige (simple = clic gauche, double = clic droit)", cfg["stem"]["enabled"])
+    check("roll", "Inclinaison rapide (droite = clic gauche, gauche = clic droit)", cfg["roll_click"]["enabled"])
+    check("dwell", "Clic automatique par immobilité", cfg["dwell_click"]["enabled"])
+    slider("time_s", "Durée d'immobilité (s)", 0.4, 3.0, "dwell_click", 0.1)
+
+    bf = ttk.Frame(frm)
+    bf.grid(row=row[0], column=0, columnspan=3, pady=14)
+    ttk.Button(bf, text="Recentrer", command=lambda: send_command("recenter")).pack(side="left", padx=4)
+    ttk.Button(bf, text="Pause / reprise", command=lambda: send_command("toggle")).pack(side="left", padx=4)
+    ttk.Button(bf, text="Calibrer…", command=lambda: subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--calibrate", "-c", cfg_path])).pack(side="left", padx=4)
+    row[0] += 1
+    status = ttk.Label(frm, text="Les changements s'appliquent en direct.")
+    status.grid(row=row[0], column=0, columnspan=3)
+    root.mainloop()
+
+
+# =========================================================================== CLI
+def send_command(cmd):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.sendto(cmd.encode(), CTRL_SOCK)
+    except (FileNotFoundError, ConnectionRefusedError):
+        print("Le contrôleur ne tourne pas.", file=sys.stderr)
+        return 1
+    return 0
+
+
+HOTKEYS = [
+    ("airpods-mouse-recenter", "AirPods Mouse : recentrer", "<Control><Alt>c", "recenter"),
+    ("airpods-mouse-toggle", "AirPods Mouse : pause/reprise", "<Control><Alt>p", "toggle"),
+    ("airpods-mouse-scroll", "AirPods Mouse : mode défilement", "<Control><Alt>s", "scroll"),
+    ("airpods-mouse-mode", "AirPods Mouse : souris/pointeur", "<Control><Alt>m", "mode"),
+]
+GS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+GS_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
+
+
+def install_hotkeys():
+    import ast
+    cur = subprocess.run(["gsettings", "get", GS_SCHEMA, "custom-keybindings"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    paths = ast.literal_eval(cur.replace("@as ", "")) if cur else []
+    py = os.path.join(HERE, ".venv", "bin", "python")
+    py = py if os.path.exists(py) else sys.executable
+    for ident, name, binding, cmd in HOTKEYS:
+        p = f"{GS_PATH}{ident}/"
+        if p not in paths:
+            paths.append(p)
+        sch = f"{GS_SCHEMA}.custom-keybinding:{p}"
+        command = f"{py} {os.path.abspath(__file__)} --send {cmd}"
+        for key, val in (("name", name), ("binding", binding), ("command", command)):
+            subprocess.run(["gsettings", "set", sch, key, val], check=True)
+        print(f"  {binding:18s} -> {name}")
+    subprocess.run(["gsettings", "set", GS_SCHEMA, "custom-keybindings", str(paths)], check=True)
+
+
+def open_ui(port, cfg_path):
+    import urllib.request
+    url = f"http://127.0.0.1:{port}/"
+    try:
+        urllib.request.urlopen(url + "api/ping", timeout=1)
+    except OSError:
+        log.info("Lancement du contrôleur en arrière-plan…")
+        subprocess.Popen([sys.executable, os.path.abspath(__file__), "-c", cfg_path, "--port", str(port)],
+                         stdout=open(os.path.join(HERE, "controller.log"), "a"), stderr=subprocess.STDOUT,
+                         start_new_session=True)
+        for _ in range(50):
+            time.sleep(0.2)
+            try:
+                urllib.request.urlopen(url + "api/ping", timeout=1)
+                break
+            except OSError:
+                pass
+    for browser in ("google-chrome", "chromium", "chromium-browser", "brave-browser"):
+        if shutil.which(browser):
+            subprocess.Popen([browser, f"--app={url}", "--window-size=1280,860",
+                              f"--class=AirPodsMouse"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+            return
+    subprocess.Popen(["xdg-open", url])
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-c", "--config", default=DEFAULT_CONFIG_PATH)
+    ap.add_argument("--diag", action="store_true")
+    ap.add_argument("--calibrate", action="store_true")
+    ap.add_argument("--settings", action="store_true")
+    ap.add_argument("--ui", action="store_true", help="ouvre l'application (lance le contrôleur si besoin)")
+    ap.add_argument("--port", type=int, default=8737)
+    ap.add_argument("--no-web", action="store_true")
+    ap.add_argument("--send", metavar="CMD")
+    ap.add_argument("--install-hotkeys", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    if args.send:
+        sys.exit(send_command(args.send))
+    if args.install_hotkeys:
+        install_hotkeys()
+        return
+    if args.settings:
+        settings_window(args.config)
+        return
+    if args.ui:
+        open_ui(args.port, args.config)
+        return
+    cfg = load_config(args.config)
+    if args.calibrate:
+        calibrate(cfg, args.config)
+        return
+    run(cfg, args.config, diag=args.diag, web_port=None if args.no_web else args.port)
+
+
+if __name__ == "__main__":
+    main()

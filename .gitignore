@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+controller.log
+config.json
+config.json.tmp
+captures/private/

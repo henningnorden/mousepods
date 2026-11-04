@@ -1,0 +1,13 @@
+# Service utilisateur systemd (optionnel) — remplace /path/to/mousepods par le dossier du dépôt :
+#   cp airpods-mouse.service ~/.config/systemd/user/ && systemctl --user enable --now airpods-mouse
+[Unit]
+Description=MousePods — AirPods head mouse
+After=graphical-session.target bluetooth.target
+
+[Service]
+ExecStart=/path/to/mousepods/.venv/bin/python /path/to/mousepods/airpods_mouse_controller.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
