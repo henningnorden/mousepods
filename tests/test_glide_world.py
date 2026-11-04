@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
 """Tests : glisse dans le repère de la table (quaternion) + correction rétroactive de fin de geste."""
 import copy
 import math

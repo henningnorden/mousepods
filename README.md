@@ -15,7 +15,7 @@
   <img alt="Wayland and X11" src="https://img.shields.io/badge/Wayland%20%7C%20X11-uinput-0a84ff">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-34c759">
   <img alt="Tests" src="https://img.shields.io/badge/tests-37%20passing-34c759">
-  <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-ff9f0a"></a>
+  <a href="#license-and-attribution"><img alt="License Apache-2.0 + CC BY 4.0" src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20CC%20BY%204.0-ff9f0a"></a>
 </p>
 
 <p align="center">
@@ -133,8 +133,19 @@ This builds on public work: [LibrePods](https://github.com/librepods-org/librepo
 [spacedouut/OpenHuilian](https://github.com/spacedouut/OpenHuilian) (clone firmware) and the public iOS 26.1 restore dump
 by EthanArbuckle. No code was copied from these projects.
 
-## License
+## License and attribution
 
-[MIT](LICENSE) © 2026 Matteo Gaudioso. Not affiliated with Apple. AirPods is a trademark of Apple Inc.
+| What | License | What it requires |
+|---|---|---|
+| Source code | [Apache-2.0](LICENSE) + [NOTICE](NOTICE) | Keep the copyright and the NOTICE text in any redistribution or derivative work (in its NOTICE file, docs or "about" screen), and mark modified files |
+| Findings, documentation, captures (`docs/`, `captures/`) | [CC BY 4.0](docs/LICENSE-CC-BY-4.0.txt) | **Credit the author**, link to this repository and say if you changed anything, in any reuse: article, video, talk, other project, AI dataset |
 
-If you use these findings, please cite them ([CITATION.cff](CITATION.cff)).
+**How to credit:**
+
+> MousePods by Matteo Gaudioso (starman-tech): https://github.com/starman-tech/mousepods
+
+**Please tell me when you use it.** It's not a legal requirement, just a request: open an issue, or mention
+[@starman-tech](https://github.com/starman-tech). I'd love to see what you build, and I'll link to it.
+For academic work, use [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button).
+
+© 2026 Matteo Gaudioso. Not affiliated with Apple. AirPods is a trademark of Apple Inc.

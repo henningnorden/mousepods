@@ -12,7 +12,7 @@ authors:
     alias: starman-tech
 date-released: 2026-11-04
 version: 1.0.0
-license: MIT
+license: Apache-2.0
 repository-code: "https://github.com/starman-tech/mousepods"
 url: "https://starman-tech.github.io/mousepods/"
 keywords:

@@ -85,8 +85,22 @@ J'ai mené cette rétro-ingénierie avec **Claude** (Anthropic), utilisé comme 
 
 J'ai tenu les AirPods, pris les décisions et vérifié chaque résultat sur le vrai matériel.
 
-## Crédits et licence
+## Crédits
 
 S'appuie sur [LibrePods](https://github.com/librepods-org/librepods), [apple-wireshark](https://github.com/pabloaul/apple-wireshark),
-[mutix](https://github.com/Gheop/mutix), [ntpods](https://github.com/arctumn/ntpods) et [OpenHuilian](https://github.com/spacedouut/OpenHuilian).
-Aucun code n'en a été copié. [MIT](LICENSE) © 2026 Matteo Gaudioso. Sans lien avec Apple. AirPods est une marque d'Apple Inc.
+[mutix](https://github.com/Gheop/mutix), [ntpods](https://github.com/arctumn/ntpods) et [OpenHuilian](https://github.com/spacedouut/OpenHuilian). Aucun code n'en a été copié.
+
+## Licence et attribution
+
+| Quoi | Licence | Ce qu'elle impose |
+|---|---|---|
+| Code source | [Apache-2.0](LICENSE) + [NOTICE](NOTICE) | Garder le copyright et le texte du NOTICE dans toute redistribution ou œuvre dérivée, et signaler les fichiers modifiés |
+| Découvertes, documentation, captures | [CC BY 4.0](docs/LICENSE-CC-BY-4.0.txt) | **Citer l'auteur**, mettre un lien vers ce dépôt et indiquer les modifications, pour toute réutilisation (article, vidéo, conférence, autre projet, jeu de données IA) |
+
+**Comment créditer :**
+
+> MousePods par Matteo Gaudioso (starman-tech) : https://github.com/starman-tech/mousepods
+
+**Préviens-moi si tu l'utilises.** Ce n'est pas une obligation légale, juste une demande : ouvre une issue ou mentionne [@starman-tech](https://github.com/starman-tech).
+
+© 2026 Matteo Gaudioso. Sans lien avec Apple. AirPods est une marque d'Apple Inc.

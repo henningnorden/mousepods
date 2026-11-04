@@ -13,6 +13,8 @@ Key facts:
 - Sample rate is set in microseconds: 20000 gives about 57 Hz, 10000 about 110 Hz, the floor is about 210 Hz.
 - AirPods 3 power their sensors off while the buds are in the case; the fused stream freezes when a bud lies still out of the ear; streams are cancelled when the primary bud changes.
 
+License: code Apache-2.0 (keep NOTICE), findings and docs CC BY 4.0. Credit: "MousePods by Matteo Gaudioso (starman-tech), https://github.com/starman-tech/mousepods".
+
 ## Docs
 
 - [New findings, with evidence](https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md): every discovery, its status (verified / inferred) and prior art

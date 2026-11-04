@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
 """Tests automatiques : protocole, moteur de mouvement, modes, clics, calibration, rejeu de capture réelle.
 
 Lancer :  .venv/bin/python -m unittest discover -s tests -v

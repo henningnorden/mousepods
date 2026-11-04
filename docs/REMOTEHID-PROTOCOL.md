@@ -127,3 +127,7 @@ s.send(rhid(2, 7, 3, bytes([2, 1]) + struct.pack("<I", 10000)))   # SetReport fe
 ```
 
 The complete implementation is `AAPClient` in [`airpods_mouse_controller.py`](../airpods_mouse_controller.py).
+
+---
+
+© 2026 Matteo Gaudioso (starman-tech). This document is licensed under [CC BY 4.0](LICENSE-CC-BY-4.0.txt): reuse is welcome **with credit**: *MousePods by Matteo Gaudioso (starman-tech), https://github.com/starman-tech/mousepods*.

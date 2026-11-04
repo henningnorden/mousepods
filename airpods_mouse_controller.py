@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
 """
 airpods_mouse_controller.py — AirPods -> souris / pointeur (Linux, Wayland ou X11).
 

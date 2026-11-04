@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
 """Serveur de l'interface AirPods Mouse (http://127.0.0.1:8737).
 
 Tourne dans le processus du contrôleur, dans un thread :

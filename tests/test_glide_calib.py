@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
 """Tests : mode glisse, pointeur calibré par les coins, parcours de calibration de l'application."""
 import json
 import math

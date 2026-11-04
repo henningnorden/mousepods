@@ -2,7 +2,7 @@
 
 **Head tracking and raw IMU data from AirPods 3 (A2564 / A2565, Bluetooth product ID `0x2013`) on a non-Apple host, through Apple's RemoteHID protocol (HID over AACP).**
 
-Author: Matteo Gaudioso ([@starman-tech](https://github.com/starman-tech)) · reverse-engineered with the help of Claude (Anthropic) · first published November 2026.
+Author: Matteo Gaudioso ([@starman-tech](https://github.com/starman-tech)) · reverse-engineered with the help of Claude (Anthropic) · first published November 2026 · licensed [CC BY 4.0](LICENSE-CC-BY-4.0.txt) (credit required).
 Tested on: AirPods 3, firmware marketing version `6296592`, Ubuntu 24.04, BlueZ 5.72, Python 3.12.
 
 > **Scope of the "new" claim.** On 4 November 2026 we searched LibrePods (code, docs, issues and PRs), the
@@ -163,3 +163,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 The full day-by-day journal (in French), with every failed attempt, is in [JOURNAL.fr.md](JOURNAL.fr.md).
+
+---
+
+© 2026 Matteo Gaudioso (starman-tech). This document is licensed under [CC BY 4.0](LICENSE-CC-BY-4.0.txt): reuse is welcome **with credit**: *MousePods by Matteo Gaudioso (starman-tech), https://github.com/starman-tech/mousepods*.
