@@ -135,6 +135,17 @@ tr:last-child td{border-bottom:0}
 .empty{color:var(--text2);text-align:center;padding:26px}
 .disc li{margin:0 0 10px 18px;line-height:1.5}
 code{background:var(--card2);padding:1px 6px;border-radius:5px}
+/* labo */
+.cue{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(18px);text-align:center;padding:30px}
+.cue.on{display:flex}
+.cue .t{font-size:clamp(34px,7vw,84px);font-weight:750;letter-spacing:-.03em;line-height:1.05}
+.cue .s{font-size:clamp(16px,2.2vw,26px);color:var(--text2);max-width:900px}
+.cue .cd{font-size:clamp(40px,8vw,96px);font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.cue .pb{width:min(720px,80vw);height:10px;border-radius:5px;background:var(--card2);overflow:hidden}
+.cue .pb i{display:block;height:100%;background:var(--accent);width:0}
+.cue.go .t{color:var(--green)}.cue.rest .t{color:var(--text2)}
+.exp{color:var(--orange);font-weight:600}
 </style>
 </head>
 <body>
@@ -148,6 +159,8 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <a data-p="motion"><span class="ic" style="background:#30d158">∿</span>Mouvement</a>
     <a data-p="settings"><span class="ic" style="background:#8e8e93">⚙︎</span>Réglages</a>
     <a data-p="calib"><span class="ic" style="background:#ff9f0a">◎</span>Calibration</a>
+    <a data-p="gestures"><span class="ic" style="background:#ff375f">☺︎</span>Gestes</a>
+    <a data-p="labo"><span class="ic" style="background:#64d2ff">⚗︎</span>Labo</a>
     <a data-p="sensors"><span class="ic" style="background:#af52de">⌬</span>Capteurs</a>
     <a data-p="device"><span class="ic" style="background:#ff375f">ⓘ</span>AirPods</a>
     <a data-p="log"><span class="ic" style="background:#5e5ce6">≡</span>Journal</a>
@@ -286,6 +299,104 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
   <h2>Profils enregistrés</h2>
   <div class="card"><table><thead><tr><th>Profil</th><th>Contenu</th></tr></thead><tbody id="cal-prof"></tbody></table></div>
 </section>
+
+<!-- =============================== GESTES -->
+<section class="page" id="p-gestures">
+  <h1>Gestes</h1><div class="sub">Tête et mâchoire. Un double claquement des dents ouvre une fenêtre de 2 s ; hors fenêtre, aucune action n'est exécutée.</div>
+  <div class="grid g3">
+    <div class="card"><h3>État</h3>
+      <div class="set toggle" style="padding-top:0"><label>Gestes actifs</label><label class="sw"><input type="checkbox" id="g-en"><span></span></label></div>
+      <div class="set toggle"><label>Exiger l'activation<small>double claquement avant chaque action</small></label><label class="sw"><input type="checkbox" data-g="require_activation"><span></span></label></div>
+      <div class="kv"><span>Fenêtre d'action</span><span id="g-armed">—</span></div>
+      <div class="kv"><span>Rejet</span><span id="g-flags">—</span></div>
+    </div>
+    <div class="card"><h3>Capteur (horodatage interne)</h3>
+      <div class="kv"><span>Source</span><span id="g-src">—</span></div>
+      <div class="kv"><span>Fréquence réelle</span><span class="mono" id="g-rate">—</span></div>
+      <div class="kv"><span>Trous (> 30 ms)</span><span class="mono" id="g-gaps">—</span></div>
+      <div class="kv"><span>Interpolés</span><span class="mono" id="g-interp">—</span></div>
+      <div class="kv"><span>Doublons</span><span class="mono" id="g-dup">—</span></div>
+    </div>
+    <div class="card"><h3>Enregistrement étiqueté (CSV)</h3>
+      <div class="row" style="margin-bottom:10px"><input type="text" id="g-rec-name" placeholder="nom du fichier" style="flex:1"><input type="text" id="g-rec-label" placeholder="étiquette (ex. nod)" style="width:130px"></div>
+      <div class="row"><button class="btn p sm" id="g-rec-start">Enregistrer</button><button class="btn sm" id="g-rec-lab">Changer l'étiquette</button><button class="btn d sm" id="g-rec-stop">Arrêter</button></div>
+      <div class="hint" id="g-rec-info" style="margin-top:8px">captures/private/*.csv — rejouer : <code>python gestures.py --replay fichier.csv</code></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Signaux en direct <span class="hint" style="margin-left:auto">4 dernières secondes · repères = gestes détectés</span></h3>
+    <canvas id="g-chart" height="220"></canvas>
+    <div class="legend"><span><i style="background:var(--red)"></i>Accél. passe-haut (m/s² ×20)</span><span><i style="background:var(--accent)"></i>Lacet</span><span><i style="background:var(--green)"></i>Tangage</span><span><i style="background:var(--orange)"></i>Roulis (°/s)</span></div>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><h3>Derniers gestes</h3><table><thead><tr><th>Geste</th><th>Confiance</th><th>Action</th></tr></thead><tbody id="g-events"><tr><td colspan="3" class="empty">Aucun geste</td></tr></tbody></table></div>
+    <div class="card"><h3>Calibration personnelle</h3>
+      <div class="hint" style="margin-bottom:10px">Répète le geste 10 fois : le seuil est réglé à 60 % de ton pic médian. Détection assouplie et aucune action pendant la calibration.</div>
+      <div class="row"><select id="g-cal-g"><option value="teeth_click">Claquement de dents</option><option value="nod">Hochement (oui)</option><option value="shake">Secouement (non)</option><option value="tilt">Inclinaison</option><option value="look">Regard haut/bas maintenu</option><option value="jaw_clench">Mâchoire serrée (expérimental)</option></select>
+        <button class="btn p sm" id="g-cal-start">Commencer</button><button class="btn sm" id="g-cal-cancel">Annuler</button></div>
+      <div class="big" id="g-cal-prog" style="margin-top:12px">—</div><div class="hint" id="g-cal-res"></div>
+    </div>
+  </div>
+  <h2>Seuils</h2>
+  <div class="card" id="g-sliders">
+    <div class="set"><label>Claquement : seuil<small>m/s² (pic passe-haut)</small></label><input type="range" data-g="click_thresh" min="0.2" max="6" step="0.05"><output></output></div>
+    <div class="set"><label>Double : écart maximal<small>secondes entre les deux claquements</small></label><input type="range" data-g="double_max_s" min="0.2" max="0.8" step="0.01"><output></output></div>
+    <div class="set"><label>Fenêtre d'action<small>secondes après le double claquement</small></label><input type="range" data-g="window_s" min="0.5" max="5" step="0.1"><output></output></div>
+    <div class="set"><label>Hochement : amplitude<small>degrés par aller</small></label><input type="range" data-g="nod_deg" min="2" max="30" step="0.5"><output></output></div>
+    <div class="set"><label>Secouement : amplitude<small>degrés par aller</small></label><input type="range" data-g="shake_deg" min="2" max="30" step="0.5"><output></output></div>
+    <div class="set"><label>Vitesse minimale d'un aller<small>°/s</small></label><input type="range" data-g="lobe_dps" min="10" max="150" step="1"><output></output></div>
+    <div class="set"><label>Inclinaison : angle<small>degrés, maintenu 0,25 s</small></label><input type="range" data-g="tilt_deg" min="5" max="40" step="0.5"><output></output></div>
+    <div class="set"><label>Regard haut/bas : angle<small>degrés, maintenu</small></label><input type="range" data-g="look_deg" min="5" max="40" step="0.5"><output></output></div>
+    <div class="set"><label>Regard : durée de maintien<small>secondes</small></label><input type="range" data-g="look_hold_s" min="0.2" max="2" step="0.05"><output></output></div>
+    <div class="set"><label>Marche : seuil<small>m/s² RMS vertical (1,4–2,6 Hz)</small></label><input type="range" data-g="walk_rms" min="0.1" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Mastication : impulsions<small>en 3 s pour suspendre les claquements</small></label><input type="range" data-g="chew_count" min="3" max="10" step="1"><output></output></div>
+    <div class="set toggle"><label>IMU brute ~200 Hz<small>accéléro + gyro HID ; la souris (devmotion6) passe à 50 Hz tant que les gestes sont actifs</small></label><label class="sw"><input type="checkbox" data-g="use_raw_imu"><span></span></label></div>
+    <div class="set toggle"><label>Mâchoire serrée (expérimental)<small>vibration faible soutenue > 0,6 s ; non vérifié sur AirPods</small></label><label class="sw"><input type="checkbox" data-g="clench_enabled"><span></span></label></div>
+  </div>
+  <h2>Actions</h2>
+  <div class="card"><table><thead><tr><th>Geste</th><th>Commande</th></tr></thead><tbody id="g-map"></tbody></table>
+    <div class="hint" style="margin-top:8px">Glissement latéral de la mâchoire : non détecté (aucun signal plausible identifié) — réservé, expérimental. Le côté gauche/droit d'un claquement est inconnu tant que <code>click_side_axis</code> n'est pas réglé.</div></div>
+  <h2>Parole silencieuse — expérimental</h2>
+  <div class="card">
+    <div class="hint" style="margin-bottom:10px">Articule un mot sans voix en maintenant le bouton. ~10 prises par mot. « Évaluer » mesure la précision (leave-one-out) et la compare au hasard (500 permutations) : si p &gt; 0,05, l'IMU ne capte pas le mot et il ne faut pas s'en servir.</div>
+    <div class="row"><input type="text" id="sp-word" placeholder="mot à apprendre (vide = reconnaître)" style="flex:1">
+      <button class="btn p" id="sp-hold">Maintenir pour enregistrer</button><button class="btn sm" id="sp-eval">Évaluer</button><button class="btn d sm" id="sp-clear">Tout effacer</button></div>
+    <div class="kv" style="margin-top:8px"><span>Mots appris</span><span id="sp-words">—</span></div>
+    <div class="kv"><span>Dernier résultat</span><span id="sp-last">—</span></div>
+    <div class="kv"><span>Évaluation</span><span id="sp-eval-res">—</span></div>
+  </div>
+</section>
+
+<section class="page" id="p-labo">
+  <h1>Labo</h1><div class="sub">Mesures en direct et sessions guidées. Détecteur du Labo volontairement permissif (seuil 0,15 m/s² + seuil adaptatif 3 × bruit) : il montre aussi les claquements trop doux pour le seuil réel. Les consignes s'affichent en grand à l'écran (pas de notifications).</div>
+  <div class="grid g3">
+    <div class="card"><h3>Signal</h3>
+      <div class="kv"><span>Source</span><span id="lb-src">—</span></div>
+      <div class="kv"><span>Bruit de fond (p90)</span><span class="mono" id="lb-noise">—</span></div>
+      <div class="kv"><span>Seuil du Labo</span><span class="mono" id="lb-thr">—</span></div>
+      <div class="kv"><span>Seuil réel (click_thresh)</span><span class="mono" id="lb-real">—</span></div>
+      <div class="hint" id="lb-warn" style="margin-top:6px"></div>
+    </div>
+    <div class="card" style="grid-column:span 2"><h3>Session guidée</h3>
+      <div class="row" style="margin-bottom:10px"><div class="seg" id="lb-proto"><button data-v="dents" class="on">Dents</button><button data-v="mouvements">Mouvements</button><button data-v="mots">Mots <span class="exp">β</span></button></div>
+        <label class="hint">répétitions <input type="number" id="lb-reps" min="2" max="20" placeholder="auto" style="width:70px"></label></div>
+      <div class="row" id="lb-words-row" style="display:none;margin-bottom:10px"><input type="text" id="lb-words" value="oui, non, clic, menu, stop" style="flex:1"><span class="hint">5 mots, 10 fois chacun (ordre aléatoire)</span></div>
+      <div class="hint" id="lb-proto-desc" style="margin-bottom:10px"></div>
+      <div class="row"><button class="btn p" id="lb-start">Démarrer la session</button><span class="hint" id="lb-sess-info"></span></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>En direct <span class="hint" style="margin-left:auto">5 dernières secondes · pleine cadence</span></h3>
+    <canvas id="lb-chart" height="240"></canvas>
+    <div class="legend"><span><i style="background:var(--red)"></i>|Accél. passe-haut| (m/s², échelle gauche)</span><span><i style="background:var(--accent)"></i>|Gyro| (°/s, échelle droite)</span><span><i style="background:var(--text2)"></i>impulsion</span><span><i style="background:var(--purple)"></i>geste détecté (Labo)</span></div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Dernières impulsions brèves</h3>
+    <table><thead><tr><th>il y a</th><th>Force (pic)</th><th>Durée</th><th>Axe dominant</th><th>Gyro moy. / max</th><th>Seuil Labo</th><th>Seuil réel</th></tr></thead><tbody id="lb-spikes"><tr><td colspan="7" class="empty">Aucune impulsion</td></tr></tbody></table>
+  </div>
+  <h2>Résultats</h2>
+  <div class="card" id="lb-res"><div class="empty">Lance une session : le bilan s'affiche ici. Chaque session est enregistrée dans captures/private/labo_*.json (trames brutes étiquetées, rejouables) + *_bilan.json.</div></div>
+</section>
+<div class="cue" id="lb-cue"><div class="hint" id="cue-prog"></div><div class="t" id="cue-t"></div><div class="s" id="cue-s"></div>
+  <div class="cd" id="cue-cd"></div><div class="pb"><i id="cue-pb"></i></div><div class="hint" id="cue-n"></div><div class="hint" id="cue-next"></div>
+  <button class="btn d" id="cue-cancel">Annuler la session</button></div>
 
 <!-- =============================== CAPTEURS -->
 <section class="page" id="p-sensors">
@@ -436,7 +547,66 @@ function renderTelemetry(){
     series=series.concat(t.series.slice(-3)).slice(-240);drawChart();
   }
   if(page==="calib"||t.calib){renderCalib(t.calib)}
+  if(page==="gestures"){renderGestures(t.gestures,t.speech)}
 }
+// ---------- gestes
+const G_NAMES={teeth_click:"Claquement de dents",teeth_double:"Double claquement",nod:"Hochement (oui)",shake:"Secouement (non)",tilt_left:"Inclinaison gauche",tilt_right:"Inclinaison droite",look_up:"Regard haut",look_down:"Regard bas",jaw_clench:"Mâchoire serrée (exp.)",jaw_slide_left:"Mâchoire à gauche (exp.)",jaw_slide_right:"Mâchoire à droite (exp.)"};
+const G_CMDS=[["none","—"],["left_click","Clic gauche"],["right_click","Clic droit"],["middle_click","Clic milieu"],["recenter","Recentrer"],["toggle","Pause / reprise"],["scroll","Défilement"],["mode","Changer de mode"]];
+const gpost=b=>post("/api/gestures",b);
+let gEditing=null,gMapDone=false;
+$("#g-en").onchange=e=>{gpost({action:e.target.checked?"enable":"disable"});toast(e.target.checked?"Gestes activés":"Gestes désactivés")};
+$$("#p-gestures [data-g]").forEach(inp=>{const k=inp.dataset.g,out=inp.parentElement.querySelector("output");
+  if(inp.type==="range"){inp.oninput=()=>{gEditing=k;out.textContent=fmt(+inp.value,inp.step)};
+    inp.onchange=()=>{gpost({action:"set",values:{[k]:+inp.value}});setTimeout(()=>gEditing=null,800)}}
+  else inp.onchange=()=>{gpost({action:"set",values:{[k]:inp.checked}});toast("Enregistré")}});
+$("#g-rec-start").onclick=()=>{gpost({action:"rec_start",name:$("#g-rec-name").value,label:$("#g-rec-label").value});toast("Enregistrement…")};
+$("#g-rec-lab").onclick=()=>{gpost({action:"rec_label",label:$("#g-rec-label").value});toast("Étiquette : "+$("#g-rec-label").value)};
+$("#g-rec-stop").onclick=()=>{gpost({action:"rec_stop"});toast("Enregistrement arrêté")};
+$("#g-cal-start").onclick=()=>{gpost({action:"calib_start",gesture:$("#g-cal-g").value});toast("Calibration : répète le geste 10 fois")};
+$("#g-cal-cancel").onclick=()=>{gpost({action:"calib_cancel"});toast("Calibration annulée")};
+const sp=b=>post("/api/speech",b);
+const spDown=e=>{e.preventDefault();sp({action:"start",word:$("#sp-word").value});$("#sp-hold").textContent="Enregistrement…"};
+const spUp=()=>{if($("#sp-hold").textContent!=="Enregistrement…")return;sp({action:"stop"});$("#sp-hold").textContent="Maintenir pour enregistrer"};
+$("#sp-hold").addEventListener("mousedown",spDown);$("#sp-hold").addEventListener("touchstart",spDown);
+window.addEventListener("mouseup",spUp);window.addEventListener("touchend",spUp);
+$("#sp-eval").onclick=()=>{sp({action:"evaluate"});toast("Évaluation (500 permutations)…")};
+$("#sp-clear").onclick=()=>{if(confirm("Effacer tous les mots appris ?"))sp({action:"clear"})};
+function fillGestures(){const gc=S.config&&S.config.gestures;if(!gc)return;
+  $("#g-en").checked=!!gc.enabled;
+  $$("#p-gestures [data-g]").forEach(inp=>{const k=inp.dataset.g;if(k===gEditing)return;const v=gc[k];if(v===undefined)return;
+    if(inp.type==="range"){inp.value=v;inp.parentElement.querySelector("output").textContent=fmt(+v,inp.step)}else inp.checked=!!v});
+  if(!gMapDone&&gc.mapping){gMapDone=true;$("#g-map").innerHTML=Object.keys(G_NAMES).filter(k=>k!=="teeth_double").map(k=>
+    `<tr><td>${G_NAMES[k]}</td><td><select data-map="${k}">${G_CMDS.map(([v,l])=>`<option value="${v}"${(gc.mapping[k]||"none")===v?" selected":""}>${l}</option>`).join("")}</select></td></tr>`).join("");
+    $$("[data-map]").forEach(sel=>sel.onchange=()=>{gpost({action:"mapping",mapping:{[sel.dataset.map]:sel.value}});toast("Action enregistrée")})}
+  const st=S.gesture_stats;if(st){$("#g-rate").textContent=`${st.rate_hz} Hz (nominal ${st.nominal_hz})`;
+    $("#g-gaps").textContent=`${st.gaps} · max ${st.max_gap_ms} ms`;$("#g-interp").textContent=`${(st.interp_ratio*100).toFixed(1)} %`;
+    $("#g-dup").textContent=`${(st.dup_ratio*100).toFixed(1)} %${st.upsampled_suspect?" · suréchantillonné ?":""}`}}
+const gcv=$("#g-chart"),gcx=gcv.getContext("2d");
+function drawGestures(g){const W=gcv.clientWidth,H=220,dpr=devicePixelRatio||1;if(gcv.width!==W*dpr){gcv.width=W*dpr;gcv.height=H*dpr}
+  gcx.setTransform(dpr,0,0,dpr,0,0);gcx.clearRect(0,0,W,H);const css=getComputedStyle(document.documentElement);
+  const tr=g.trace||[],X=t=>30+(t+4)/4*(W-30);let mx=60;tr.forEach(p=>{for(let k=2;k<5;k++)mx=Math.max(mx,Math.abs(p[k]));mx=Math.max(mx,p[1]*20)});mx=Math.min(Math.ceil(mx/30)*30,600);
+  gcx.strokeStyle=css.getPropertyValue("--line");gcx.lineWidth=1;gcx.fillStyle=css.getPropertyValue("--text2");gcx.font="11px -apple-system,sans-serif";
+  [-1,-.5,0,.5,1].forEach(f=>{const y=H/2-f*(H/2-10);gcx.beginPath();gcx.moveTo(30,y);gcx.lineTo(W,y);gcx.stroke();gcx.fillText(Math.round(f*mx),0,y+4)});
+  [["--red",1,20],["--accent",2,1],["--green",3,1],["--orange",4,1]].forEach(([c,k,sc])=>{gcx.strokeStyle=css.getPropertyValue(c);gcx.lineWidth=k===1?1.5:2;gcx.beginPath();
+    tr.forEach((p,i)=>{const x=X(p[0]),y=H/2-p[k]*sc/mx*(H/2-10);i?gcx.lineTo(x,y):gcx.moveTo(x,y)});gcx.stroke()});
+  (g.events||[]).forEach(e=>{const dt=e.t-g.t;if(dt<-4)return;const x=X(dt);gcx.strokeStyle=e.action?css.getPropertyValue("--green"):css.getPropertyValue("--purple");
+    gcx.lineWidth=2;gcx.setLineDash([4,3]);gcx.beginPath();gcx.moveTo(x,14);gcx.lineTo(x,H);gcx.stroke();gcx.setLineDash([]);
+    gcx.fillStyle=css.getPropertyValue("--text");gcx.fillText(G_NAMES[e.type]||e.type,Math.min(x+3,W-90),12)})}
+function renderGestures(g,s){if(!g){$("#g-events").innerHTML='<tr><td colspan="3" class="empty">Module gestes indisponible (redémarre le contrôleur)</td></tr>';return}
+  $("#g-armed").textContent=g.armed>0?`ouverte · ${g.armed.toFixed(1)} s`:"fermée";$("#g-armed").style.color=g.armed>0?"var(--green)":"";
+  const f=g.flags||{},fl=[f.walking&&"marche",f.chewing&&"mastication",f.big_motion&&"grand mouvement"].filter(Boolean);
+  $("#g-flags").textContent=fl.length?fl.join(" · "):(g.enabled?"aucun":"désactivé");$("#g-flags").style.color=fl.length?"var(--orange)":"";
+  const ev=(g.events||[]).slice().reverse();
+  $("#g-events").innerHTML=ev.length?ev.map(e=>`<tr><td>${G_NAMES[e.type]||e.type}${e.side?" ("+e.side+")":""}</td><td class="mono">${Math.round(e.conf*100)} %</td><td>${e.calib?"calibration":e.action==="activation"?'<span class="pill g">activation</span>':e.action?'<span class="pill b">'+esc(e.action)+"</span>":'<span class="hint">'+(e.blocked||"aucune")+"</span>"}</td></tr>`).join(""):'<tr><td colspan="3" class="empty">Aucun geste</td></tr>';
+  const c=g.calib;$("#g-cal-prog").textContent=c?`${c.peaks.length} / ${c.reps}`:"—";
+  $("#g-cal-res").textContent=c?(c.done?`Terminé : ${Object.entries(c.result).map(([k,v])=>k+" = "+v).join(", ")} (ancien ${c.old})`:"Répète le geste…"):"";
+  $("#g-rec-info").textContent=g.rec?`Enregistrement : ${g.rec.rows} lignes · étiquette « ${g.rec.label} »`:"captures/private/*.csv — rejouer : python gestures.py --replay fichier.csv";
+  $("#g-src").textContent=g.source==="raw"?"IMU brute (accéléro + gyro HID)":"devmotion6 (repli)";
+  if(g.error)$("#g-flags").textContent="erreur : "+g.error;
+  drawGestures(g);
+  if(s){$("#sp-words").textContent=Object.entries(s.words||{}).map(([w,n])=>`${w} (${n})`).join(", ")||"aucun";
+    const l=s.last;$("#sp-last").textContent=!l?"—":l.error?l.error:l.trained?`prise ajoutée : ${l.trained}`:(l.word?`« ${l.word} » (dist ${l.dist}, marge ${l.margin})`:`rejeté — ${l.reason}`);
+    const v=s.evaluation;$("#sp-eval-res").textContent=!v?"—":v.error?v.error:`${Math.round(v.loo_accuracy*100)} % (hasard ${Math.round(v.chance*100)} %) · p = ${v.p_value} · ${v.verdict}`}}
 const scrPos=[50,50];
 function renderCalib(c){
   const steps=$("#cal-steps");
@@ -497,8 +667,77 @@ function renderSensors(s){
 }
 window.sensor=(dev,action,report)=>{const iv=$("#iv-"+dev);post("/api/sensor",{dev,action,interval:iv?+iv.value:10000,report:report||1});
   toast(action==="get"?"Lecture demandée":action==="start"?"Flux démarré":"Flux arrêté");setTimeout(refreshState,400)};
+
+// ---------- Labo
+const LB_DESC={dents:"Incisives, molaires gauches, molaires droites × doux / moyen / fort, 8 claquements chacun (≈ 4 min). Mesure la force par niveau et par dent, la séparabilité gauche/droite, et propose un seuil.",
+  mouvements:"Hochement, secouement, inclinaisons gauche/droite, regard haut/bas × 5 (≈ 2 min). Taux de détection par geste avec les seuils actuels.",
+  mots:"EXPÉRIMENTAL — 5 mots articulés sans voix × 10 (≈ 2 min 40). Entraîne silent_speech (DTW) et mesure la précision contre le hasard (500 permutations). p > 0,05 : rien ne prouve que l'IMU capte les mots."};
+let lbProto="dents",lbPts=[],lbT=null,lbData=null,lbTimer=null,lbLastRes=null;
+const GRP={inc:"Incisives",mol_g:"Molaires gauches",mol_d:"Molaires droites"},LVL={doux:"Doux",moyen:"Moyen",fort:"Fort"};
+$$("#lb-proto button").forEach(b=>b.onclick=()=>{lbProto=b.dataset.v;$$("#lb-proto button").forEach(x=>x.classList.toggle("on",x===b));
+  $("#lb-words-row").style.display=lbProto==="mots"?"flex":"none";$("#lb-proto-desc").textContent=LB_DESC[lbProto]});
+$("#lb-proto-desc").textContent=LB_DESC.dents;
+$("#lb-start").onclick=()=>{const reps=+$("#lb-reps").value||undefined;
+  post("/api/labo",{action:"start",protocol:lbProto,reps,words:$("#lb-words").value}).then(r=>r.json()).then(j=>{if(j.error)toast(j.error);else toast("Session démarrée")})};
+$("#cue-cancel").onclick=()=>post("/api/labo",{action:"cancel"}).then(()=>toast("Session annulée"));
+function lbPoll(){fetch("/api/labo"+(lbT!==null?"?since="+lbT:"")).then(r=>r.json()).then(d=>{lbData=d;const L=d.live;
+  if(L){if(lbT!==null&&L.t<lbT-1)lbPts=[];L.pts.forEach(p=>lbPts.push(p));if(L.pts.length)lbT=L.pts[L.pts.length-1][0];
+    const t0=L.t-5;while(lbPts.length&&lbPts[0][0]<t0)lbPts.shift()}
+  renderLabo(d)}).catch(()=>{})}
+function lbStartPoll(){if(!lbTimer)lbTimer=setInterval(()=>{const s=lbData&&lbData.session;if(page==="labo"||(s&&!s.done))lbPoll()},100)}
+lbStartPoll();
+const lcv=$("#lb-chart"),lcx=lcv.getContext("2d");
+function drawLabo(L,real){const W=lcv.clientWidth,H=240,dpr=devicePixelRatio||1;if(lcv.width!==W*dpr){lcv.width=W*dpr;lcv.height=H*dpr}
+  lcx.setTransform(dpr,0,0,dpr,0,0);lcx.clearRect(0,0,W,H);const css=getComputedStyle(document.documentElement),cv=n=>css.getPropertyValue(n);
+  const tN=L?L.t:0,X=t=>36+(t-tN+5)/5*(W-76);let ma=0.5,mg=50;lbPts.forEach(p=>{ma=Math.max(ma,p[1]);mg=Math.max(mg,p[2])});
+  ma=Math.min(Math.ceil(ma*2)/2,8);mg=Math.ceil(mg/50)*50;const Y=v=>H-14-v/ma*(H-30),Yg=v=>H-14-v/mg*(H-30);
+  lcx.strokeStyle=cv("--line");lcx.fillStyle=cv("--text2");lcx.font="11px -apple-system,sans-serif";lcx.lineWidth=1;
+  [0,.25,.5,.75,1].forEach(f=>{const y=H-14-f*(H-30);lcx.beginPath();lcx.moveTo(36,y);lcx.lineTo(W-40,y);lcx.stroke();lcx.fillText((f*ma).toFixed(1),2,y+4);lcx.fillText(Math.round(f*mg),W-36,y+4)});
+  [[L&&L.thr,"--purple"],[real,"--orange"]].forEach(([v,c])=>{if(!v||v>ma)return;lcx.strokeStyle=cv(c);lcx.setLineDash([5,4]);lcx.beginPath();lcx.moveTo(36,Y(v));lcx.lineTo(W-40,Y(v));lcx.stroke();lcx.setLineDash([])});
+  [["--accent",2,Yg],["--red",1,Y]].forEach(([c,k,f])=>{lcx.strokeStyle=cv(c);lcx.lineWidth=1.3;lcx.beginPath();lbPts.forEach((p,i)=>{const x=X(p[0]),y=f(p[k]);i?lcx.lineTo(x,y):lcx.moveTo(x,y)});lcx.stroke()});
+  if(!L)return;(L.spikes||[]).forEach(sp=>{if(sp.t<tN-5)return;lcx.fillStyle=sp.peak>=(real||9)?cv("--green"):cv("--text2");lcx.beginPath();lcx.arc(X(sp.t),Y(Math.min(sp.peak,ma)),4,0,7);lcx.fill()});
+  (L.events||[]).forEach(e=>{if(e.t<tN-5)return;const x=X(e.t);lcx.strokeStyle=cv("--purple");lcx.lineWidth=2;lcx.setLineDash([4,3]);lcx.beginPath();lcx.moveTo(x,16);lcx.lineTo(x,H-14);lcx.stroke();lcx.setLineDash([]);
+    lcx.fillStyle=cv("--text");lcx.fillText((G_NAMES[e.type]||e.type)+(e.peak&&e.type.startsWith("teeth")?" "+e.peak.toFixed(2):""),Math.min(x+3,W-120),12)})}
+function pct(x){return x==null?"—":Math.round(x*100)+" %"}
+function pv(x){return x==null?"—":(x<0.001?"< 0,001":String(x).replace(".",","))}
+function renderLabo(d){const L=d.live,c=d.config||{},real=c.click_thresh;
+  $("#lb-src").textContent=!L||!L.src?"aucun échantillon":L.src==="raw"?"IMU brute ~200 Hz":"devmotion6 (50 Hz, repli)";
+  $("#lb-noise").textContent=L&&L.noise!=null?L.noise.toFixed(3)+" m/s²":"—";$("#lb-thr").textContent=L&&L.thr!=null?L.thr.toFixed(3)+" m/s²":"—";
+  $("#lb-real").textContent=real!=null?real+" m/s²"+(c.click_adaptive?` · adaptatif (≥ ${c.click_noise_k} × bruit)`:""):"—";
+  $("#lb-warn").textContent=!c.enabled?"Gestes désactivés : active-les (page Gestes) pour recevoir l'IMU brute.":L&&L.src==="dm6"?"IMU brute absente : 50 Hz seulement, claquements mal mesurés.":"";
+  if(page==="labo"){drawLabo(L,real);const sp=(L&&L.spikes||[]).slice(-8).reverse();
+    $("#lb-spikes").innerHTML=sp.length?sp.map(x=>`<tr><td class="mono">${(L.t-x.t).toFixed(1)} s</td><td class="mono"><b>${x.peak.toFixed(2)}</b> m/s²</td><td class="mono">${x.dur_ms} ms</td><td class="mono">${x.axis} (${x.vec.map(v=>v.toFixed(2)).join(", ")})</td><td class="mono">${x.gyro_mean} / ${x.gyro_max} °/s</td><td class="mono">${x.thr}</td><td>${x.peak>=real?'<span class="pill g">au-dessus</span>':'<span class="pill o">sous le seuil</span>'}</td></tr>`).join(""):'<tr><td colspan="7" class="empty">Aucune impulsion</td></tr>'}
+  const s=d.session,cue=$("#lb-cue");
+  if(s&&!s.done&&s.step){const st=s.step;cue.classList.add("on");cue.classList.toggle("go",st.kind==="click"||st.kind==="move"||st.kind==="word");cue.classList.toggle("rest",st.kind==="rest");
+    $("#cue-t").textContent=st.title;$("#cue-s").textContent=st.sub;$("#cue-cd").textContent=Math.max(st.left,0).toFixed(1);
+    $("#cue-pb").style.width=Math.min(100,s.elapsed/s.total*100)+"%";$("#cue-prog").textContent=`étape ${st.i+1} / ${st.n} · ${Math.round(s.elapsed)} / ${Math.round(s.total)} s`;
+    $("#cue-n").textContent=st.kind==="click"?(s.live_count?`impulsion captée ✓ (${s.live_count})`:"en attente du claquement…"):"";$("#cue-next").textContent=st.next?"ensuite : "+st.next:""}
+  else cue.classList.remove("on");
+  $("#lb-sess-info").textContent=s?(s.done?(s.cancelled?"session annulée":"session terminée")+" · "+(s.path||"").split("/").slice(-2).join("/"):"en cours…"):"";
+  if(s&&s.result){const key=JSON.stringify(s.result);if(key!==lbLastRes){lbLastRes=key;$("#lb-res").innerHTML=labResult(s.result,real)}}}
+function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">Enregistrement : <code>${esc((r.path||"").split("/").slice(-3).join("/"))}</code>${r.cancelled?" (partiel, session annulée)":""} · bruit au repos p90 ${r.noise.p90??"—"} / p99 ${r.noise.p99??"—"} m/s², ${r.noise.rest_spikes} impulsion(s) au repos</div>`;
+  if(r.protocol==="dents"){const f=r.force;h+=`<div class="kv"><span>Consignes avec une impulsion captée</span><span>${r.captured.with_impulse} / ${r.captured.cues}</span></div>`;
+    if(f){h+=`<table style="margin-top:8px"><thead><tr><th>Dents</th>${Object.values(LVL).map(l=>`<th>${l} : n · médiane [min–max] m/s²</th>`).join("")}</tr></thead><tbody>`+
+      Object.keys(GRP).map(g=>`<tr><td>${GRP[g]}</td>${Object.keys(LVL).map(l=>{const x=f.by_group_level[g+":"+l];return `<td class="mono">${x?`${x.n} · <b>${x.median}</b> [${x.min}–${x.max}]`:"—"}</td>`}).join("")}</tr>`).join("")+
+      `<tr><td><b>Tous</b></td>${Object.keys(LVL).map(l=>{const x=f.by_level[l];return `<td class="mono">${x?`${x.n} · <b>${x.median}</b> [${x.min}–${x.max}]`:"—"}</td>`}).join("")}</tr></tbody></table>`}
+    const sp=r.separability;if(sp){const line=(n,x)=>`<div class="kv"><span>${n}</span><span>${x.error?x.error:`${pct(x.accuracy)} (hasard ${pct(x.chance)}, n = ${x.n}) · p = ${pv(x.p_value)} · <b>${x.verdict}</b>`}</span></div>`;
+      h+=`<h3 style="margin-top:16px">Séparabilité (direction du pic, centroïde le plus proche, leave-one-out)</h3>`+line("Molaires gauches vs droites",sp.mol_g_vs_mol_d)+line("Incisives vs molaires",sp.inc_vs_mol)+
+      `<div class="hint">Score honnête : chaque claquement est classé sans avoir servi à l'apprentissage. Le hasard = toujours répondre la classe la plus fréquente ; p = probabilité de faire au moins aussi bien par hasard (binomiale).</div>`}
+    const p=r.proposal;h+=`<h3 style="margin-top:16px">Seuil de force</h3>`;
+    if(p&&p.click_thresh){h+=`<div class="kv"><span>Claquements doux : p10</span><span class="mono">${p.soft_p10} m/s² (n = ${p.n_soft})</span></div><div class="kv"><span>Plancher de bruit</span><span class="mono">${p.floor} m/s²</span></div>
+      <div class="kv"><span>Seuil proposé</span><span><b class="mono">${p.click_thresh} m/s²</b> (actuel ${real}) — ${esc(p.reason)}</span></div>
+      <div class="kv"><span>Détectés à ce seuil</span><span>${Object.entries(r.at_proposal||{}).map(([l,v])=>`${LVL[l]} ${pct(v)}`).join(" · ")}</span></div>
+      <div class="row" style="margin-top:10px"><button class="btn p" onclick="lbApply(${p.click_thresh})">Appliquer click_thresh = ${p.click_thresh}</button><span class="hint">le seuil adaptatif reste actif : il remonte quand on parle ou mâche</span></div>`}
+    else h+=`<div class="hint">${esc(p?p.reason:"—")}</div>`}
+  else if(r.protocol==="mouvements"){const rt=r.rates||{};h+=`<table><thead><tr><th>Geste</th><th>Détecté</th><th>Autres gestes pendant la consigne</th></tr></thead><tbody>`+
+    Object.entries(rt).map(([ph,x])=>`<tr><td>${ph}</td><td class="mono"><b>${x.hits} / ${x.cues}</b> (${pct(x.rate)})</td><td class="mono">${Object.entries(x.other).map(([k,v])=>(G_NAMES[k]||k)+" ×"+v).join(", ")||"—"}</td></tr>`).join("")+`</tbody></table>`}
+  else if(r.protocol==="mots"){const v=r.speech||{};h+=`<div class="exp" style="margin-bottom:8px">EXPÉRIMENTAL — parole silencieuse</div><div class="kv"><span>Prises</span><span>${Object.entries(r.words||{}).map(([w,n])=>w+" ×"+n).join(", ")||"—"}</span></div>`;
+    h+=v.status?`<div class="hint">Évaluation en cours (DTW + 500 permutations, quelques dizaines de secondes)…</div>`:v.error?`<div class="hint">${esc(v.error)}</div>`:
+      `<div class="kv"><span>Précision leave-one-out</span><span><b>${pct(v.loo_accuracy)}</b> (hasard ${pct(v.chance)}) · p = ${pv(v.p_value)} · <b>${esc(v.verdict)}</b></span></div><div class="kv"><span>Prises trop courtes</span><span>${v.too_short||0}</span></div>`}
+  return h}
+window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
 // ---------- boucles
-function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState()}).catch(()=>{})}
+function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState();if(page==="gestures")fillGestures()}).catch(()=>{})}
 setInterval(refreshState,1000);refreshState();
 function connect(){const es=new EventSource("/api/stream");es.onmessage=e=>{T=JSON.parse(e.data);renderTelemetry()};
   es.onerror=()=>{es.close();$("#side-dot").className="dot";$("#side-status").textContent="Contrôleur arrêté";setTimeout(connect,1500)}}

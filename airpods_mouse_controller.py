@@ -67,6 +67,50 @@ DEFAULTS = {
                    "right": "left_click", "left": "right_click"},
     "dwell_click": {"enabled": False, "time_s": 1.0, "radius_px": 12, "min_move_px": 60},
     "scroll": {"lines_per_deg": 0.25},
+    # gestes tête / mâchoire (gestures.py). Tous les seuils ici, réglables à chaud depuis l'interface.
+    "gestures": {
+        "enabled": False,
+        "require_activation": True,   # double clic des dents -> fenêtre d'action
+        "activation": "teeth_double",
+        "window_s": 2.0,
+        "freeze_cursor_when_armed": True,   # curseur figé pendant la fenêtre d'action
+        "freeze_after_s": 0.6,              # … et encore 0,6 s après l'action
+        "max_interp_gap_s": 0.03,     # trou capteur plus court : interpolé ; plus long : segment invalide
+        # source préférée : accéléro + gyro HID bruts (~201 Hz, horodatage capteur µs) ; devmotion6 sinon.
+        # 3 flux saturent le lien Bluetooth (devmotion6 tombe à ~43 Hz irrégulier) : tant que les gestes
+        # sont actifs, devmotion6 (souris) passe à dm6_interval_with_raw_us (0 = inchangé).
+        "use_raw_imu": True, "raw_interval_us": 5000, "dm6_interval_with_raw_us": 20000,
+        # claquement des dents (pic d'accélération passe-haut)
+        "click_hp_hz": 8.0, "click_thresh": 0.45, "click_low_frac": 0.5, "click_max_ms": 120,
+        "click_refractory_ms": 120, "click_max_gyro_dps": 20.0, "click_gyro_win_s": 0.15,
+        "click_quiet_s": 0.5,
+        # seuil adaptatif : seuil effectif = max(click_thresh, k × bruit de fond) ; bruit = centile pct de
+        # |acc passe-haut| sur win_s, tête quasi immobile (< still_dps). Monte si l'on parle / mâche.
+        "click_adaptive": True, "click_noise_k": 4.0, "click_noise_pct": 0.9, "click_noise_win_s": 2.0,
+        "click_noise_still_dps": 30.0,
+        # écho : impulsion < frac × pic précédent dans les echo_s qui suivent un claquement (relâchement
+        # de la mâchoire, ~0,2–0,4 s après) -> ignorée ; impulsions de mastication : pic >= chew_impulse_min
+        "click_echo_s": 0.45, "click_echo_frac": 0.3, "chew_impulse_min": 0.3,
+        "click_end_frac": 0.25,       # fin d'un pic : sous max(lo/2, frac × pic) (durée indépendante du seuil)
+        "double_min_s": 0.08, "double_max_s": 0.45,
+        "click_side_axis": "",        # "" = côté inconnu ; ex. "x" (x>0 = gauche) ou "-x" après essais
+        # mâchoire (expérimental)
+        "clench_enabled": False, "clench_rms": 0.12, "clench_min_s": 0.6,
+        "slide_enabled": False,       # pas de règle plausible : jamais détecté
+        # tête (vitesses lacet/tangage/roulis calibrées, °/s et degrés)
+        "lobe_dps": 40.0, "nod_deg": 8.0, "shake_deg": 10.0, "nod_lobes": 2, "shake_lobes": 3,
+        "osc_max_s": 2.0, "lobe_gap_s": 0.4, "dominance": 2.0,
+        "tilt_deg": 15.0, "tilt_hold_s": 0.25, "cross_axis_ratio": 1.3, "look_deg": 15.0, "look_hold_s": 0.5,
+        "hold_max_dps": 30.0, "refractory_s": 0.4, "base_tau_s": 8.0,
+        # rejet
+        "big_motion_dps": 800.0, "big_motion_deg": 90.0, "big_motion_hold_s": 0.5,
+        "walk_rms": 1.0, "walk_ratio": 0.35, "walk_window_s": 3.0, "walk_hold_s": 1.5,
+        "chew_count": 4, "chew_window_s": 3.0, "chew_hold_s": 2.0, "chew_merge_s": 0.35,
+        "calib_reps": 10, "calib_frac": 0.6,
+        "mapping": {"teeth_click": "left_click", "nod": "left_click", "shake": "right_click",
+                    "tilt_left": "none", "tilt_right": "none", "look_up": "none", "look_down": "none",
+                    "jaw_clench": "none", "jaw_slide_left": "none", "jaw_slide_right": "none"},
+    },
     "notifications": True,
     "profiles": {},
 }
@@ -292,6 +336,8 @@ class AAPClient:
         self.rhid_counts = {}        # dev -> nombre d'InputReport
         self.rhid_replies = []       # [(temps, kind, dev, payload)] réponses Get/SetReport
         self.rhid_active = {}        # dev -> intervalle des flux démarrés à la main (relancés après réannonce)
+        self.imu_kinds = {}          # dev -> "a" | "w" : flux IMU bruts demandés par les gestes
+        self.imu_reports = []        # [(kind, payload)] en attente pour Controller.raw_imu_hooks
         self.on_raw = None           # callback(direction, paquet)
 
     def _pick(self):
@@ -420,6 +466,9 @@ class AAPClient:
                     self.rhid_last[dev] = (time.monotonic(), pl)
                     if dev == self.rhid_motion and len(pl) >= 51:
                         blocks.append(pl[1:])      # pl[0] = type de rapport
+                    elif dev in self.imu_kinds:
+                        self.imu_reports.append((self.imu_kinds[dev], pl))
+                        del self.imu_reports[:-400]
                 elif kind in (RHID_SET, RHID_GET):
                     self.rhid_replies.append((time.monotonic(), kind, dev, pl))
                     del self.rhid_replies[:-50]
@@ -839,6 +888,8 @@ class Controller:
         self._cfg_mtime = self._mtime()
         self.history = []            # [(temps, w, g, (lacet, tangage, roulis), att)] pour l'interface
         self.sample_hooks = []       # callbacks(w, g, dt) (calibration dans l'interface)
+        self.gesture_hooks = []      # callbacks(ts_ns, now, att, w, g, a, (lacet, tangage, roulis)) — gestures.py
+        self.raw_imu_hooks = []      # callbacks(kind "a"|"w", payload HID, now) — IMU brute pour gestures.py
         self.sample_times = []
 
     def _make_filters(self):
@@ -940,6 +991,39 @@ class Controller:
         elif cmd not in ("none", ""):
             log.warning("Commande inconnue : %s", cmd)
 
+    # ---- IMU brute pour les gestes (accel/gyro HID ~200 Hz)
+    def raw_imu_wanted(self):
+        gc = self.cfg.get("gestures", {})
+        return bool(gc.get("enabled") and gc.get("use_raw_imu", True) and self.raw_imu_hooks)
+
+    def motion_interval_us(self):
+        """Intervalle devmotion6 (souris) : réduit tant que l'IMU brute tourne, si configuré."""
+        iv = int(self.cfg.get("gestures", {}).get("dm6_interval_with_raw_us", 0) or 0)
+        return iv if (self.raw_imu_wanted() and iv > 0) else int(self.cfg["sensor_interval_us"])
+
+    def sync_raw_imu(self, aap):
+        """Démarre / arrête les flux accel + gyro bruts selon la config (relancés après réannonce
+        grâce à rhid_active). N'arrête que les flux démarrés ici."""
+        want = self.raw_imu_wanted()
+        iv = int(self.cfg.get("gestures", {}).get("raw_interval_us", 5000))
+        kinds = getattr(aap, "imu_kinds", None)
+        if kinds is None or not getattr(aap, "sock", None):
+            return
+        for name, kind in (("accel", "a"), ("gyro", "w")):
+            dev = aap.rhid_devs.get(name)
+            if dev is None:
+                continue
+            if want and (aap.rhid_active.get(dev) != iv or dev not in kinds):
+                aap.rhid_set_feature(dev, 1, iv)
+                aap.rhid_active[dev] = iv
+                kinds[dev] = kind
+                log.info("Gestes : flux %s brut (RemoteHID %d) à %d µs", name, dev, iv)
+            elif not want and dev in kinds:
+                aap.rhid_set_feature(dev, 1, 0)
+                aap.rhid_active.pop(dev, None)
+                kinds.pop(dev, None)
+                log.info("Gestes : flux %s brut arrêté", name)
+
     def recenter(self, quiet=False):
         self.ang = [0.0, 0.0]
         self.vel = (0.0, 0.0)
@@ -959,7 +1043,11 @@ class Controller:
 
     @property
     def inactive(self):
-        return self.paused
+        if self.paused:
+            return True
+        g = getattr(self, "gestures", None)
+        gc = self.cfg.get("gestures", {})
+        return bool(g and gc.get("enabled") and gc.get("freeze_cursor_when_armed", True) and g.cursor_frozen())
 
     # ---- échantillons
     def on_packet(self, pkt, aap):
@@ -967,6 +1055,11 @@ class Controller:
         for blk in aap.process(pkt):
             self.last_ht = now
             self.on_block(blk, now)
+        reports = getattr(aap, "imu_reports", None)
+        while reports:
+            kind, pl = reports.pop(0)
+            for hook in list(self.raw_imu_hooks):
+                hook(kind, pl, now)
         # l'état oreille oscille quand on tient un écouteur (capteur de proximité) : on attend 1,5 s
         if aap.place and not getattr(self, "_place_known", False):
             self._place_known = True              # premier état reçu : appliqué tout de suite
@@ -999,7 +1092,10 @@ class Controller:
         yaw, pitch, roll = self.engine.step(w, g, dt)
         for hook in list(self.sample_hooks):
             hook(w, g, dt, a)
-        self.history.append((now, w, g, (yaw, pitch, roll), struct.unpack_from("<hhh", blk, 20)))
+        att = struct.unpack_from("<hhh", blk, 20)
+        for hook in list(self.gesture_hooks):
+            hook(ts, now, att, w, g, a, (yaw, pitch, roll))
+        self.history.append((now, w, g, (yaw, pitch, roll), att))
         if len(self.history) > 1200:
             del self.history[:200]
         self.sample_times.append(now)
@@ -1160,6 +1256,17 @@ def run(cfg, cfg_path, diag=False, web_port=8737):
     ctrl = open_ctrl_socket()
     ptr = NullPointer() if diag else Pointer()
     ctl = Controller(cfg, ptr, diag=diag, cfg_path=cfg_path)
+    try:                       # gestes tête / mâchoire : module optionnel, ne doit jamais bloquer la souris
+        import gestures
+        ctl.gestures = gestures.GestureEngine(
+            lambda: ctl.cfg.get("gestures", {}), command=ctl.command,
+            notifier=lambda text: notify(ctl.cfg, text),
+            save=lambda upd: update_config_file(cfg_path, {"gestures": upd}),
+            profile_get=lambda: ctl.engine.p)
+        ctl.gesture_hooks.append(ctl.gestures.on_sample)
+        ctl.raw_imu_hooks.append(ctl.gestures.on_raw)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Module gestes indisponible : %s", e)
     web = None
     if web_port:
         try:
@@ -1203,7 +1310,9 @@ def run(cfg, cfg_path, diag=False, web_port=8737):
             ctl.set_device(aap.pid)
             if stem_on:
                 aap.send(PKT_STEM_EVENTS_ON)
+            aap.interval_us = ctl.motion_interval_us()
             aap.start_tracking()
+            ctl.sync_raw_imu(aap)
             ctl.last_start_sent = ctl.last_ht = time.monotonic()
             connected_at = time.monotonic()
             frame = 1.0 / max(int(cfg["render_hz"]), 10)
@@ -1230,9 +1339,10 @@ def run(cfg, cfg_path, diag=False, web_port=8737):
                     if now >= next_reload:
                         next_reload = now + 1.0
                         ctl.maybe_reload()
-                        if int(cfg["sensor_interval_us"]) != aap.interval_us:
-                            aap.interval_us = int(cfg["sensor_interval_us"])
+                        if ctl.motion_interval_us() != aap.interval_us:
+                            aap.interval_us = ctl.motion_interval_us()
                             aap.start_tracking()
+                        ctl.sync_raw_imu(aap)
                     wait = 20 if ctl.place == "case" else 4
                     if now - ctl.last_ht > wait and now - ctl.last_start_sent > wait:
                         log.info("Pas de données de mouvement — relance du flux")

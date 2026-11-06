@@ -13,6 +13,12 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/sensor       {"dev": 7, "action": "start|stop|get", "interval": 10000, "report": 1}
   POST /api/control      {"ident": 0x17, "values": [0, 0, 0, 0]}     (commande AAP 0x09)
   POST /api/raw          {"hex": "04000400..."}                       (avancé)
+  GET  /api/gestures     gestes : événements, statistiques capteur, calibration, enregistrement
+  POST /api/gestures     {"action": "enable|disable|set|mapping|calib_start|calib_cancel|rec_start|rec_label|
+                          rec_stop|clear", ...}
+  POST /api/speech       parole silencieuse (expérimental) : {"action": "start|stop|evaluate|forget|clear", "word"}
+  GET  /api/labo?since=t Labo : courbes pleine cadence (|acc passe-haut|, |gyro|), impulsions, session guidée
+  POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
 Les actions qui touchent au Bluetooth sont mises en file et exécutées par la boucle principale.
 """
 import base64
@@ -24,6 +30,7 @@ import re
 import struct
 import threading
 import time
+from urllib.parse import parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import airpods_mouse_controller as m
@@ -332,6 +339,28 @@ class WebUI:
         self.t_start = time.time()
         self.server = None
         self.rec = None           # enregistrement brut en cours : {"until", "path", "rows"}
+        self.speech = None        # parole silencieuse (expérimental)
+        self.speech_result = None
+        try:
+            import silent_speech
+            self.speech = silent_speech.SpeechSession(os.path.join(HERE, "captures", "private", "silent_speech.json"))
+            ctl.gesture_hooks.append(self.speech.on_sample)
+        except Exception as e:  # noqa: BLE001
+            m.log.warning("Parole silencieuse indisponible : %s", e)
+        self.labo_tap = None      # page Labo : détecteur permissif + session guidée
+        self.labo = None
+        self.labo_done = None
+        try:
+            import labo
+            self._labo_mod = labo
+            g = getattr(ctl, "gestures", None)
+            if g is not None:
+                self.labo_tap = labo.LiveTap(lambda: ctl.cfg.get("gestures", {}))
+                self.labo_tap.listeners.append(self._labo_listen)
+                g.sample_taps.append(self.labo_tap.on_sample)
+            ctl.gesture_hooks.append(self._labo_dm6)
+        except Exception as e:  # noqa: BLE001
+            m.log.warning("Labo indisponible : %s", e)
 
     # ---- liaison avec la boucle principale
     def attach(self, aap):
@@ -401,6 +430,114 @@ class WebUI:
             aap.send(bytes.fromhex(item[1].replace(" ", "")))
         elif kind == "reconnect" and aap and aap.sock:
             aap.sock.shutdown(2)
+        elif kind == "gest":
+            self._gest(item[1])
+        elif kind == "speech" and self.speech:
+            self.speech_result = self.speech.action(item[1])
+
+    def _gest(self, body):
+        """Actions gestes exécutées dans la boucle principale (même thread que les échantillons)."""
+        g = getattr(self.ctl, "gestures", None)
+        if g is None:
+            return
+        a = body.get("action")
+        if a == "calib_start":
+            g.start_calib(str(body.get("gesture", "nod")), body.get("reps"))
+        elif a == "calib_cancel":
+            g.cancel_calib()
+        elif a == "rec_start":
+            name = re.sub(r"[^\w.-]", "_", str(body.get("name") or f"gestes_{int(time.time())}"))
+            g.start_record(os.path.join(HERE, "captures", "private", name + ".csv"), str(body.get("label", "")))
+        elif a == "rec_label":
+            g.set_label(str(body.get("label", "")))
+        elif a == "rec_stop":
+            info = g.stop_record()
+            if info:
+                m.log.info("Enregistrement gestes : %s (%d lignes)", info["path"], info["rows"])
+        elif a == "clear":
+            g.events.clear()
+
+    # ---- Labo
+    def _labo_listen(self, kind, obj):
+        sess = self.labo
+        if sess is not None and not sess.done:
+            sess.on_tap(kind, obj)
+            if kind == "hp":
+                sess.tick()
+
+    def _labo_dm6(self, ts_ns, now, att, w, g, a, rates):
+        sess = self.labo
+        if sess is None or sess.done:
+            return
+        q = None
+        if att is not None and len(att) == 3:
+            x, y, z = (c / 32768.0 for c in att)
+            n2 = x * x + y * y + z * z
+            q = (math.sqrt(max(0.0, 1 - n2)), x, y, z) if 0.01 < n2 < 1.01 else None
+        sess.on_dm6(ts_ns, q, w, a)
+        sess.tick(now)
+
+    def labo_start(self, body):
+        L = self._labo_mod
+        proto = str(body.get("protocol", "dents"))
+        words = body.get("words")
+        if isinstance(words, str):
+            words = [w for w in re.split(r"[,;\s]+", words) if w]
+        steps = L.build_protocol(proto, body.get("reps"), words)
+        if self.labo is not None and not self.labo.done:
+            self.labo.cancel()
+        name = f"labo_{proto}_{time.strftime('%Y%m%d_%H%M%S')}"
+        path = os.path.join(HERE, "captures", "private", name + ".json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        now = time.monotonic()
+        rec = {"t0": now, "until": now + steps[-1]["t1"] + 1.5, "path": path, "rows": [], "phase": ""}
+        self.rec = rec
+
+        def on_phase(ph):
+            if self.rec is rec:
+                rec["phase"] = ph
+        self.labo = L.LaboSession(proto, steps, time.monotonic, on_phase, path)
+        self.labo_done = None
+        return {"ok": True, "path": path, "total": steps[-1]["t1"]}
+
+    def labo_cancel(self):
+        sess = self.labo
+        if sess is not None and not sess.done:
+            sess.cancel()
+            if self.rec and self.rec.get("path") == sess.path:
+                self.rec["until"] = time.monotonic()      # enregistrement partiel conservé
+            sess.result = sess.analyze()
+
+    def labo_poll(self):
+        """Fin de session : bilan écrit à côté de l'enregistrement ; mots -> évaluation dans un thread."""
+        sess = self.labo
+        if sess is None:
+            return
+        sess.tick()
+        if sess.done and self.labo_done is not sess:
+            self.labo_done = sess
+            if sess.result is None:
+                sess.result = sess.analyze()
+            base = os.path.splitext(sess.path)[0]
+
+            def finish():
+                if sess.protocol == "mots" and not sess.cancelled:
+                    sess.evaluate_words(500, base + "_modele.json")
+                try:
+                    with open(base + "_bilan.json", "w") as f:
+                        json.dump(sess.result, f, ensure_ascii=False, indent=1, default=str)
+                except OSError as e:
+                    m.log.warning("Labo : bilan non écrit : %s", e)
+            threading.Thread(target=finish, daemon=True).start()
+
+    def labo_state(self, since=None):
+        self.labo_poll()
+        gc = m.DEFAULTS["gestures"].copy()
+        gc.update({k: v for k, v in self.ctl.cfg.get("gestures", {}).items() if k != "mapping"})
+        return {"live": self.labo_tap.live(since) if self.labo_tap else None,
+                "session": self.labo.as_dict() if self.labo else None,
+                "config": {k: gc.get(k) for k in ("enabled", "click_thresh", "click_adaptive", "click_noise_k",
+                                                  "use_raw_imu")}}
 
     def _unhook(self):
         self.ctl.sample_hooks[:] = [h for h in self.ctl.sample_hooks
@@ -438,7 +575,17 @@ class WebUI:
             "series": [[round(h[3][0], 1), round(h[3][1], 1), round(h[3][2], 1)] for h in hist[::3]],
             "calib": self.calib.as_dict() if self.calib else None,
             "battery": self.dev.battery, "ear": self.dev.ear,
+            "gestures": self._gest_summary(),
+            "speech": self.speech.as_dict() if self.speech else None,
         }
+
+    def _gest_summary(self):
+        g = getattr(self.ctl, "gestures", None)
+        if g is None:
+            return None
+        s = g.summary()
+        s["trace"] = s["trace"][::2]
+        return s
 
     def state(self):
         aap, ctl = self.aap, self.ctl
@@ -478,6 +625,7 @@ class WebUI:
             "config": cfg, "profiles": ctl.cfg.get("profiles", {}),
             "profile_key": ctl.profile_key(), "calibrated": ctl.profile_key() in ctl.cfg.get("profiles", {}),
             "uptime": round(time.time() - self.t_start),
+            "gesture_stats": ctl.gestures.buf.stats() if getattr(ctl, "gestures", None) else None,
         }
 
     # ---- serveur HTTP
@@ -498,6 +646,7 @@ class WebUI:
                 self.wfile.write(data)
 
             def do_GET(self):
+                qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
                 if self.path in ("/", "/index.html"):
                     data = open(UI_FILE, "rb").read()
@@ -511,6 +660,21 @@ class WebUI:
                     self._json({"ok": True})
                 elif self.path == "/api/state":
                     self._json(ui.state())
+                elif self.path == "/api/gestures":
+                    g = getattr(ui.ctl, "gestures", None)
+                    if g is None:
+                        return self._json({"error": "module gestes indisponible"}, 503)
+                    d = g.summary()
+                    d["events"] = list(g.events)
+                    d["stats"] = g.buf.stats()
+                    d["config"] = ui.ctl.cfg.get("gestures", {})
+                    self._json(d)
+                elif self.path == "/api/labo":
+                    try:
+                        since = float(qs["since"][0]) if "since" in qs else None
+                    except ValueError:
+                        since = None
+                    self._json(ui.labo_state(since))
                 elif self.path == "/api/stream":
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
@@ -554,6 +718,36 @@ class WebUI:
                     now = time.monotonic()
                     ui.rec = {"t0": now, "until": now + secs, "path": path, "rows": []}
                     return self._json({"ok": True, "path": path})
+                elif self.path == "/api/gestures":
+                    a = body.get("action")
+                    if a in ("enable", "disable"):
+                        m.update_config_file(ui.cfg_path, {"gestures": {"enabled": a == "enable"}})
+                        ui.q.put(("cmd", "reload"))
+                    elif a == "set":                    # seuils : {"values": {"click_thresh": 1.2, ...}}
+                        vals = {k: v for k, v in dict(body.get("values", {})).items()
+                                if k in m.DEFAULTS["gestures"] and k != "mapping"}
+                        m.update_config_file(ui.cfg_path, {"gestures": vals})
+                        ui.q.put(("cmd", "reload"))
+                    elif a == "mapping":                # {"mapping": {"nod": "left_click", ...}}
+                        mp = dict(ui.ctl.cfg.get("gestures", {}).get("mapping", {}))
+                        mp.update({str(k): str(v) for k, v in dict(body.get("mapping", {})).items()})
+                        m.update_config_file(ui.cfg_path, {"gestures": {"mapping": mp}})
+                        ui.q.put(("cmd", "reload"))
+                    else:
+                        ui.q.put(("gest", body))
+                elif self.path == "/api/speech":
+                    ui.q.put(("speech", body))
+                elif self.path == "/api/labo":
+                    if ui.labo_tap is None:
+                        return self._json({"error": "Labo indisponible (module gestes absent)"}, 503)
+                    a = body.get("action")
+                    try:
+                        if a == "start":
+                            return self._json(ui.labo_start(body))
+                        if a == "cancel":
+                            ui.labo_cancel()
+                    except ValueError as e:
+                        return self._json({"error": str(e)}, 400)
                 elif self.path == "/api/phase":
                     if ui.rec:
                         ui.rec["phase"] = str(body.get("phase", ""))

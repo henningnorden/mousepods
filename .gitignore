@@ -5,3 +5,4 @@ controller.log
 config.json
 config.json.tmp
 captures/private/
+.claude/
