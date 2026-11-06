@@ -68,6 +68,7 @@ h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;le
 .btn:hover{filter:brightness(.97)}.btn:active{transform:scale(.97)}
 .btn.p{background:var(--accent);color:#fff}.btn.d{background:color-mix(in srgb,var(--red) 14%,var(--card2));color:var(--red)}
 .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+.btn:disabled{opacity:.45;cursor:default;transform:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 /* contrôle segmenté */
 .seg{display:inline-flex;background:var(--card2);border-radius:10px;padding:3px;gap:2px}
@@ -161,6 +162,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <a data-p="calib"><span class="ic" style="background:#ff9f0a">◎</span>Calibration</a>
     <a data-p="gestures"><span class="ic" style="background:#ff375f">☺︎</span>Gestes</a>
     <a data-p="labo"><span class="ic" style="background:#64d2ff">⚗︎</span>Labo</a>
+    <a data-p="garmin"><span class="ic" style="background:#007aff">⌚︎</span>Garmin</a>
     <a data-p="sensors"><span class="ic" style="background:#af52de">⌬</span>Capteurs</a>
     <a data-p="device"><span class="ic" style="background:#ff375f">ⓘ</span>AirPods</a>
     <a data-p="log"><span class="ic" style="background:#5e5ce6">≡</span>Journal</a>
@@ -415,6 +417,59 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
   <button class="btn d" id="cue-cancel">Annuler la session</button></div>
 
 <!-- =============================== CAPTEURS -->
+<!-- =============================== GARMIN -->
+<section class="page" id="p-garmin">
+  <h1>Montre Garmin</h1><div class="sub">Incliner le poignet déplace le curseur, une double tape sur la montre clique. Accéléromètre seul, 25 Hz (service BLE 16).</div>
+  <div class="card" id="gm-missing" style="display:none"><h3>Module Garmin non installé</h3>
+    <div class="hint">La liaison avec la montre utilise la bibliothèque <b>garmin-ble</b>, installée à part :
+      <code>.venv/bin/pip install -r requirements-garmin.txt</code>, puis relancer MousePods.
+      garmin-ble est sous licence <b>AGPL-3.0</b> (MousePods reste sous Apache-2.0) : voir <code>docs/GARMIN.md</code>.</div>
+    <div class="hint mono" id="gm-missing-why" style="margin-top:8px"></div></div>
+  <div id="gm-body">
+  <div class="grid g2">
+    <div class="card"><h3>Connexion</h3>
+      <div class="set toggle" style="padding-top:0"><label>Adresse Bluetooth<small>montre déjà appairée avec bluetoothctl</small></label><div class="row"><input type="text" id="gm-addr" placeholder="XX:XX:XX:XX:XX:XX" style="width:170px" spellcheck="false"><button class="btn sm" id="gm-paired">Appairées…</button></div></div>
+      <div id="gm-paired-list" class="row"></div>
+      <div class="kv"><span>État</span><span id="gm-status">—</span></div>
+      <div class="kv"><span>Échantillons par seconde</span><span id="gm-rate" class="mono">—</span></div>
+      <div class="kv"><span>Souris</span><span id="gm-mouse">—</span></div>
+      <div class="kv"><span>Clics (double tape)</span><span id="gm-clicks" class="mono">0</span></div>
+      <div class="kv"><span>Amplitude calibrée</span><span id="gm-range" class="mono">—</span></div>
+      <div class="set toggle"><label>Connexion au démarrage<small>quand MousePods démarre</small></label><label class="sw"><input type="checkbox" data-gm="autoconnect"><span></span></label></div>
+      <div class="row" style="margin-top:10px"><button class="btn p" id="gm-connect">Connecter</button><button class="btn" id="gm-disconnect">Déconnecter</button></div>
+      <div class="hint" style="margin-top:10px">La montre n'accepte qu'un client BLE : déconnecte-la du téléphone (Bluetooth du téléphone coupé) avant.</div>
+    </div>
+    <div class="card" style="text-align:center"><h3>Calibration et inclinaison</h3>
+      <div id="gm-prompt" style="font-size:19px;font-weight:650;min-height:50px;letter-spacing:-.01em"></div>
+      <div class="hint" id="gm-step"></div>
+      <div class="hint" id="gm-err" style="color:var(--orange);font-weight:600;min-height:18px"></div>
+      <canvas id="gm-canvas" style="width:260px;height:260px;margin:8px auto 0;border-radius:12px;background:var(--card2)"></canvas>
+      <div class="steps" id="gm-steps"></div>
+      <div class="row" style="justify-content:center;margin-top:14px"><button class="btn" id="gm-recenter">Recentrer</button><button class="btn" id="gm-recal">Recalibrer tout</button><button class="btn" id="gm-pause">Pause</button></div>
+    </div>
+  </div>
+  <h2>Réglages</h2>
+  <div class="card">
+    <div class="set toggle" style="padding-top:0"><label>Mode<small>joystick : l'inclinaison donne une vitesse · pointeur : l'inclinaison donne une position à l'écran</small></label><div class="seg" id="gm-mode"><button data-v="joystick">Joystick</button><button data-v="pointeur">Pointeur</button></div></div>
+    <div class="set"><label>Vitesse max<small>pixels par seconde à fond d'amplitude (joystick)</small></label><input type="range" data-gm="max_speed" min="300" max="5000" step="100"><output></output></div>
+    <div class="set"><label>Zone morte<small>fraction de ton amplitude ignorée autour du neutre</small></label><input type="range" data-gm="deadzone" min="0.05" max="0.5" step="0.01"><output></output></div>
+    <div class="set"><label>Lissage<small>secondes ; plus petit = plus réactif</small></label><input type="range" data-gm="velocity_tau_s" min="0.02" max="0.25" step="0.01"><output></output></div>
+    <div class="set"><label>Force de tape<small>g ; seuil d'une tape sur la montre</small></label><input type="range" data-gm="tap_g" min="0.2" max="1.2" step="0.05"><output></output></div>
+    <div class="set toggle"><label>Inverser<small>horizontal · vertical</small></label><div class="row"><label class="sw"><input type="checkbox" data-gm="invert_x"><span></span></label><label class="sw"><input type="checkbox" data-gm="invert_y"><span></span></label></div></div>
+    <div class="set toggle"><label>Recentrage automatique<small>le neutre suit lentement le poignet au repos (dérive)</small></label><label class="sw"><input type="checkbox" data-gm="auto_center"><span></span></label></div>
+  </div>
+  <h2>Limites</h2>
+  <div class="card"><ul class="disc">
+    <li>La montre n'envoie en temps réel que l'<b>accéléromètre</b> : 3 échantillons toutes les 120 ms (24,9 Hz), 12 bits, ±8 g. Pas de gyroscope en direct.</li>
+    <li>On mesure donc l'<b>inclinaison</b> (direction de la gravité), pas la rotation autour de la verticale. Le rendu à 120 Hz lisse les marches de 25 Hz.</li>
+    <li>Latence : ~80 ms de mise en lot dans la montre, plus 130 ms médians (240 ms p95) de rafales BLE.</li>
+    <li>Bras baissé (grosse inclinaison) = pause. Une tape fige le curseur 0,35 s et annule le petit déplacement qu'elle a causé.</li>
+  </ul></div>
+  <h2>Messages</h2>
+  <div class="card"><table><tbody id="gm-msgs"><tr><td class="empty">—</td></tr></tbody></table></div>
+  </div>
+</section>
+
 <section class="page" id="p-sensors">
   <h1>Capteurs</h1><div class="sub">Services capteurs publiés par les AirPods via Apple RemoteHID (HID sur AACP). Interrogez-les et démarrez-les individuellement.</div>
   <div class="grid g2" id="sens-list"></div>
@@ -761,6 +816,61 @@ function refreshOT(){if(page!=="settings")return;fetch("/api/opentrack").then(r=
   $("#ot-en").checked=!!o.active;const p=o.pose||[0,0,0,0,0,0];
   $("#ot-status").textContent=o.active?`Actif → ${o.target}${o.forced?" (session --opentrack)":""} · ${o.packets} paquets · lacet ${p[3].toFixed(1)}° tangage ${p[4].toFixed(1)}° roulis ${p[5].toFixed(1)}°${o.errors?" · erreurs : "+o.errors:""}`:"Inactif"}).catch(()=>{})}
 setInterval(refreshOT,500);
+// ---------- Garmin (passe par /api/garmin ; module optionnel garmin-ble)
+let gmEdit=null;
+const gmPost=b=>post("/api/garmin",b).then(r=>r.json()).then(j=>{if(j.error)toast(j.error);setTimeout(gmPoll,150);return j}).catch(()=>({}));
+$("#gm-connect").onclick=()=>gmPost({action:"connect",address:$("#gm-addr").value.trim()}).then(j=>j.ok&&toast("Connexion à la montre…"));
+$("#gm-disconnect").onclick=()=>gmPost({action:"disconnect"}).then(j=>j.ok&&toast("Déconnexion"));
+$("#gm-recenter").onclick=()=>gmPost({action:"recenter"}).then(j=>j.ok&&toast("Main posée, immobile 1 s"));
+$("#gm-recal").onclick=()=>gmPost({action:"recalibrate"}).then(j=>j.ok&&toast("Calibration complète (5 poses)"));
+$("#gm-pause").onclick=()=>gmPost({action:"pause"}).then(j=>j.ok&&toast(j.enabled?"Souris activée":"Souris en pause"));
+$("#gm-paired").onclick=()=>fetch("/api/garmin?paired=1").then(r=>r.json()).then(d=>{const L=d.paired||[];
+  $("#gm-paired-list").innerHTML=L.length?L.map(p=>`<button class="btn sm${p.garmin?" p":""}" data-a="${esc(p.address)}">${esc(p.name||p.address)}</button>`).join(""):'<span class="hint">Aucun appareil appairé trouvé</span>';
+  $$("#gm-paired-list button").forEach(b=>b.onclick=()=>{$("#gm-addr").value=b.dataset.a;toast("Adresse choisie")})}).catch(()=>{});
+$$("#p-garmin [data-gm]").forEach(inp=>{const k=inp.dataset.gm,out=inp.parentElement.querySelector("output");
+  if(inp.type==="range"){inp.oninput=()=>{gmEdit=k;out.textContent=fmt(+inp.value,inp.step)};
+    inp.onchange=()=>{gmPost({action:"set",values:{[k]:+inp.value}});setTimeout(()=>gmEdit=null,800)}}
+  else inp.onchange=()=>gmPost({action:"set",values:{[k]:inp.checked}}).then(j=>j.ok&&toast("Enregistré"))});
+$$("#gm-mode button").forEach(b=>b.onclick=()=>gmPost({action:"set",values:{mode:b.dataset.v}}).then(j=>j.ok&&toast("Mode "+b.textContent)));
+const gmCv=$("#gm-canvas"),gmCx=gmCv.getContext("2d");
+function drawGarmin(a,c){const S=260,dpr=devicePixelRatio||1;if(gmCv.width!==S*dpr){gmCv.width=S*dpr;gmCv.height=S*dpr}
+  gmCx.setTransform(dpr,0,0,dpr,0,0);gmCx.clearRect(0,0,S,S);const css=getComputedStyle(document.documentElement),cv=n=>css.getPropertyValue(n),m=S/2;
+  gmCx.strokeStyle=cv("--line");gmCx.lineWidth=1;gmCx.beginPath();gmCx.moveTo(m,0);gmCx.lineTo(m,S);gmCx.moveTo(0,m);gmCx.lineTo(S,m);gmCx.stroke();
+  const dot=(x,y,r,col)=>{gmCx.fillStyle=col;gmCx.beginPath();gmCx.arc(x,y,r,0,7);gmCx.fill()};
+  if(!a||!a.running)return;
+  if(a.calibrating){const k=a.calib,p=k.tilt_deg;gmCx.strokeStyle=cv("--green");gmCx.lineWidth=6;gmCx.lineCap="round";
+    if(k.progress>0){gmCx.beginPath();gmCx.arc(m,m,40,-Math.PI/2,-Math.PI/2+2*Math.PI*k.progress);gmCx.stroke()}
+    dot(m+Math.max(-1.2,Math.min(1.2,p[0]/40))*m,m-Math.max(-1.2,Math.min(1.2,p[1]/40))*m,9,cv("--orange"));return}
+  const dz=(c.deadzone||0)*(m-6);gmCx.strokeStyle=cv("--text2");gmCx.lineWidth=1;gmCx.setLineDash([3,3]);gmCx.strokeRect(m-dz,m-dz,2*dz,2*dz);gmCx.setLineDash([]);
+  gmCx.strokeStyle=cv("--line");gmCx.strokeRect(6,6,S-12,S-12);
+  const n=a.norm||[0,0],cl=v=>Math.max(-1.2,Math.min(1.2,v)),off=a.paused||!a.enabled;
+  dot(m+cl(n[0])*(m-6),m-cl(n[1])*(m-6),10,off?cv("--text2"):a.frozen?cv("--red"):cv("--green"))}
+function gmPoll(){if(page!=="garmin")return;fetch("/api/garmin").then(r=>r.json()).then(renderGarmin).catch(()=>{})}
+setInterval(gmPoll,100);
+function renderGarmin(d){const miss=!d.available;$("#gm-missing").style.display=miss?"block":"none";$("#gm-body").style.display=miss?"none":"block";
+  if(miss){$("#gm-missing-why").textContent=d.error?d.error:"manquant : "+(d.missing||[]).join(", ");return}
+  const c=d.config||{},a=d.app&&d.app.running?d.app:null,last=d.app;
+  if(document.activeElement!==$("#gm-addr")&&!$("#gm-addr").value)$("#gm-addr").value=d.address||"";
+  $$("#p-garmin [data-gm]").forEach(inp=>{const k=inp.dataset.gm;if(k===gmEdit)return;const v=c[k];
+    if(inp.type==="range"){if(v!=null){inp.value=v;inp.parentElement.querySelector("output").textContent=fmt(+v,inp.step)}}else inp.checked=!!v});
+  $$("#gm-mode button").forEach(b=>b.classList.toggle("on",b.dataset.v===c.mode));
+  const st=a?a.status:last?last.status:"Non connectée",bad=/^Erreur/.test(st);
+  $("#gm-status").innerHTML=`<span class="pill ${a&&a.connected?"g":bad?"r":a?"o":""}">${esc(st)}</span>`;
+  $("#gm-rate").textContent=a&&a.connected?a.rate.toFixed(1):"—";
+  $("#gm-mouse").textContent=!a||!a.connected?"—":a.calibrating?"calibration":!a.enabled?"en pause (bouton)":a.paused?"en pause (bras baissé)":a.frozen?"figée (tape)":"active ("+c.mode+")";
+  $("#gm-clicks").textContent=a?a.clicks:0;
+  const r=(a&&a.range_deg)||d.range_deg;$("#gm-range").textContent=r?`droite ${r.right}° · gauche ${r.left}° · haut ${r.up}° · bas ${r.down}°`:"pas encore calibrée";
+  $("#gm-connect").disabled=!!a;$("#gm-disconnect").disabled=!a;$("#gm-recenter").disabled=$("#gm-pause").disabled=!a;
+  $("#gm-pause").textContent=a&&!a.enabled?"Reprendre":"Pause";
+  let pr,sub="",err="",steps="";
+  if(a&&a.calibrating){const k=a.calib;pr=k.prompt;sub=a.connected?`Étape ${k.step} / ${k.steps} · tiens la pose immobile ~1 s`:"En attente de la montre…";err=k.error;
+    if(k.steps>1)steps=Array.from({length:k.steps},(_,i)=>`<i class="${i<k.step-1?"done":i===k.step-1?"cur":""}"></i>`).join("")}
+  else if(a){const off=a.paused||!a.enabled;pr=`Souris ${off?"en pause":"active"} (${c.mode})`;sub="incline pour bouger · double tape = clic · bras baissé = pause"}
+  else{pr=d.full_next||!d.calibrated?"Calibration guidée en 5 poses à la connexion":"À la connexion : position neutre réapprise (1 s)";sub="neutre, droite, gauche, main levée, main baissée"}
+  $("#gm-prompt").textContent=pr;$("#gm-step").textContent=sub;$("#gm-err").textContent=err||"";$("#gm-steps").innerHTML=steps;
+  const ms=(d.messages||[]).slice().reverse();
+  $("#gm-msgs").innerHTML=ms.length?ms.map(x=>`<tr><td class="mono" style="white-space:nowrap">${new Date(x.t*1000).toLocaleTimeString()}</td><td>${esc(x.text)}</td></tr>`).join(""):'<tr><td class="empty">—</td></tr>';
+  drawGarmin(a,c)}
 // ---------- boucles
 function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState();if(page==="gestures")fillGestures()}).catch(()=>{})}
 setInterval(refreshState,1000);refreshState();

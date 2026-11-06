@@ -6,3 +6,5 @@ config.json
 config.json.tmp
 captures/private/
 .claude/
+garmin_mouse.json
+garmin_calib.json

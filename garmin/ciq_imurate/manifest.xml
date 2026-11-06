@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Set <iq:product id="..."/> to your watch (ids: SDK Manager > Devices, e.g. fr255, fenix7, venu3). -->
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+    <iq:application id="16cd82962f8c43dbb5dd2dab4018b60c" type="watch-app" name="@Strings.AppName"
+                    entry="ImuRateApp" launcherIcon="@Drawables.LauncherIcon" minApiVersion="3.1.0">
+        <iq:products>
+            <iq:product id="MODEL_ID"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Sensor"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>

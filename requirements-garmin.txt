@@ -1,0 +1,3 @@
+# Optional: Garmin watch as a mouse (garmin/, page « Garmin »).
+# garmin-ble is AGPL-3.0-only and is NOT part of MousePods (Apache-2.0): see docs/GARMIN.md.
+garmin-ble==0.3.2

@@ -21,6 +21,10 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
   POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ...}
+  GET  /api/garmin       montre Garmin : module installé ?, connexion, calibration guidée, réglages
+  GET  /api/garmin?paired=1  + appareils appairés (bluetoothctl devices Paired, lecture seule)
+  POST /api/garmin       {"action": "connect", "address", "full"} | "disconnect" | "recenter" | "recalibrate"
+                         | "pause" | {"action": "set", "values": {"max_speed": 2200, "mode": "pointeur", ...}}
 Les actions qui touchent au Bluetooth sont mises en file et exécutées par la boucle principale.
 """
 import base64
@@ -363,6 +367,14 @@ class WebUI:
             ctl.gesture_hooks.append(self._labo_dm6)
         except Exception as e:  # noqa: BLE001
             m.log.warning("Labo indisponible : %s", e)
+        self.garmin = None        # montre Garmin (garmin/service.py) ; garmin-ble est optionnel
+        self.garmin_error = None
+        try:
+            from garmin import service as garmin_service
+            self.garmin = garmin_service.GarminService().autostart()
+        except Exception as e:  # noqa: BLE001
+            self.garmin_error = str(e)
+            m.log.warning("Module Garmin indisponible : %s", e)
 
     # ---- liaison avec la boucle principale
     def attach(self, aap):
@@ -541,6 +553,36 @@ class WebUI:
                 "config": {k: gc.get(k) for k in ("enabled", "click_thresh", "click_adaptive", "click_noise_k",
                                                   "use_raw_imu")}}
 
+    def garmin_state(self, paired=False):
+        g = self.garmin
+        if g is None:
+            return {"available": False, "missing": [], "error": self.garmin_error or "module Garmin absent"}
+        d = g.state()
+        if paired:
+            d["paired"] = g.paired_devices()
+        return d
+
+    def garmin_action(self, body):
+        g = self.garmin
+        if g is None:
+            raise RuntimeError("module Garmin non installé")
+        a = body.get("action")
+        if a == "connect":
+            g.connect(body.get("address") or None, bool(body.get("full")))
+        elif a == "disconnect":
+            g.disconnect()
+        elif a == "recenter":
+            g.recenter()
+        elif a == "recalibrate":
+            g.recalibrate_all()
+        elif a == "pause":
+            return {"ok": True, "enabled": g.pause()}
+        elif a == "set":
+            return {"ok": True, "values": g.set(body.get("values", {}))}
+        else:
+            raise ValueError("action inconnue")
+        return {"ok": True}
+
     def _unhook(self):
         self.ctl.sample_hooks[:] = [h for h in self.ctl.sample_hooks
                                     if getattr(h, "__self__", None) is not self.calib]
@@ -680,6 +722,8 @@ class WebUI:
                 elif self.path == "/api/opentrack":            # --- OpenTrack
                     import opentrack_out
                     self._json(opentrack_out.api_state(ui.ctl))
+                elif self.path == "/api/garmin":
+                    self._json(ui.garmin_state(paired=qs.get("paired", ["0"])[0] == "1"))
                 elif self.path == "/api/stream":
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
@@ -764,6 +808,13 @@ class WebUI:
                     if upd:
                         m.update_config_file(ui.cfg_path, {"opentrack": upd})
                         ui.q.put(("cmd", "reload"))
+                elif self.path == "/api/garmin":
+                    try:
+                        return self._json(ui.garmin_action(body))
+                    except ValueError as e:
+                        return self._json({"error": str(e)}, 400)
+                    except RuntimeError as e:
+                        return self._json({"error": str(e)}, 503)
                 else:
                     return self._json({"error": "introuvable"}, 404)
                 self._json({"ok": True})
@@ -773,5 +824,7 @@ class WebUI:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def stop(self):
+        if self.garmin:
+            self.garmin.close()
         if self.server:
             self.server.shutdown()
