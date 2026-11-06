@@ -17,4 +17,12 @@ this NOTICE (or its attribution text) in their NOTICE file, documentation or
 "Matteo Gaudioso (starman-tech), MousePods", link to the repository above and
 say if changes were made.
 
-Not affiliated with Apple Inc. AirPods is a trademark of Apple Inc.
+Optional third-party dependency (not included in this distribution):
+  * garmin-ble (https://github.com/gwerneckp/garmin-ble), AGPL-3.0-only, used
+    only by the optional Garmin module (garmin/) and installed separately with
+    requirements-garmin.txt. No garmin-ble code is copied here. A distribution
+    that bundles MousePods with garmin-ble must comply with the AGPL-3.0 for
+    the combined work. See docs/GARMIN.md.
+
+Not affiliated with Apple Inc. or Garmin Ltd. AirPods is a trademark of Apple Inc.;
+Garmin, quatix and Connect IQ are trademarks of Garmin Ltd.

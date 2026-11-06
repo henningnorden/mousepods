@@ -110,9 +110,36 @@ Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/
 | ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 37 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
 | ⚠️ Pointer mode with corner calibration | tested in simulation only |
 | ⚠️ Glide mode | works stroke by stroke. On real slides: drift of 4 cm over 5 strokes after tuning, on **one** capture. A bud is round and rolls, and its sensors freeze when it lies still: it will never match an optical mouse |
+| ⚠️ Garmin watch as a mouse (optional module) | first tests on hardware. Accelerometer only, 25 Hz: see below |
 | ❌ Case as a mouse (buds inside) | impossible on AirPods 3: the sensors are powered off in the case |
 | ❓ Apple PnP DeviceID | changed before the first success; probably not needed (the MTU is), not isolated yet |
 | ❓ Other models (AirPods 2, Pro 1, Max) | untested |
+
+## Garmin watch as a mouse (optional)
+
+A Garmin watch can drive the cursor too: **tilt your wrist** to move, **double-tap the watch** to click, drop your arm
+to pause. It has its own page in the app (**Garmin**: connect, guided 5-pose calibration with a live tilt dot,
+Recentrer / Recalibrer tout / Pause, speed, dead zone, smoothing, tap force, joystick or pointer mode) and a
+standalone window.
+
+```bash
+.venv/bin/pip install -r requirements-garmin.txt      # optional: garmin-ble (AGPL-3.0) + bleak
+bluetoothctl                                          # once, phone Bluetooth off (one BLE client only)
+  scan le
+  pair XX:XX:XX:XX:XX:XX
+  trust XX:XX:XX:XX:XX:XX
+.venv/bin/python airpods_mouse_controller.py --ui     # then page "Garmin", enter the address, "Connecter"
+.venv/bin/python -m garmin.garmin_mouse --address XX:XX:XX:XX:XX:XX   # or the standalone window
+```
+
+Limits: the watch streams **only its accelerometer** in real time (24.9 Hz, 3 samples every 120 ms, 12-bit, no
+gyroscope), so the cursor follows the **tilt** of the wrist, not its rotation, with about 0.2 s of delay. Good for
+pointing, not for games. What was tried to get more (services 17 SPAM and 18 BMX_RAW, the Garmin Connect app, a
+Connect IQ app) and every measurement: **[docs/GARMIN.md](docs/GARMIN.md)**.
+
+The Bluetooth link uses [garmin-ble](https://github.com/gwerneckp/garmin-ble), which is **AGPL-3.0-only**. It is not
+bundled and no code from it is copied: it is installed separately, and only the Garmin module imports it.
+MousePods stays Apache-2.0; if you redistribute it *together with* garmin-ble, that combination is under the AGPL-3.0.
 
 ## Built with Claude
 
@@ -131,13 +158,15 @@ This builds on public work: [LibrePods](https://github.com/librepods-org/librepo
 [Gheop/mutix](https://github.com/Gheop/mutix) and LibrePods PR #887 (layout of the 58-byte block),
 [arctumn/ntpods](https://github.com/arctumn/ntpods) (MTU gating, on AirPods Pro 3 heart rate),
 [spacedouut/OpenHuilian](https://github.com/spacedouut/OpenHuilian) (clone firmware) and the public iOS 26.1 restore dump
-by EthanArbuckle. No code was copied from these projects.
+by EthanArbuckle. Garmin module: the [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge) protocol notes served as
+documentation and [garmin-ble](https://github.com/gwerneckp/garmin-ble) is an optional dependency. No code was copied from these projects.
 
 ## License and attribution
 
 | What | License | What it requires |
 |---|---|---|
 | Source code | [Apache-2.0](LICENSE) + [NOTICE](NOTICE) | Keep the copyright and the NOTICE text in any redistribution or derivative work (in its NOTICE file, docs or "about" screen), and mark modified files |
+| Optional Garmin dependency [garmin-ble](https://github.com/gwerneckp/garmin-ble) (not included) | AGPL-3.0-only | Only if you use the Garmin module. Distributing MousePods bundled with it makes the combination AGPL-3.0: see [docs/GARMIN.md](docs/GARMIN.md) |
 | Findings, documentation, captures (`docs/`, `captures/`) | [CC BY 4.0](docs/LICENSE-CC-BY-4.0.txt) | **Credit the author**, link to this repository and say if you changed anything, in any reuse: article, video, talk, other project, AI dataset |
 
 **How to credit:**

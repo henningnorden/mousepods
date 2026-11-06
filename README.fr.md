@@ -71,8 +71,35 @@ Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accor
 | ✅ Mode souris (tête, écouteur en main), application, raccourcis | essayé sur le matériel, encore en réglage. 37 tests automatiques |
 | ⚠️ Pointeur calibré par les coins | testé en simulation seulement |
 | ⚠️ Mode glisse | marche geste par geste ; une seule capture réelle, et il ne vaudra jamais une souris optique |
+| ⚠️ Montre Garmin comme souris (module optionnel) | premiers essais sur le matériel. Accéléromètre seul, 25 Hz : voir plus bas |
 | ❌ Boîtier comme souris (écouteurs dedans) | impossible sur AirPods 3 : capteurs éteints dans le boîtier |
 | ❓ DeviceID Apple | changé avant le premier succès ; probablement inutile (c'est le MTU qui compte), pas encore isolé |
+
+## Montre Garmin comme souris (optionnel)
+
+Une montre Garmin peut aussi piloter le curseur : **incliner le poignet** pour bouger, **taper deux fois sur la
+montre** pour cliquer, baisser le bras pour mettre en pause. Elle a sa page dans l'application (**Garmin** :
+connexion, calibration guidée en 5 poses avec un point qui suit le poignet, Recentrer / Recalibrer tout / Pause,
+vitesse, zone morte, lissage, force de tape, mode joystick ou pointeur) et une fenêtre autonome.
+
+```bash
+.venv/bin/pip install -r requirements-garmin.txt      # optionnel : garmin-ble (AGPL-3.0) + bleak
+bluetoothctl                                          # une fois, Bluetooth du téléphone coupé (un seul client BLE)
+  scan le
+  pair XX:XX:XX:XX:XX:XX
+  trust XX:XX:XX:XX:XX:XX
+.venv/bin/python airpods_mouse_controller.py --ui     # puis page « Garmin », saisir l'adresse, « Connecter »
+.venv/bin/python -m garmin.garmin_mouse --address XX:XX:XX:XX:XX:XX   # ou la fenêtre autonome
+```
+
+Limites : en temps réel, la montre n'envoie **que son accéléromètre** (24,9 Hz, 3 échantillons toutes les 120 ms,
+12 bits, pas de gyroscope). Le curseur suit donc l'**inclinaison** du poignet, pas sa rotation, avec environ 0,2 s de
+retard. Bien pour pointer, pas pour jouer. Ce qui a été tenté pour obtenir plus (services 17 SPAM et 18 BMX_RAW,
+l'application Garmin Connect, une application Connect IQ) et toutes les mesures : **[docs/GARMIN.md](docs/GARMIN.md)**.
+
+La liaison Bluetooth utilise [garmin-ble](https://github.com/gwerneckp/garmin-ble), sous licence **AGPL-3.0-only**.
+Elle n'est pas fournie et aucun code n'en est copié : elle s'installe à part et seul le module Garmin l'importe.
+MousePods reste sous Apache-2.0 ; redistribuer MousePods *avec* garmin-ble place cet ensemble sous l'AGPL-3.0.
 
 ## Fait avec Claude
 
@@ -88,13 +115,14 @@ J'ai tenu les AirPods, pris les décisions et vérifié chaque résultat sur le 
 ## Crédits
 
 S'appuie sur [LibrePods](https://github.com/librepods-org/librepods), [apple-wireshark](https://github.com/pabloaul/apple-wireshark),
-[mutix](https://github.com/Gheop/mutix), [ntpods](https://github.com/arctumn/ntpods) et [OpenHuilian](https://github.com/spacedouut/OpenHuilian). Aucun code n'en a été copié.
+[mutix](https://github.com/Gheop/mutix), [ntpods](https://github.com/arctumn/ntpods) et [OpenHuilian](https://github.com/spacedouut/OpenHuilian). Module Garmin : les notes de protocole de [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge) ont servi de documentation et [garmin-ble](https://github.com/gwerneckp/garmin-ble) est une dépendance optionnelle. Aucun code n'en a été copié.
 
 ## Licence et attribution
 
 | Quoi | Licence | Ce qu'elle impose |
 |---|---|---|
 | Code source | [Apache-2.0](LICENSE) + [NOTICE](NOTICE) | Garder le copyright et le texte du NOTICE dans toute redistribution ou œuvre dérivée, et signaler les fichiers modifiés |
+| Dépendance Garmin optionnelle [garmin-ble](https://github.com/gwerneckp/garmin-ble) (non fournie) | AGPL-3.0-only | Seulement si on utilise le module Garmin. Distribuer MousePods avec elle place l'ensemble sous AGPL-3.0 : voir [docs/GARMIN.md](docs/GARMIN.md) |
 | Découvertes, documentation, captures | [CC BY 4.0](docs/LICENSE-CC-BY-4.0.txt) | **Citer l'auteur**, mettre un lien vers ce dépôt et indiquer les modifications, pour toute réutilisation (article, vidéo, conférence, autre projet, jeu de données IA) |
 
 **Comment créditer :**

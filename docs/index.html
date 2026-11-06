@@ -351,6 +351,7 @@ cd mousepods && python3 -m venv .venv
     <tr><td>Mouse mode (head, bud in hand), app, shortcuts</td><td><span class="st yes">Tried on hardware · 37 tests</span></td></tr>
     <tr><td>Pointer mode with corner calibration</td><td><span class="st warn">Simulation only</span></td></tr>
     <tr><td>Glide mode (slide a bud on the table)</td><td><span class="st warn">Experimental</span></td></tr>
+    <tr><td>Garmin watch as a mouse (wrist tilt, optional module)</td><td><span class="st warn">First tests on hardware · accelerometer only, 25 Hz</span></td></tr>
     <tr><td>Case as a mouse, buds inside</td><td><span class="st no">Impossible: AirPods 3 sensors are off in the case</span></td></tr>
   </table>
 </div></section>
@@ -362,6 +363,7 @@ cd mousepods && python3 -m venv .venv
   <details><summary>Do I need an iPhone, a Mac, or root?</summary><p>No. Everything runs on a plain Linux PC as a normal user. It talks to the AirPods over Bluetooth (L2CAP) and moves the cursor through a virtual input device.</p></details>
   <details><summary>Windows or macOS?</summary><p>Not today. The protocol itself doesn't depend on the OS. Windows needs a driver that exposes L2CAP (like MagicAAP), and macOS keeps the AirPods channel for itself.</p></details>
   <details><summary>Is it safe for my AirPods?</summary><p>MousePods only reads sensor streams. It doesn't touch the firmware. The app has an advanced panel that can send raw commands, and that panel is clearly marked.</p></details>
+  <details><summary>Can a Garmin watch be the mouse?</summary><p>Yes, with an optional module: tilt your wrist to move the cursor, double-tap the watch to click. A Garmin watch only streams its accelerometer in real time over BLE (24.9 Hz, no gyroscope), so the cursor follows the tilt of the wrist and reacts more slowly than with AirPods. It needs <a href="https://github.com/gwerneckp/garmin-ble">garmin-ble</a> (AGPL-3.0), installed separately. Findings and numbers: <a href="https://github.com/starman-tech/mousepods/blob/main/docs/GARMIN.md">docs/GARMIN.md</a>.</p></details>
   <details><summary>Did an AI do this?</summary><p>I reverse-engineered it with Claude (Anthropic) as an AI pair engineer. Claude ran the probes, read the public research, disassembled a clone firmware statically, and wrote the code and the tests. I held the AirPods, made the calls and checked every result on real hardware. The <a href="https://github.com/starman-tech/mousepods/blob/main/docs/JOURNAL.fr.md">journal</a> documents the whole process, failures included.</p></details>
 </div></section>
 
