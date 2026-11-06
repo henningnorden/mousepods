@@ -162,6 +162,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <a data-p="calib"><span class="ic" style="background:#ff9f0a">◎</span>Calibration</a>
     <a data-p="gestures"><span class="ic" style="background:#ff375f">☺︎</span>Gestes</a>
     <a data-p="labo"><span class="ic" style="background:#64d2ff">⚗︎</span>Labo</a>
+    <a data-p="sims"><span class="ic" style="background:#ff9500">✈︎</span>Simulateurs</a>
     <a data-p="garmin"><span class="ic" style="background:#007aff">⌚︎</span>Garmin</a>
     <a data-p="sensors"><span class="ic" style="background:#af52de">⌬</span>Capteurs</a>
     <a data-p="device"><span class="ic" style="background:#ff375f">ⓘ</span>AirPods</a>
@@ -281,22 +282,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="set toggle"><label>Notifications</label><label class="sw"><input type="checkbox" data-k="notifications"><span></span></label></div>
     <div class="set"><label>Gyroscope<small>°/s par unité (étalonnage d'échelle)</small></label><input type="range" data-k="gyro_dps_per_lsb" min="0.03" max="0.5" step="0.001"><output></output></div>
   </div>
-  <!-- ---------- OpenTrack (suivi de tête pour simulateurs) -->
-  <h2>OpenTrack (simulateurs de vol / course)</h2>
-  <div class="card" id="ot-card">
-    <div class="set toggle"><label>Envoyer le suivi de tête à OpenTrack<small>entrée OpenTrack « UDP over network » · rotation seule (3 axes) · Ctrl+Alt+C recentre</small></label><label class="sw"><input type="checkbox" data-k="opentrack.enabled" id="ot-en"><span></span></label></div>
-    <div class="set toggle"><label>Destination<small>hôte et port UDP (par défaut 127.0.0.1:4242)</small></label><div class="row"><input type="text" data-k="opentrack.host" id="ot-host" style="width:130px"><input type="number" data-k="opentrack.port" id="ot-port" min="1" max="65535" style="width:84px"><button class="btn sm" id="ot-apply">Appliquer</button></div></div>
-    <div class="set toggle"><label>Figer la souris pendant le jeu</label><label class="sw"><input type="checkbox" data-k="opentrack.pause_mouse_when_opentrack"><span></span></label></div>
-    <div class="set toggle"><label>Inverser<small>lacet · tangage · roulis</small></label><div class="row"><label class="sw"><input type="checkbox" data-k="opentrack.invert_yaw"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_pitch"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_roll"><span></span></label></div></div>
-    <div class="set"><label>Gain lacet</label><input type="range" data-k="opentrack.scale_yaw" min="0" max="3" step="0.05"><output></output></div>
-    <div class="set"><label>Gain tangage</label><input type="range" data-k="opentrack.scale_pitch" min="0" max="3" step="0.05"><output></output></div>
-    <div class="set"><label>Gain roulis</label><input type="range" data-k="opentrack.scale_roll" min="0" max="3" step="0.05"><output></output></div>
-    <div class="set"><label>Lissage<small>0 = brut (OpenTrack a aussi ses filtres)</small></label><input type="range" data-k="opentrack.smoothing" min="0" max="1" step="0.01"><output></output></div>
-    <div class="set"><label>Fréquence d'envoi<small>paquets par seconde</small></label><input type="range" data-k="opentrack.rate_hz" min="30" max="250" step="10"><output></output></div>
-    <div class="set toggle"><label>Correction de dérive<small>la gravité recale tangage et roulis (le lacet se recentre à la main)</small></label><label class="sw"><input type="checkbox" data-k="opentrack.drift_correction"><span></span></label></div>
-    <div class="row" style="margin-top:10px"><button class="btn sm" data-cmd="recenter">Recentrer</button><span class="hint" id="ot-status">—</span></div>
-  </div>
-  <!-- ---------- /OpenTrack -->
+  <div class="hint" style="margin:18px 4px 0">Suivi de tête pour simulateurs (OpenTrack, manette virtuelle) : page <a onclick="go('sims')" style="cursor:pointer;color:var(--accent)">Simulateurs</a>.</div>
 </section>
 
 <!-- =============================== CALIBRATION -->
@@ -417,6 +403,60 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
   <button class="btn d" id="cue-cancel">Annuler la session</button></div>
 
 <!-- =============================== CAPTEURS -->
+<!-- =============================== SIMULATEURS -->
+<section class="page" id="p-sims">
+  <h1>Simulateurs</h1><div class="sub">Les AirPods comme un TrackIR : la caméra du jeu suit la tête. AirPods 3 et AirPods Pro, orientation calculée par les écouteurs. Guide pas à pas : <a href="https://github.com/starman-tech/mousepods/blob/main/docs/SIMS.md" target="_blank" rel="noopener">docs/SIMS.md</a>.</div>
+  <div class="grid g2">
+    <div class="card"><h3>Pose de la tête</h3>
+      <div class="vec" id="sim-angles" style="margin:4px 0 12px"></div>
+      <div class="kv"><span>Source</span><span id="sim-src">—</span></div>
+      <div class="kv"><span>Sorties actives</span><span id="sim-outs">—</span></div>
+      <div class="row" style="margin-top:12px"><button class="btn p" id="sim-recenter">Recentrer</button><span class="hint">regarder droit devant l'écran ; Ctrl+Alt+C recentre aussi</span></div>
+    </div>
+    <div class="card"><h3>Vue de dessus · de côté</h3>
+      <canvas id="sim-cv" style="height:190px"></canvas>
+      <div class="hint">Lacet + = regarder à droite · tangage + = en haut · roulis + = oreille droite vers l'épaule.</div>
+    </div>
+  </div>
+  <h2>OpenTrack (jeux Proton / Wine, X-Plane, FlightGear…)</h2>
+  <div class="card">
+    <div class="set toggle" style="padding-top:0"><label>Envoyer à OpenTrack<small>paquet « UDP over network » : 6 doubles x, y, z (cm), lacet, tangage, roulis (°)</small></label><label class="sw"><input type="checkbox" data-k="opentrack.enabled" id="ot-en"><span></span></label></div>
+    <div class="set toggle"><label>Destination<small>hôte et port UDP (par défaut 127.0.0.1:4242)</small></label><div class="row"><input type="text" data-k="opentrack.host" id="ot-host" style="width:130px"><input type="number" data-k="opentrack.port" id="ot-port" min="1" max="65535" style="width:84px"><button class="btn sm" id="ot-apply">Appliquer</button></div></div>
+    <div class="kv"><span>État</span><span id="ot-status">—</span></div>
+    <ol class="disc" style="margin-top:12px;color:var(--text2);font-size:12.5px">
+      <li>OpenTrack : <b>Input</b> = « UDP over network », port 4242. Démarrer avec <b>Start</b>.</li>
+      <li><b>Output</b> : « Wine » (jeux Proton / Wine : DCS, MSFS, IL-2, Elite, Star Citizen… protocole <i>Both</i>, choisir la version de Proton et l'AppID), « X-Plane », « FlightGear », ou « libevdev joystick ».</li>
+      <li>Les courbes et filtres d'OpenTrack restent utiles ; dans ce cas mettre le lissage ci-dessous à 0. Recentrer ici (ou la touche Center d'OpenTrack).</li>
+    </ol>
+  </div>
+  <h2>Manette virtuelle (jeux Linux natifs, sans OpenTrack)</h2>
+  <div class="card">
+    <div class="set toggle" style="padding-top:0"><label>Créer la manette « MousePods head tracker »<small>ABS_RX = lacet · ABS_RY = tangage · ABS_RZ = roulis (même disposition que la sortie libevdev d'OpenTrack)</small></label><label class="sw"><input type="checkbox" data-k="sim_joystick.enabled" id="js-en"><span></span></label></div>
+    <div class="set"><label>Pleine échelle lacet<small>degrés de tête pour un axe à fond ; plus petit = plus de débattement en jeu</small></label><input type="range" data-k="sim_joystick.full_yaw_deg" min="15" max="180" step="5"><output></output></div>
+    <div class="set"><label>Pleine échelle tangage</label><input type="range" data-k="sim_joystick.full_pitch_deg" min="10" max="180" step="5"><output></output></div>
+    <div class="set"><label>Pleine échelle roulis</label><input type="range" data-k="sim_joystick.full_roll_deg" min="10" max="180" step="5"><output></output></div>
+    <div class="kv"><span>État</span><span id="js-status">—</span></div>
+    <ol class="disc" style="margin-top:12px;color:var(--text2);font-size:12.5px">
+      <li>Euro Truck Simulator 2 / American Truck Simulator (natif) : lier le regard aux axes dans <code>controls_linux.sii</code> (guide dans docs/SIMS.md).</li>
+      <li>War Thunder (natif), FlightGear, X-Plane : lier « regard / vue gauche-droite, haut-bas » aux axes RX / RY de la manette.</li>
+      <li>Accès à <code>/dev/uinput</code> nécessaire (le même que pour la souris).</li>
+    </ol>
+  </div>
+  <h2>Réglages communs</h2>
+  <div class="card">
+    <div class="set toggle" style="padding-top:0"><label>Source de l'orientation<small>quaternion : fusion interne des AirPods, sans dérive en tangage / roulis · gyro : intégration (repli automatique)</small></label><div class="seg" id="ot-source"><button data-v="quaternion">Quaternion</button><button data-v="gyro">Gyro</button></div></div>
+    <div class="set toggle"><label>Figer la souris pendant le jeu</label><label class="sw"><input type="checkbox" data-k="opentrack.pause_mouse_when_opentrack"><span></span></label></div>
+    <div class="set toggle"><label>Inverser<small>lacet · tangage · roulis</small></label><div class="row"><label class="sw"><input type="checkbox" data-k="opentrack.invert_yaw"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_pitch"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_roll"><span></span></label></div></div>
+    <div class="set"><label>Gain lacet</label><input type="range" data-k="opentrack.scale_yaw" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Gain tangage</label><input type="range" data-k="opentrack.scale_pitch" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Gain roulis</label><input type="range" data-k="opentrack.scale_roll" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Lissage<small>0 = brut (OpenTrack a aussi ses filtres)</small></label><input type="range" data-k="opentrack.smoothing" min="0" max="1" step="0.01"><output></output></div>
+    <div class="set"><label>Fréquence d'envoi<small>paquets par seconde</small></label><input type="range" data-k="opentrack.rate_hz" min="30" max="250" step="10"><output></output></div>
+    <div class="set"><label>Retour lent du lacet au centre<small>secondes ; 0 = désactivé (le lacet n'a pas de référence absolue)</small></label><input type="range" data-k="opentrack.yaw_autocenter_s" min="0" max="120" step="5"><output></output></div>
+    <div class="set toggle"><label>Correction de dérive (source gyro)<small>la gravité recale tangage et roulis</small></label><label class="sw"><input type="checkbox" data-k="opentrack.drift_correction"><span></span></label></div>
+  </div>
+</section>
+
 <!-- =============================== GARMIN -->
 <section class="page" id="p-garmin">
   <h1>Montre Garmin</h1><div class="sub">Incliner le poignet déplace le curseur, une double tape sur la montre clique. Accéléromètre seul, 25 Hz (service BLE 16).</div>
@@ -539,7 +579,7 @@ $$(".seg[data-key]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.on
 function getK(cfg,k){return k.split(".").reduce((o,p)=>o&&o[p],cfg)}
 function mkObj(k,v){const p=k.split(".");return p.length===1?{[k]:v}:{[p[0]]:{[p[1]]:v}}}
 let editing=null;
-$$("#p-settings input").forEach(inp=>{
+$$("#p-settings input[data-k], #p-sims input[data-k]").forEach(inp=>{
   const k=inp.dataset.k;
   const out=inp.parentElement.querySelector("output");
   if(inp.type==="range"){inp.oninput=()=>{editing=k;out.textContent=fmt(+inp.value,inp.step)};
@@ -547,7 +587,7 @@ $$("#p-settings input").forEach(inp=>{
   else inp.onchange=()=>setCfg(mkObj(k,inp.checked),"Enregistré");
 });
 function fmt(v,step){const d=(step+"").includes(".")?(step+"").split(".")[1].length:0;return v.toFixed(Math.min(d,3))}
-function fillSettings(cfg){$$("#p-settings input").forEach(inp=>{const k=inp.dataset.k;if(k===editing)return;const v=getK(cfg,k);
+function fillSettings(cfg){$$("#p-settings input[data-k], #p-sims input[data-k]").forEach(inp=>{const k=inp.dataset.k;if(k===editing)return;const v=getK(cfg,k);
   if(inp.type==="range"){if(v!==undefined){inp.value=v;inp.parentElement.querySelector("output").textContent=fmt(+v,inp.step)}}
   else inp.checked=!!v})}
 // ---------- calibration
@@ -807,15 +847,40 @@ function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">E
       `<div class="kv"><span>Précision leave-one-out</span><span><b>${pct(v.loo_accuracy)}</b> (hasard ${pct(v.chance)}) · p = ${pv(v.p_value)} · <b>${esc(v.verdict)}</b></span></div><div class="kv"><span>Prises trop courtes</span><span>${v.too_short||0}</span></div>`}
   return h}
 window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
-// ---------- OpenTrack (passe par /api/opentrack : remplace la liaison générique de ces champs)
+// ---------- Simulateurs : OpenTrack + manette virtuelle (passent par /api/opentrack)
 $("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?"OpenTrack activé":"OpenTrack désactivé"));
+$("#js-en").onchange=()=>post("/api/opentrack",{joystick:{enabled:$("#js-en").checked}}).then(()=>toast($("#js-en").checked?"Manette virtuelle activée":"Manette virtuelle désactivée"));
 $("#ot-host").onchange=$("#ot-port").onchange=()=>{};
 $("#ot-apply").onclick=()=>post("/api/opentrack",{host:$("#ot-host").value,port:+$("#ot-port").value}).then(()=>toast("Destination enregistrée"));
-function refreshOT(){if(page!=="settings")return;fetch("/api/opentrack").then(r=>r.json()).then(o=>{const c=o.config||{};
+$("#sim-recenter").onclick=()=>post("/api/opentrack",{action:"recenter"}).then(()=>toast("Recentré"));
+$$("#ot-source button").forEach(b=>b.onclick=()=>post("/api/opentrack",{source:b.dataset.v}).then(()=>{toast("Source : "+b.textContent);$$("#ot-source button").forEach(x=>x.classList.toggle("on",x===b))}));
+const simCv=$("#sim-cv"),simCx=simCv.getContext("2d");
+function drawSim(p){const W=simCv.clientWidth,H=190,dpr=devicePixelRatio||1;if(simCv.width!==W*dpr){simCv.width=W*dpr;simCv.height=H*dpr}
+  simCx.setTransform(dpr,0,0,dpr,0,0);simCx.clearRect(0,0,W,H);const css=getComputedStyle(document.documentElement),cv=n=>css.getPropertyValue(n);
+  const rad=d=>d*Math.PI/180,R=62,c1=[W/4,H/2+6],c2=[3*W/4,H/2+6];
+  simCx.font="11px -apple-system,sans-serif";simCx.fillStyle=cv("--text2");simCx.fillText("dessus (lacet)",c1[0]-36,14);simCx.fillText("côté (tangage)",c2[0]-38,14);
+  [c1,c2].forEach(c=>{simCx.strokeStyle=cv("--line");simCx.lineWidth=1;simCx.beginPath();simCx.arc(c[0],c[1],R,0,7);simCx.stroke()});
+  // dessus : tête vue d'en haut, nez vers le haut de l'écran, lacet + = vers la droite
+  const y=rad(p[3]);simCx.save();simCx.translate(c1[0],c1[1]);simCx.rotate(y);simCx.fillStyle=cv("--card2");simCx.strokeStyle=cv("--text2");
+  simCx.beginPath();simCx.ellipse(0,0,24,30,0,0,7);simCx.fill();simCx.stroke();simCx.strokeStyle=cv("--accent");simCx.lineWidth=3;simCx.beginPath();simCx.moveTo(0,-30);simCx.lineTo(0,-R+4);simCx.stroke();simCx.restore();
+  // côté : regard vers la droite de l'écran, tangage + = vers le haut, roulis en arc
+  const t=rad(p[4]);simCx.save();simCx.translate(c2[0],c2[1]);simCx.rotate(-t);simCx.fillStyle=cv("--card2");simCx.strokeStyle=cv("--text2");simCx.lineWidth=1;
+  simCx.beginPath();simCx.ellipse(0,0,28,24,0,0,7);simCx.fill();simCx.stroke();simCx.strokeStyle=cv("--green");simCx.lineWidth=3;simCx.beginPath();simCx.moveTo(28,0);simCx.lineTo(R-4,0);simCx.stroke();simCx.restore();
+  simCx.strokeStyle=cv("--orange");simCx.lineWidth=3;simCx.beginPath();const r0=-Math.PI/2;simCx.arc(c2[0],c2[1],R+6,r0,r0+rad(p[5]),p[5]<0);simCx.stroke()}
+function refreshOT(){if(page!=="sims")return;fetch("/api/opentrack").then(r=>r.json()).then(o=>{const c=o.config||{},j=o.joystick||{};
   if(document.activeElement!==$("#ot-host"))$("#ot-host").value=c.host||"";if(document.activeElement!==$("#ot-port"))$("#ot-port").value=c.port||"";
-  $("#ot-en").checked=!!o.active;const p=o.pose||[0,0,0,0,0,0];
-  $("#ot-status").textContent=o.active?`Actif → ${o.target}${o.forced?" (session --opentrack)":""} · ${o.packets} paquets · lacet ${p[3].toFixed(1)}° tangage ${p[4].toFixed(1)}° roulis ${p[5].toFixed(1)}°${o.errors?" · erreurs : "+o.errors:""}`:"Inactif"}).catch(()=>{})}
-setInterval(refreshOT,500);
+  const outs=o.outputs||[];$("#ot-en").checked=outs.includes("udp");$("#js-en").checked=outs.includes("joystick")||!!(o.joystick_config&&o.joystick_config.enabled&&j.error);
+  $$("#ot-source button").forEach(b=>b.classList.toggle("on",b.dataset.v===(c.source||"quaternion")));
+  const p=o.pose||[0,0,0,0,0,0];
+  $("#sim-angles").innerHTML=[["Lacet",p[3],90],["Tangage",p[4],60],["Roulis",p[5],60]].map(([n,v,s])=>{const w=Math.max(-1,Math.min(1,v/s))*50;
+    return `<span>${n}</span><div class="bar"><i style="left:${w<0?50+w:50}%;width:${Math.abs(w)}%"></i></div><span class="mono">${v>=0?"+":""}${v.toFixed(1)}°</span>`}).join("");
+  $("#sim-src").textContent=!o.active?"—":o.source_used==="quaternion"?"quaternion des AirPods":o.source_used==="gyro"?"intégration du gyroscope"+(c.source==="quaternion"?" (quaternion pas encore reçu)":""):"en attente d'échantillons";
+  $("#sim-outs").textContent=outs.length?outs.map(x=>x==="udp"?"OpenTrack (UDP)":"manette virtuelle").join(" + "):"aucune";
+  $("#ot-status").textContent=outs.includes("udp")?`→ ${o.target}${o.forced?" (session --opentrack)":""} · ${o.packets} paquets${o.errors?" · erreurs : "+o.errors:""}`:"Inactif";
+  $("#js-status").textContent=j.error?"Erreur : "+j.error:j.active?`« ${j.name} » · ${j.writes} mises à jour${o.joystick_forced?" (session --sim-joystick)":""}`:"Inactive";
+  if(o.data_age_s!=null&&o.data_age_s>2&&o.active)$("#sim-src").textContent+=" · pas de données depuis "+o.data_age_s.toFixed(0)+" s";
+  drawSim(p)}).catch(()=>{})}
+setInterval(refreshOT,100);
 // ---------- Garmin (passe par /api/garmin ; module optionnel garmin-ble)
 let gmEdit=null;
 const gmPost=b=>post("/api/garmin",b).then(r=>r.json()).then(j=>{if(j.error)toast(j.error);setTimeout(gmPoll,150);return j}).catch(()=>({}));
