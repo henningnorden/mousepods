@@ -19,6 +19,8 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/speech       parole silencieuse (expérimental) : {"action": "start|stop|evaluate|forget|clear", "word"}
   GET  /api/labo?since=t Labo : courbes pleine cadence (|acc passe-haut|, |gyro|), impulsions, session guidée
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
+  GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
+  POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ...}
 Les actions qui touchent au Bluetooth sont mises en file et exécutées par la boucle principale.
 """
 import base64
@@ -675,6 +677,9 @@ class WebUI:
                     except ValueError:
                         since = None
                     self._json(ui.labo_state(since))
+                elif self.path == "/api/opentrack":            # --- OpenTrack
+                    import opentrack_out
+                    self._json(opentrack_out.api_state(ui.ctl))
                 elif self.path == "/api/stream":
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
@@ -751,6 +756,14 @@ class WebUI:
                 elif self.path == "/api/phase":
                     if ui.rec:
                         ui.rec["phase"] = str(body.get("phase", ""))
+                elif self.path == "/api/opentrack":            # --- OpenTrack
+                    import opentrack_out
+                    upd = opentrack_out.sanitize(body)
+                    if upd.get("enabled") is False:
+                        ui.ctl.opentrack_forced = False      # coupe aussi un --opentrack de session
+                    if upd:
+                        m.update_config_file(ui.cfg_path, {"opentrack": upd})
+                        ui.q.put(("cmd", "reload"))
                 else:
                     return self._json({"error": "introuvable"}, 404)
                 self._json({"ok": True})

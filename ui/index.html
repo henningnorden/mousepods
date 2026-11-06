@@ -279,6 +279,22 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="set toggle"><label>Notifications</label><label class="sw"><input type="checkbox" data-k="notifications"><span></span></label></div>
     <div class="set"><label>Gyroscope<small>°/s par unité (étalonnage d'échelle)</small></label><input type="range" data-k="gyro_dps_per_lsb" min="0.03" max="0.5" step="0.001"><output></output></div>
   </div>
+  <!-- ---------- OpenTrack (suivi de tête pour simulateurs) -->
+  <h2>OpenTrack (simulateurs de vol / course)</h2>
+  <div class="card" id="ot-card">
+    <div class="set toggle"><label>Envoyer le suivi de tête à OpenTrack<small>entrée OpenTrack « UDP over network » · rotation seule (3 axes) · Ctrl+Alt+C recentre</small></label><label class="sw"><input type="checkbox" data-k="opentrack.enabled" id="ot-en"><span></span></label></div>
+    <div class="set toggle"><label>Destination<small>hôte et port UDP (par défaut 127.0.0.1:4242)</small></label><div class="row"><input type="text" data-k="opentrack.host" id="ot-host" style="width:130px"><input type="number" data-k="opentrack.port" id="ot-port" min="1" max="65535" style="width:84px"><button class="btn sm" id="ot-apply">Appliquer</button></div></div>
+    <div class="set toggle"><label>Figer la souris pendant le jeu</label><label class="sw"><input type="checkbox" data-k="opentrack.pause_mouse_when_opentrack"><span></span></label></div>
+    <div class="set toggle"><label>Inverser<small>lacet · tangage · roulis</small></label><div class="row"><label class="sw"><input type="checkbox" data-k="opentrack.invert_yaw"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_pitch"><span></span></label><label class="sw"><input type="checkbox" data-k="opentrack.invert_roll"><span></span></label></div></div>
+    <div class="set"><label>Gain lacet</label><input type="range" data-k="opentrack.scale_yaw" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Gain tangage</label><input type="range" data-k="opentrack.scale_pitch" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Gain roulis</label><input type="range" data-k="opentrack.scale_roll" min="0" max="3" step="0.05"><output></output></div>
+    <div class="set"><label>Lissage<small>0 = brut (OpenTrack a aussi ses filtres)</small></label><input type="range" data-k="opentrack.smoothing" min="0" max="1" step="0.01"><output></output></div>
+    <div class="set"><label>Fréquence d'envoi<small>paquets par seconde</small></label><input type="range" data-k="opentrack.rate_hz" min="30" max="250" step="10"><output></output></div>
+    <div class="set toggle"><label>Correction de dérive<small>la gravité recale tangage et roulis (le lacet se recentre à la main)</small></label><label class="sw"><input type="checkbox" data-k="opentrack.drift_correction"><span></span></label></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-cmd="recenter">Recentrer</button><span class="hint" id="ot-status">—</span></div>
+  </div>
+  <!-- ---------- /OpenTrack -->
 </section>
 
 <!-- =============================== CALIBRATION -->
@@ -736,6 +752,15 @@ function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">E
       `<div class="kv"><span>Précision leave-one-out</span><span><b>${pct(v.loo_accuracy)}</b> (hasard ${pct(v.chance)}) · p = ${pv(v.p_value)} · <b>${esc(v.verdict)}</b></span></div><div class="kv"><span>Prises trop courtes</span><span>${v.too_short||0}</span></div>`}
   return h}
 window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
+// ---------- OpenTrack (passe par /api/opentrack : remplace la liaison générique de ces champs)
+$("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?"OpenTrack activé":"OpenTrack désactivé"));
+$("#ot-host").onchange=$("#ot-port").onchange=()=>{};
+$("#ot-apply").onclick=()=>post("/api/opentrack",{host:$("#ot-host").value,port:+$("#ot-port").value}).then(()=>toast("Destination enregistrée"));
+function refreshOT(){if(page!=="settings")return;fetch("/api/opentrack").then(r=>r.json()).then(o=>{const c=o.config||{};
+  if(document.activeElement!==$("#ot-host"))$("#ot-host").value=c.host||"";if(document.activeElement!==$("#ot-port"))$("#ot-port").value=c.port||"";
+  $("#ot-en").checked=!!o.active;const p=o.pose||[0,0,0,0,0,0];
+  $("#ot-status").textContent=o.active?`Actif → ${o.target}${o.forced?" (session --opentrack)":""} · ${o.packets} paquets · lacet ${p[3].toFixed(1)}° tangage ${p[4].toFixed(1)}° roulis ${p[5].toFixed(1)}°${o.errors?" · erreurs : "+o.errors:""}`:"Inactif"}).catch(()=>{})}
+setInterval(refreshOT,500);
 // ---------- boucles
 function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState();if(page==="gestures")fillGestures()}).catch(()=>{})}
 setInterval(refreshState,1000);refreshState();

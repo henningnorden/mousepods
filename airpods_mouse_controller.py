@@ -18,6 +18,7 @@ Usage :
   airpods_mouse_controller.py --settings       panneau de réglages (curseurs en direct)
   airpods_mouse_controller.py --calibrate      calibration à l'écran (tête / boîtier / main)
   airpods_mouse_controller.py --diag           affiche les vitesses/angles en direct
+  airpods_mouse_controller.py --opentrack      + suivi de tête vers OpenTrack (UDP 127.0.0.1:4242)
   airpods_mouse_controller.py --send CMD       recenter|toggle|pause|resume|scroll|mode|quit
   airpods_mouse_controller.py --install-hotkeys  raccourcis GNOME (Ctrl+Alt+C/P/S/M)
 """
@@ -112,6 +113,12 @@ DEFAULTS = {
                     "jaw_clench": "none", "jaw_slide_left": "none", "jaw_slide_right": "none"},
     },
     "notifications": True,
+    # --- OpenTrack (suivi de tête pour simulateurs, voir opentrack_out.py et docs/OPENTRACK.md)
+    "opentrack": {"enabled": False, "host": "127.0.0.1", "port": 4242, "rate_hz": 120,
+                  "invert_yaw": False, "invert_pitch": False, "invert_roll": False,
+                  "scale_yaw": 1.0, "scale_pitch": 1.0, "scale_roll": 1.0, "smoothing": 0.2,
+                  "pause_mouse_when_opentrack": True, "drift_correction": True, "drift_tau_s": 2.0,
+                  "yaw_autocenter_s": 0.0, "lean_experimental": False},
     "profiles": {},
 }
 TUNABLE_SECTIONS = ("souris", "pointeur", "glisse", "bias", "stem", "roll_click", "dwell_click", "scroll")
@@ -891,6 +898,8 @@ class Controller:
         self.gesture_hooks = []      # callbacks(ts_ns, now, att, w, g, a, (lacet, tangage, roulis)) — gestures.py
         self.raw_imu_hooks = []      # callbacks(kind "a"|"w", payload HID, now) — IMU brute pour gestures.py
         self.sample_times = []
+        self.opentrack = None        # OpenTrackOutput actif (voir sync_opentrack)
+        self.opentrack_forced = False  # --opentrack : activé pour la session
 
     def _make_filters(self):
         s = min(max(float(self.cfg["smoothing"]), 0.0), 1.0)
@@ -920,6 +929,7 @@ class Controller:
             self.glide.c = self.cfg["glisse"]
             self._make_filters()
             self._load_profile()
+            self.sync_opentrack()
             if self.cfg["mode"] != old_mode:
                 self.recenter(quiet=True)
             log.info("Réglages rechargés")
@@ -980,7 +990,7 @@ class Controller:
             self.recenter(quiet=True)
             notify(self.cfg, f"Mode {new}")
         elif cmd in ("left_click", "right_click", "middle_click"):
-            if not self.paused:
+            if not self.inactive:
                 self.ptr.click(cmd.split("_")[0])
                 log.info("Clic %s", cmd.split("_")[0])
         elif cmd == "reload":
@@ -1031,7 +1041,9 @@ class Controller:
         self.fy.reset(0.0)
         self.fp.reset(0.0)
         self.target = self.cur = (0.5, 0.5)
-        if not self.diag:
+        if self.opentrack:
+            self.opentrack.recenter()
+        if not self.diag and not self.opentrack_pauses_mouse:
             self.ptr.move_abs(0.5, 0.5)
         if not quiet:
             notify(self.cfg, "Recentré")
@@ -1043,11 +1055,39 @@ class Controller:
 
     @property
     def inactive(self):
-        if self.paused:
+        if self.paused or self.opentrack_pauses_mouse:
             return True
         g = getattr(self, "gestures", None)
         gc = self.cfg.get("gestures", {})
         return bool(g and gc.get("enabled") and gc.get("freeze_cursor_when_armed", True) and g.cursor_frozen())
+
+    # ---- OpenTrack (suivi de tête -> simulateurs) ------------------------------------------
+    @property
+    def opentrack_pauses_mouse(self):
+        return bool(self.opentrack) and self.cfg.get("opentrack", {}).get("pause_mouse_when_opentrack", True)
+
+    def sync_opentrack(self):
+        """Démarre / arrête / reconfigure la sortie OpenTrack selon la config (ou --opentrack)."""
+        oc = self.cfg.setdefault("opentrack", {})
+        if self.opentrack_forced:
+            oc["enabled"] = True      # en mémoire seulement (affiché par l'interface, jamais écrit)
+        want = bool(oc.get("enabled"))
+        if want and not self.opentrack:
+            try:
+                import opentrack_out
+                self.opentrack = opentrack_out.OpenTrackOutput(oc).start()
+                log.info("OpenTrack : envoi vers %s:%s à %s Hz", oc.get("host"), oc.get("port"), oc.get("rate_hz"))
+                notify(self.cfg, "OpenTrack activé")
+            except (OSError, ValueError) as e:
+                log.warning("OpenTrack indisponible : %s", e)
+        elif want:
+            self.opentrack.configure(oc)
+        elif self.opentrack:
+            self.opentrack.stop()
+            self.opentrack = None
+            log.info("OpenTrack : arrêté")
+            notify(self.cfg, "OpenTrack désactivé")
+    # ---- /OpenTrack ------------------------------------------------------------------------
 
     # ---- échantillons
     def on_packet(self, pkt, aap):
@@ -1090,6 +1130,9 @@ class Controller:
         a = parse_accel(blk)
         self.last_acc = a
         yaw, pitch, roll = self.engine.step(w, g, dt)
+        if self.opentrack:           # OpenTrack : alimenté même souris en pause
+            self.opentrack.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
+                                (self.engine.p["pitch_sign"], self.engine.p["roll_sign"]))
         for hook in list(self.sample_hooks):
             hook(w, g, dt, a)
         att = struct.unpack_from("<hhh", blk, 20)
@@ -1252,7 +1295,7 @@ def open_ctrl_socket():
     return s
 
 
-def run(cfg, cfg_path, diag=False, web_port=8737):
+def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False):
     ctrl = open_ctrl_socket()
     ptr = NullPointer() if diag else Pointer()
     ctl = Controller(cfg, ptr, diag=diag, cfg_path=cfg_path)
@@ -1267,6 +1310,8 @@ def run(cfg, cfg_path, diag=False, web_port=8737):
         ctl.raw_imu_hooks.append(ctl.gestures.on_raw)
     except Exception as e:  # noqa: BLE001
         log.warning("Module gestes indisponible : %s", e)
+    ctl.opentrack_forced = opentrack
+    ctl.sync_opentrack()
     web = None
     if web_port:
         try:
@@ -1380,6 +1425,8 @@ def run(cfg, cfg_path, diag=False, web_port=8737):
             aap.close(stem_restore=stem_on)
         if web:
             web.stop()
+        if ctl.opentrack:
+            ctl.opentrack.stop()
         ptr.close()
         ctrl.close()
         try:
@@ -1771,6 +1818,7 @@ def main():
     ap.add_argument("--send", metavar="CMD")
     ap.add_argument("--install-hotkeys", action="store_true")
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--opentrack", action="store_true", help="envoie le suivi de tête à OpenTrack (UDP) pour la session")
     args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
@@ -1789,7 +1837,7 @@ def main():
     if args.calibrate:
         calibrate(cfg, args.config)
         return
-    run(cfg, args.config, diag=args.diag, web_port=None if args.no_web else args.port)
+    run(cfg, args.config, diag=args.diag, web_port=None if args.no_web else args.port, opentrack=args.opentrack)
 
 
 if __name__ == "__main__":
