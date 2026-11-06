@@ -20,7 +20,8 @@ Tourne dans le processus du contrôleur, dans un thread :
   GET  /api/labo?since=t Labo : courbes pleine cadence (|acc passe-haut|, |gyro|), impulsions, session guidée
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
-  POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ...}
+  POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ..., "joystick": {"enabled": true, ...}}
+                         | {"action": "recenter"}       (page Simulateurs ; voir docs/SIMS.md)
   GET  /api/garmin       montre Garmin : module installé ?, connexion, calibration guidée, réglages
   GET  /api/garmin?paired=1  + appareils appairés (bluetoothctl devices Paired, lecture seule)
   POST /api/garmin       {"action": "connect", "address", "full"} | "disconnect" | "recenter" | "recalibrate"
@@ -800,13 +801,21 @@ class WebUI:
                 elif self.path == "/api/phase":
                     if ui.rec:
                         ui.rec["phase"] = str(body.get("phase", ""))
-                elif self.path == "/api/opentrack":            # --- OpenTrack
+                elif self.path == "/api/opentrack":            # --- OpenTrack + manette virtuelle
                     import opentrack_out
-                    upd = opentrack_out.sanitize(body)
+                    import sim_joystick
+                    if body.get("action") == "recenter":
+                        ui.q.put(("cmd", "recenter"))
+                        return self._json({"ok": True})
+                    upd = opentrack_out.sanitize({k: v for k, v in body.items() if k != "joystick"})
+                    jupd = sim_joystick.sanitize(body.get("joystick") or {})
                     if upd.get("enabled") is False:
                         ui.ctl.opentrack_forced = False      # coupe aussi un --opentrack de session
-                    if upd:
-                        m.update_config_file(ui.cfg_path, {"opentrack": upd})
+                    if jupd.get("enabled") is False:
+                        ui.ctl.joystick_forced = False       # … et un --sim-joystick
+                    changes = {**({"opentrack": upd} if upd else {}), **({"sim_joystick": jupd} if jupd else {})}
+                    if changes:
+                        m.update_config_file(ui.cfg_path, changes)
                         ui.q.put(("cmd", "reload"))
                 elif self.path == "/api/garmin":
                     try:
