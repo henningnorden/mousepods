@@ -68,12 +68,29 @@ Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accor
 |---|---|
 | ✅ Flux de mouvement des AirPods 3 (RemoteHID), jusqu'à ~210 Hz | vérifié sur le matériel |
 | ✅ Flux des AirPods Pro 2 (SensorDataWX), 25 Hz | vérifié sur le matériel |
-| ✅ Mode souris (tête, écouteur en main), application, raccourcis | essayé sur le matériel, encore en réglage. 37 tests automatiques |
+| ✅ Mode souris (tête, écouteur en main), application, raccourcis | essayé sur le matériel, encore en réglage. 159 tests automatiques |
 | ⚠️ Pointeur calibré par les coins | testé en simulation seulement |
 | ⚠️ Mode glisse | marche geste par geste ; une seule capture réelle, et il ne vaudra jamais une souris optique |
+| ⚠️ Suivi de tête pour simulateurs (OpenTrack, manette virtuelle) | format des paquets, manette et calcul des angles testés, quaternion vérifié sur une capture réelle ; pas encore essayé dans un jeu |
 | ⚠️ Montre Garmin comme souris (module optionnel) | premiers essais sur le matériel. Accéléromètre seul, 25 Hz : voir plus bas |
 | ❌ Boîtier comme souris (écouteurs dedans) | impossible sur AirPods 3 : capteurs éteints dans le boîtier |
 | ❓ DeviceID Apple | changé avant le premier succès ; probablement inutile (c'est le MTU qui compte), pas encore isolé |
+
+## Suivi de tête pour simulateurs
+
+Les AirPods 3 et AirPods Pro comme un **TrackIR** : la caméra du jeu suit la tête. Page **Simulateurs**
+de l'application (ou `--opentrack`, `--sim-joystick`) :
+
+* sortie **OpenTrack** (« UDP over network », 127.0.0.1:4242), puis la sortie Wine/Proton d'OpenTrack pour
+  DCS, MSFS, IL-2, Elite Dangerous… (FreeTrack + TrackIR), ou ses sorties X-Plane / FlightGear ;
+* une **manette virtuelle** (« MousePods head tracker », mêmes axes que la sortie libevdev d'OpenTrack) pour
+  les jeux Linux natifs qui lient la caméra à des axes : Euro Truck Simulator 2, American Truck Simulator,
+  War Thunder…
+
+Les angles viennent du quaternion d'orientation calculé par les écouteurs, vérifié contre le gyroscope sur
+une capture réelle : tangage et roulis ne dérivent pas, le lacet se recentre d'un clic. Rotation seule
+(3 degrés de liberté). Guide pas à pas et recherche : **[docs/SIMS.md](docs/SIMS.md)** (en anglais),
+résumé en français : [docs/OPENTRACK.md](docs/OPENTRACK.md).
 
 ## Montre Garmin comme souris (optionnel)
 

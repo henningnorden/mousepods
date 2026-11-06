@@ -14,7 +14,7 @@
   <img alt="Linux" src="https://img.shields.io/badge/Linux-BlueZ%205.7x-1d1d1f?logo=linux&logoColor=white">
   <img alt="Wayland and X11" src="https://img.shields.io/badge/Wayland%20%7C%20X11-uinput-0a84ff">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-34c759">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-37%20passing-34c759">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-159%20passing-34c759">
   <a href="#license-and-attribution"><img alt="License Apache-2.0 + CC BY 4.0" src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20CC%20BY%204.0-ff9f0a"></a>
 </p>
 
@@ -98,7 +98,7 @@ Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/
 
 ```bash
 .venv/bin/python airpods_mouse_controller.py --diag          # live rates in the terminal, no cursor control
-.venv/bin/python -m unittest discover -s tests               # 37 tests, no hardware needed
+.venv/bin/python -m unittest discover -s tests               # 159 tests, no hardware needed
 ```
 
 ## Status: what is real, what is not
@@ -107,13 +107,28 @@ Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/
 |---|---|
 | ✅ AirPods 3 motion stream (RemoteHID), up to ~210 Hz | verified on hardware |
 | ✅ AirPods Pro 2 motion stream (SensorDataWX), 25 Hz | verified on hardware |
-| ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 37 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
+| ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 159 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
 | ⚠️ Pointer mode with corner calibration | tested in simulation only |
 | ⚠️ Glide mode | works stroke by stroke. On real slides: drift of 4 cm over 5 strokes after tuning, on **one** capture. A bud is round and rolls, and its sensors freeze when it lies still: it will never match an optical mouse |
+| ⚠️ Head tracking for simulators (opentrack, virtual joystick) | packet format, joystick and angle maths tested, quaternion checked on a real capture; not yet tried in a game |
 | ⚠️ Garmin watch as a mouse (optional module) | first tests on hardware. Accelerometer only, 25 Hz: see below |
 | ❌ Case as a mouse (buds inside) | impossible on AirPods 3: the sensors are powered off in the case |
 | ❓ Apple PnP DeviceID | changed before the first success; probably not needed (the MTU is), not isolated yet |
 | ❓ Other models (AirPods 2, Pro 1, Max) | untested |
+
+## Head tracking for simulators
+
+AirPods 3 and AirPods Pro as a **TrackIR**: the in-game camera follows your head. Page **Simulateurs**
+in the app (or `--opentrack`, `--sim-joystick`):
+
+* **opentrack** output ("UDP over network", 127.0.0.1:4242), then opentrack's Wine/Proton output for
+  DCS, MSFS, IL-2, Elite Dangerous… (FreeTrack + TrackIR), or its X-Plane / FlightGear outputs;
+* a **virtual joystick** ("MousePods head tracker", same axes as opentrack's libevdev output) for native
+  Linux games that bind the camera to axes: Euro Truck Simulator 2, American Truck Simulator, War Thunder…
+
+Angles come from the buds' own orientation quaternion, checked against the gyroscope on a real capture:
+pitch and roll do not drift, yaw is recentered with one click. Rotation only (3 DoF).
+Step-by-step guide and what was found: **[docs/SIMS.md](docs/SIMS.md)**.
 
 ## Garmin watch as a mouse (optional)
 
