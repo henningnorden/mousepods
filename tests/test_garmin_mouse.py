@@ -352,5 +352,36 @@ class TestWebEndpoint(unittest.TestCase):
             tmp.cleanup()
 
 
+
+@unittest.skipIf(gm is None, "numpy absent")
+class TestPointerRelease(unittest.TestCase):
+    def test_pointer_mode_releases_cursor_when_wrist_is_still(self):
+        class P:
+            def __init__(self):
+                self.n = 0
+
+            def move_abs(self, x, y):
+                self.n += 1
+
+            def click(self):
+                pass
+        cfg = dict(gm.DEFAULTS, mode="pointeur")
+        e = gm.TiltEngine(cfg, calibrate((20, 0), (-20, 0), (0, 15), (0, -15)))
+        hold(e, tilt(), 30)
+        p = P()
+        r = gm.Renderer(e, p, cfg)
+        t = 0.0
+        for _ in range(240):                      # 2 s perfectly still
+            r.step(1 / 120, t); t += 1 / 120
+        still = p.n
+        assert still < 50                          # cursor released after the first 0.3 s
+        for i in range(120):                       # now tilt: cursor is driven again
+            if i % 5 == 0:
+                e.feed(tilt(10, 0))
+            r.step(1 / 120, t); t += 1 / 120
+        assert p.n - still > 30
+
+
+
 if __name__ == "__main__":
     unittest.main()

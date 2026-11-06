@@ -417,7 +417,15 @@ class Renderer:
             p = self.eng.position()
             self.px = p[0] if self.px is None else self.px + k * (p[0] - self.px)
             self.py = p[1] if self.py is None else self.py + k * (p[1] - self.py)
-            self.ptr.move_abs(self.px, self.py)
+            # Only take the cursor while the wrist actually moves: writing the absolute position
+            # every frame would pin the cursor and make the real mouse unusable (even to press
+            # « Déconnecter »). A move bigger than ~0.4 % of the screen grabs it for 0.3 s.
+            anchor = getattr(self, "_anchor", None)
+            if anchor is None or max(abs(self.px - anchor[0]), abs(self.py - anchor[1])) > 0.004:
+                self._anchor = (self.px, self.py)
+                self._grab_until = now + 0.3
+            if now < getattr(self, "_grab_until", -1.0):
+                self.ptr.move_abs(self.px, self.py)
             return
         tx, ty = self.eng.velocity()
         self.vx += k * (tx - self.vx)
