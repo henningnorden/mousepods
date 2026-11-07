@@ -106,7 +106,7 @@ Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/
 | | |
 |---|---|
 | ✅ AirPods 3 motion stream (RemoteHID), up to ~210 Hz | verified on hardware |
-| ✅ AirPods Pro 2 motion stream (SensorDataWX), 25 Hz | verified on hardware |
+| ✅ AirPods Pro 2 motion stream (SensorDataWX), ~100 Hz with the default 10 ms interval | verified on hardware |
 | ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 159 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
 | ⚠️ Pointer mode with corner calibration | tested in simulation only |
 | ⚠️ Glide mode | works stroke by stroke. On real slides: drift of 4 cm over 5 strokes after tuning, on **one** capture. A bud is round and rolls, and its sensors freeze when it lies still: it will never match an optical mouse |

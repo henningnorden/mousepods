@@ -67,7 +67,7 @@ Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accor
 | | |
 |---|---|
 | ✅ Flux de mouvement des AirPods 3 (RemoteHID), jusqu'à ~210 Hz | vérifié sur le matériel |
-| ✅ Flux des AirPods Pro 2 (SensorDataWX), 25 Hz | vérifié sur le matériel |
+| ✅ Flux des AirPods Pro 2 (SensorDataWX), ~100 Hz avec l'intervalle par défaut de 10 ms | vérifié sur le matériel |
 | ✅ Mode souris (tête, écouteur en main), application, raccourcis | essayé sur le matériel, encore en réglage. 159 tests automatiques |
 | ⚠️ Pointeur calibré par les coins | testé en simulation seulement |
 | ⚠️ Mode glisse | marche geste par geste ; une seule capture réelle, et il ne vaudra jamais une souris optique |

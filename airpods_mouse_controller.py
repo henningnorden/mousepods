@@ -172,6 +172,15 @@ def update_config_file(path, updates):
 
 
 # =========================================================================== Bluetooth
+BLUETOOTHCTL_MISSING = ("bluetoothctl introuvable / not found: installe le paquet bluez "
+                        "(Fedora, distrobox : sudo dnf install bluez ; Debian/Ubuntu : sudo apt install bluez), "
+                        "ou mets l'adresse des AirPods dans device_address")
+
+
+def have_bluetoothctl():
+    return shutil.which("bluetoothctl") is not None
+
+
 def bt_info(addr):
     try:
         return subprocess.run(["bluetoothctl", "info", addr], capture_output=True, text=True,
@@ -354,6 +363,9 @@ class AAPClient:
     def _pick(self):
         if self.want != "auto":
             return self.want
+        if not have_bluetoothctl():
+            # without it we cannot list paired devices: say so instead of "no AirPods connected"
+            raise OSError(112, BLUETOOTHCTL_MISSING)
         if self.addr and "Connected: yes" in bt_info(self.addr):   # reconnexion : déjà connu
             return self.addr
         devs = apple_audio_devices()
@@ -374,7 +386,7 @@ class AAPClient:
 
     def connect(self):
         self.addr = self._pick()
-        if self.auto_connect and "Connected: yes" not in bt_info(self.addr):
+        if self.auto_connect and have_bluetoothctl() and "Connected: yes" not in bt_info(self.addr):
             subprocess.run(["bluetoothctl", "connect", self.addr], capture_output=True, text=True,
                            timeout=20)
         self.pid = product_id(self.addr)
