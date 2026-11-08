@@ -677,6 +677,7 @@ function renderTelemetry(){
   const tm=T;const ok=tm.connected&&tm.live;
   $("#side-dot").className="dot "+(ok?"ok":tm.connected?"warn":"");
   $("#side-status").textContent=ok?t("js.status.live"):(tm.status||"—");
+  renderWizard();
   $("#side-rate").textContent=tm.connected?`${tm.rate} Hz · ${SRC(tm.source)||""}`:"";
   if(page==="overview"){
     $("#ov-state").textContent=tm.paused?t("js.ov.paused"):(tm.calib&&tm.calib.active?t("js.ov.calibration"):t("js.ov.active"));
@@ -789,7 +790,8 @@ let wizardChecked=false;
 function checkWizard(){if(wizardChecked||!S.config)return;wizardChecked=true;
   // autostart pre-ticked only for the Flatpak app; a source checkout may lack PyGObject for the desktop shell
   $("#wz-autostart-on").checked=!!S.flatpak;if(S.config.wizard_done===false)go("welcome")}
-function renderWizard(){if(page!=="welcome")return;$("#wz-status").textContent=S.status||"—"}
+function renderWizard(){if(page!=="welcome")return;const tm=T||{};
+  $("#wz-status").textContent=tm.connected&&tm.live?t("js.status.live"):(tm.status||(S&&S.status)||"—")}
 $("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconnecting"))};
 $("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
 $("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").checked})

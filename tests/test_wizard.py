@@ -38,6 +38,16 @@ class WizardTests(unittest.TestCase):
                                                     encoding="utf-8").read())
         self.assertFalse(m.DEFAULTS["wizard_done"])
 
+    def test_wizard_shows_live_connection(self):
+        """While connected the server status text is empty: the wizard must show the live state
+        like the sidebar does, not "—" (seen on Bazzite with AirPods streaming at 99 Hz)."""
+        h = html()
+        fn = h[h.index("function renderWizard()"):h.index("\n", h.index("function renderWizard()") + 60) + 120]
+        self.assertIn("tm.connected&&tm.live", fn)
+        self.assertRegex(h, r'#side-status"\)\.textContent=[^\n]*\n\s*renderWizard\(\);')   # updated with telemetry
+        m_ = re.search(r"function renderWizard\(\)\{[\s\S]*?\}\n", h)
+        self.assertIn('t("js.status.live")', m_.group(0))
+
     def test_wizard_done_persisted(self):
         d = tempfile.mkdtemp()
         cfg = os.path.join(d, "config.json")
