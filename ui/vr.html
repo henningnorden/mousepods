@@ -112,20 +112,29 @@ const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.1, 20
 addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 const video = document.createElement("video");
 video.loop = true; video.playsInline = true; video.crossOrigin = "anonymous";
-const tex = new THREE.VideoTexture(video); tex.colorSpace = THREE.SRGBColorSpace;
-let sphere = null;
+const tex = new THREE.VideoTexture(video); tex.colorSpace = THREE.SRGBColorSpace;      // left eye (and 2D)
+const texR = new THREE.VideoTexture(video); texR.colorSpace = THREE.SRGBColorSpace;   // right eye
+// layers: 1 = left-eye sphere (also what the 2D camera sees), 2 = right-eye sphere
+camera.layers.enable(1);
+const stereoCam = new THREE.StereoCamera(); stereoCam.eyeSep = 0.064;
+stereoCam.cameraL.layers.enable(1); stereoCam.cameraR.layers.enable(2);
+let spheres = [];
 function buildSphere(fmt) {
-  if (sphere) { scene.remove(sphere); sphere.geometry.dispose(); }
-  const half = fmt === "sbs180";
+  spheres.forEach(m => { scene.remove(m); m.geometry.dispose(); }); spheres = [];
+  const half = fmt === "sbs180", stereoVideo = fmt !== "mono360";
   // 180°: half sphere in front of the viewer; 360°: full sphere. Seen from inside (scale x = -1).
-  const g = new THREE.SphereGeometry(500, 96, 64, half ? Math.PI : 0, half ? Math.PI : Math.PI * 2);
-  g.scale(-1, 1, 1);
-  tex.repeat.set(1, 1); tex.offset.set(0, 0);
-  if (fmt === "tb360") { tex.repeat.set(1, 0.5); tex.offset.set(0, 0.5); }        // left eye = top half
-  if (fmt === "sbs360" || fmt === "sbs180") { tex.repeat.set(0.5, 1); tex.offset.set(0, 0); }   // left eye = left half
-  sphere = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex }));
-  sphere.rotation.y = half ? 0 : -Math.PI / 2;      // centre of the picture straight ahead
-  scene.add(sphere);
+  const make = (t, layer) => {
+    const g = new THREE.SphereGeometry(500, 96, 64, half ? Math.PI : 0, half ? Math.PI : Math.PI * 2);
+    g.scale(-1, 1, 1);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: t }));
+    m.rotation.y = half ? 0 : -Math.PI / 2;          // centre of the picture straight ahead
+    m.layers.set(layer); scene.add(m); spheres.push(m);
+  };
+  for (const t of [tex, texR]) { t.repeat.set(1, 1); t.offset.set(0, 0); }
+  if (fmt === "tb360") { tex.repeat.set(1, 0.5); tex.offset.set(0, 0.5); texR.repeat.set(1, 0.5); texR.offset.set(0, 0); }
+  if (fmt === "sbs360" || fmt === "sbs180") { tex.repeat.set(0.5, 1); texR.repeat.set(0.5, 1); texR.offset.set(0.5, 0); }
+  make(tex, 1);
+  make(stereoVideo ? texR : tex, 2);                 // mono video: both eyes see the same picture
 }
 const fmtEl = document.getElementById("format");
 fmtEl.onchange = () => buildSphere(fmtEl.value);
@@ -184,6 +193,11 @@ addEventListener("keydown", e => {
     const d = k === "ArrowRight" ? 10 : -10;
     if (yt && ytReady) yt.seekTo(Math.max(0, yt.getCurrentTime() + d), true); else video.currentTime = Math.max(0, video.currentTime + d);
   }
+  else if (k === "3") {
+    STEREO = !STEREO;
+    try { localStorage.setItem("mp_stereo", STEREO ? "1" : "0"); } catch (_) {}
+    flash(STEREO ? (yt ? "3D: local files only" : "3D SBS") : "2D");
+  }
   else if (k === "r" || k === "R") recenter();
   else if (k === "f" || k === "F") toggleFs();
   else if (k === "h" || k === "H") document.body.classList.toggle("clean");
@@ -195,7 +209,19 @@ addEventListener("keydown", e => {
     flash(`${ax} ${SIGNS[ax] > 0 ? "normal" : "inverted"}`);
   }
 });
-if (new URLSearchParams(location.search).get("clean") === "1") document.body.classList.add("clean");
+const qs = new URLSearchParams(location.search);
+if (qs.get("clean") === "1") document.body.classList.add("clean");
+let STEREO = qs.get("sbs") === "1";
+try { if (!qs.has("sbs")) STEREO = localStorage.getItem("mp_stereo") === "1"; } catch (_) {}
+function renderStereo() {
+  camera.updateMatrixWorld(); stereoCam.update(camera);
+  const size = renderer.getSize(new THREE.Vector2()), w = size.x / 2, h = size.y;
+  renderer.setScissorTest(true);
+  for (const [i, cam] of [[0, stereoCam.cameraL], [1, stereoCam.cameraR]]) {
+    renderer.setViewport(i * w, 0, w, h); renderer.setScissor(i * w, 0, w, h); renderer.render(scene, cam);
+  }
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, size.x, size.y);
+}
 
 // ---------------------------------------------------------------- loop
 let cur = [0, 0, 0], last = performance.now(), lastYt = 0;
@@ -211,7 +237,7 @@ function frame(now) {
   } else if (!yt) {
     euler.set(THREE.MathUtils.degToRad(cur[1]), THREE.MathUtils.degToRad(-cur[0]), THREE.MathUtils.degToRad(-cur[2]));
     camera.quaternion.setFromEuler(euler);
-    renderer.render(scene, camera);
+    if (STEREO) renderStereo(); else renderer.render(scene, camera);
   }
   const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
            : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";

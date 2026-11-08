@@ -79,6 +79,11 @@ addEventListener("keydown", e => {
   else if (e.key === "h" || e.key === "H") toggleClean();
   else if (e.key === "Escape") toggleClean(false);
   else if (e.key === "r" || e.key === "R") document.getElementById("recenter").click();
+  else if (e.key === "3") {                                  // side-by-side stereo for 3D goggles (remembered)
+    STEREO = !STEREO;
+    try { localStorage.setItem("mp_stereo", STEREO ? "1" : "0"); } catch (_) {}
+    flash(STEREO ? "3D SBS" : "2D");
+  }
   else if ("yYpPoO".includes(e.key)) {                      // invert an axis live (remembered)
     const ax = { y: "yaw", p: "pitch", o: "roll" }[e.key.toLowerCase()];
     SIGNS[ax] *= -1;
@@ -91,6 +96,8 @@ try { Object.assign(SIGNS, JSON.parse(localStorage.getItem("mp_cockpit_signs") |
 let flashMsg = "", flashUntil = 0;
 const flash = m => { flashMsg = m; flashUntil = performance.now() + 1500; };
 if (q.get("clean") === "1") toggleClean(true);
+let STEREO = q.get("sbs") === "1";
+try { if (!q.has("sbs")) STEREO = localStorage.getItem("mp_stereo") === "1"; } catch (_) {}
 
 let target = [0, 0, 0], live = false, connected = false, serverUp = true;
 const FAKE = (q.get("fake") || "").split(",").map(Number);          // ?fake=yaw,pitch : fixed view, for testing
@@ -317,6 +324,20 @@ function drawGauges(time) {
   gtex.needsUpdate = true;
 }
 
+// ---------------------------------------------------------------- side-by-side stereo (half-width per eye, like 3D TVs and
+// FPV goggles in "HDMI 3D" mode: each half is stretched back to full width, so each eye keeps the full aspect)
+const stereoCam = new THREE.StereoCamera(); stereoCam.eyeSep = 0.064;
+function renderStereo() {
+  scene.updateMatrixWorld(); camera.updateMatrixWorld();
+  stereoCam.update(camera);
+  const size = renderer.getSize(new THREE.Vector2()), w = size.x / 2, h = size.y;
+  renderer.setScissorTest(true);
+  for (const [i, cam] of [[0, stereoCam.cameraL], [1, stereoCam.cameraR]]) {
+    renderer.setViewport(i * w, 0, w, h); renderer.setScissor(i * w, 0, w, h); renderer.render(scene, cam);
+  }
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, size.x, size.y);
+}
+
 // ---------------------------------------------------------------- loop
 const ALT = 650, SPEED = 60, START_Z = 2000, END_Z = TL - 12000;
 let z = START_Z, cur = [0, 0, 0], last = performance.now(), lastGauge = 0;
@@ -335,7 +356,7 @@ function frame(now) {
   euler.set(THREE.MathUtils.degToRad(cur[1] * SIGNS.pitch), THREE.MathUtils.degToRad(-cur[0] * SIGNS.yaw), THREE.MathUtils.degToRad(-cur[2] * ROLL_SIGN * SIGNS.roll));
   head.quaternion.setFromEuler(euler);
   if (now - lastGauge > 100) { drawGauges(now); lastGauge = now; }
-  renderer.render(scene, camera);
+  if (STEREO) renderStereo(); else renderer.render(scene, camera);
   if (FAKE.length === 2) {                                   // test mode: expose the real view direction
     const d = new THREE.Vector3(); camera.getWorldDirection(d);
     document.title = `dir ${d.x.toFixed(2)} ${d.y.toFixed(2)} ${d.z.toFixed(2)} cur ${cur.map(v => v.toFixed(1)).join(" ")} cam ${camera.position.toArray().map(v => v.toFixed(2)).join(" ")}`;
