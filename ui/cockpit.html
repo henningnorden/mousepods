@@ -100,9 +100,25 @@ const FAKE = (q.get("fake") || "").split(",").map(Number);          // ?fake=yaw
     const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
     serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
     if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+    setRecording(!!j.rec);
   } catch (e) { serverUp = false; }
   setTimeout(poll, 16);
 })();
+
+// ---------------------------------------------------------------- self-recording of the 3D view (no desktop, no compositor
+// effects): started/stopped by the server flag (POST /api/demo {"record": true|false}), uploaded when done
+let rec = null, chunks = [];
+function setRecording(on) {
+  if (on && !rec && renderer) {
+    const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
+    chunks = [];
+    rec = new MediaRecorder(renderer.domElement.captureStream(60), { mimeType: type, videoBitsPerSecond: 16e6 });
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.onstop = () => fetch("/api/demo/upload", { method: "POST", body: new Blob(chunks, { type: "video/webm" }) });
+    rec.start(1000);
+    flash("● REC");
+  } else if (!on && rec) { rec.stop(); rec = null; }
+}
 
 // ---------------------------------------------------------------- renderer
 let renderer;

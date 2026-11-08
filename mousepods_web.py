@@ -755,7 +755,9 @@ class WebUI:
                     st = out.status() if out else {}
                     aap = ui.aap
                     self._json({"pose": st.get("pose", [0] * 6), "age": st.get("data_age_s"),
-                                "source": st.get("source_used"), "connected": bool(aap and aap.sock)})
+                                "source": st.get("source_used"), "connected": bool(aap and aap.sock),
+                                "rec": bool(getattr(ui, "demo_rec", False)),
+                                "video": getattr(ui, "demo_last_video", None)})
                 elif self.path == "/api/ping":
                     self._json({"ok": True})
                 elif self.path == "/api/i18n":
@@ -799,10 +801,30 @@ class WebUI:
 
             def do_POST(self):
                 n = int(self.headers.get("Content-Length", 0))
+                if self.path == "/api/demo/upload":            # page /demo : vidéo enregistrée depuis le canvas
+                    if not 0 < n <= 400 * 1024 * 1024:
+                        return self._json({"error": "bad size"}, 400)
+                    out_dir = os.path.join(HERE, "captures", "private")
+                    os.makedirs(out_dir, exist_ok=True)
+                    path = os.path.join(out_dir, time.strftime("cockpit_%Y%m%d-%H%M%S.webm"))
+                    with open(path, "wb") as f:
+                        left = n
+                        while left:
+                            chunk = self.rfile.read(min(left, 1 << 20))
+                            if not chunk:
+                                break
+                            f.write(chunk); left -= len(chunk)
+                    ui.demo_last_video = path
+                    return self._json({"ok": True, "path": path})
                 try:
                     body = json.loads(self.rfile.read(n) or b"{}")
                 except ValueError:
                     return self._json({"error": tr("srv.error.invalid_json")}, 400)
+                if self.path == "/api/demo":                   # {"record": true|false} : la page /demo s'enregistre
+                    ui.demo_rec = bool(body.get("record"))
+                    if ui.demo_rec:
+                        ui.demo_last_video = None
+                    return self._json({"ok": True, "record": ui.demo_rec})
                 if self.path == "/api/cmd":
                     ui.q.put(("cmd", str(body.get("cmd", ""))))
                 elif self.path == "/api/config":
