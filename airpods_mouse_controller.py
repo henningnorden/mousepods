@@ -994,6 +994,7 @@ class Controller:
         self._calib_prev_paused = False
         self._calib_lock = threading.Lock()
         self.opentrack_forced = False  # --opentrack : activé pour la session
+        self.demo_until = 0.0        # page /demo ouverte : pose calculée sans sortie (voir command("demo"))
         self.joystick_forced = False   # --sim-joystick : activé pour la session
 
     def _make_filters(self):
@@ -1074,6 +1075,10 @@ class Controller:
         cmd = cmd.strip().lower()
         if cmd == "recenter":
             self.recenter()
+        elif cmd == "demo":                # la page /demo est ouverte : garder la pose de tête calculée
+            self.demo_until = time.monotonic() + 3.0
+            if not self.opentrack:
+                self.sync_opentrack()
         elif cmd in ("toggle", "toggle_pause"):
             self.set_paused(not self.paused)
         elif cmd == "pause":
@@ -1192,7 +1197,8 @@ class Controller:
         games_cfg = self.cfg.get("games") or {}
         want_games = any((g or {}).get("enabled") for g in games_cfg.values())
         want_calib = getattr(self, "calibration", None) is not None   # calibration reads the head angle
-        if (want_udp or want_js or want_games or want_calib) and not self.opentrack:
+        want_demo = time.monotonic() < getattr(self, "demo_until", 0.0)
+        if (want_udp or want_js or want_games or want_calib or want_demo) and not self.opentrack:
             try:
                 import opentrack_out
                 try:
@@ -1208,7 +1214,7 @@ class Controller:
                     notify(self.cfg, tr("srv.status.opentrack_on"))
             except (OSError, ValueError) as e:
                 log.warning("OpenTrack indisponible : %s", e)
-        elif want_udp or want_js or want_games or want_calib:
+        elif want_udp or want_js or want_games or want_calib or want_demo:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
             try:
@@ -1384,6 +1390,9 @@ class Controller:
                 head = ot.head()
                 if head is not None:
                     self.calibration_feed(now, head[0], head[1])
+            if self.demo_until and time.monotonic() > self.demo_until:   # page /demo fermée
+                self.demo_until = 0.0
+                self.sync_opentrack()
         for hook in list(self.sample_hooks):
             hook(w, g, dt, a)
         for hook in list(self.gesture_hooks):

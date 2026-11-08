@@ -8,6 +8,7 @@ import math
 import os
 import socket
 import struct
+import time
 import sys
 import types
 import unittest
@@ -479,6 +480,22 @@ class TestController(unittest.TestCase):
             ctl.opentrack_forced = False
             ctl.cfg["opentrack"]["enabled"] = False
             ctl.sync_opentrack()
+            self.assertIsNone(ctl.opentrack)
+        finally:
+            if ctl.opentrack:
+                ctl.opentrack.stop()
+
+    def test_demo_page_computes_pose_without_any_output(self):
+        """/demo : la pose est calculée tant que la page interroge, sans UDP ni manette, puis s'arrête."""
+        ctl = self.make(port=1)
+        ctl.command("demo")
+        try:
+            self.assertIsNotNone(ctl.opentrack)
+            self.assertEqual(ctl.opentrack.outputs, [])       # rien n'est envoyé nulle part
+            ctl.demo_until = time.monotonic() - 1             # la page s'est fermée
+            blk = bytearray(58)
+            struct.pack_into("<hhh", blk, 44, 0, 0, 1000)
+            ctl.on_block(bytes(blk), 1.0)
             self.assertIsNone(ctl.opentrack)
         finally:
             if ctl.opentrack:

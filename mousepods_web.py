@@ -21,6 +21,7 @@ Tourne dans le processus du contrôleur, dans un thread :
   GET  /api/labo?since=t Labo : courbes pleine cadence (|acc passe-haut|, |gyro|), impulsions, session guidée
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
+  GET  /api/pose        pose de tête en direct pour la page /demo (cockpit 3D) ; garde la pose calculée tant que la page interroge
   GET  /api/calibration  calibration of a game profile: {"active", "step", "progress", "hint", "result"}
   POST /api/calibration  {"action": "start" | "cancel"} | {"action": "save_baseline", "yaw", "pitch", ...}
   GET  /calibrate        full-screen overlay for that calibration (ui/calibrate.html?roles=main,left,right)
@@ -52,6 +53,7 @@ from i18n import tr
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = os.path.join(HERE, "ui", "index.html")
 CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
+DEMO_FILE = os.path.join(HERE, "ui", "demo.html")
 
 MODELS = ["2013", "2014", "200e", "200f", "2002", "200a", "2019", "201b", "2024", "2027", "202d"]  # -> model.<pid>
 INFO_LABEL_KEYS = ["info.name", "info.model", "info.manufacturer", "info.serial", "info.firmware", "info.firmware2",
@@ -769,8 +771,9 @@ class WebUI:
                     return self._json({"error": tr("srv.error.forbidden")}, 403)
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
-                if self.path in ("/", "/index.html", "/calibrate"):
-                    with open(CALIBRATE_FILE if self.path == "/calibrate" else UI_FILE, "rb") as f:
+                if self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo.html"):
+                    page = {"/calibrate": CALIBRATE_FILE, "/demo": DEMO_FILE, "/demo.html": DEMO_FILE}.get(self.path, UI_FILE)
+                    with open(page, "rb") as f:
                         data = f.read()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -778,6 +781,13 @@ class WebUI:
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
+                elif self.path == "/api/pose":                 # page /demo : pose de tête en direct
+                    ui.q.put(("cmd", "demo"))
+                    out = getattr(ui.ctl, "opentrack", None)
+                    st = out.status() if out else {}
+                    aap = ui.aap
+                    self._json({"pose": st.get("pose", [0] * 6), "age": st.get("data_age_s"),
+                                "source": st.get("source_used"), "connected": bool(aap and aap.sock)})
                 elif self.path == "/api/ping":
                     self._json({"ok": True, "instance": ui.instance_token})
                 elif self.path == "/api/i18n":
