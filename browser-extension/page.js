@@ -125,6 +125,14 @@
     static getNativeFramebufferScaleFactor() { return 1; }
   }
 
+  // Recent three.js always creates an XRWebGLBinding; Chrome's own rejects our session. Without
+  // createProjectionLayer the page falls back to the XRWebGLLayer above (no layers support).
+  class MPWebGLBinding {
+    constructor(session, gl) { this.session = session; this.context = gl; this.nativeProjectionScaleFactor = 1; this.usesDepthValues = false; }
+    getDepthInformation() { return null; }
+    getCameraImage() { return null; }
+  }
+
   class MPFrame {
     constructor(session) { this.session = session; this.predictedDisplayTime = performance.now(); this.trackedAnchors = new Set(); }
     getPose() { return null; }                                  // no controllers
@@ -200,6 +208,7 @@
     const xr = new MPXRSystem();
     Object.defineProperty(Navigator.prototype, "xr", { get() { return xr; }, configurable: true });
     window.XRWebGLLayer = MPWebGLLayer;
+    window.XRWebGLBinding = MPWebGLBinding;
     window.XRRigidTransform = MPRigidTransform;
     for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext])
       if (C) C.prototype.makeXRCompatible = function () { return Promise.resolve(); };
