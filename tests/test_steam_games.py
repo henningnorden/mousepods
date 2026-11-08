@@ -93,6 +93,12 @@ class SteamGamesTests(unittest.TestCase):
         self.assertEqual(games["227300"].library, lib2)
         self.assertTrue(all(g.flatpak for g in games.values()))
 
+    def test_both_steams_are_found(self):
+        make_steam(self.home)
+        make_steam(self.home, rel=".var/app/com.valvesoftware.Steam/.local/share/Steam")
+        roots = sg.find_steam_roots(self.home)
+        self.assertEqual(sorted(r.flatpak for r in roots), [False, True])
+
     def test_non_numeric_appid_manifest_is_skipped(self):
         root = make_steam(self.home)
         write(os.path.join(root, "steamapps", "appmanifest_x.acf"),

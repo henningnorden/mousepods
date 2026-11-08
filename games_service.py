@@ -17,13 +17,13 @@ def is_running(appid):
     return bridge_install.process_running(appid)
 
 
-def steam_root():
+def steam_roots():
+    """Every Steam install, native first (a game in both counts as the native one)."""
     forced = os.environ.get("MOUSEPODS_STEAM_ROOT")
     if forced:
-        return steam_games.SteamRoot(os.path.realpath(forced), False)
+        return [steam_games.SteamRoot(os.path.realpath(forced), False)]
     roots = steam_games.find_steam_roots(os.path.expanduser("~"))
-    native = [r for r in roots if not r.flatpak]
-    return (native or roots or [None])[0]
+    return sorted(roots, key=lambda r: r.flatpak)
 
 
 def dll_dir():
@@ -59,11 +59,15 @@ def saved_baseline(cfg_path):
 
 
 def _games():
-    root = steam_root()
-    if root is None:
-        return None, []
-    # all installed games: one never started with Proton has no prefix yet and shows a hint
-    return root, sorted(steam_games.list_games(root), key=lambda g: g.name.lower())
+    """(roots, games) from every Steam install; a game in both counts as the native one.
+    All installed games: one never started with Proton has no prefix yet and shows a hint."""
+    roots, games, seen = steam_roots(), [], set()
+    for root in roots:
+        for g in steam_games.list_games(root):
+            if g.appid not in seen:
+                seen.add(g.appid)
+                games.append(g)
+    return roots, sorted(games, key=lambda g: g.name.lower())
 
 
 def find(appid):
@@ -72,7 +76,7 @@ def find(appid):
 
 
 def list_payload(cfg_path):
-    root, games = _games()
+    roots, games = _games()
     saved = saved_games(cfg_path)
     baseline = saved_baseline(cfg_path)
     running = bridge_install.running_appids()        # one /proc pass for the whole list
@@ -84,7 +88,8 @@ def list_payload(cfg_path):
         if status == "on" and not entry.get("enabled"):
             # our bridge is in the prefix but this config doesn't know (set up by another
             # MousePods, e.g. a distrobox): show it as on and feed it, so the switch tells the truth
-            entry = adopted[g.appid] = {"enabled": True, "profile": normalize_profile(entry.get("profile"))}
+            entry = adopted[g.appid] = {"enabled": True, "flatpak": g.flatpak,
+                                        "profile": normalize_profile(entry.get("profile"))}
         out.append({"appid": g.appid, "name": g.name, "has_prefix": bool(g.prefix), "proton": g.proton,
                     "flatpak": g.flatpak, "status": status,
                     "foreign_tracker": bridge_install.foreign_tracker(g),
@@ -94,8 +99,9 @@ def list_payload(cfg_path):
     if adopted:
         from airpods_mouse_controller import update_config_file
         update_config_file(cfg_path, {"games": adopted})
-    return {"steam_found": root is not None, "baseline": baseline, "steam_flatpak": bool(root and root.flatpak), "games": out,
-            "missing_libraries": steam_games.missing_libraries(root) if root else []}
+    missing = [p for r in roots for p in steam_games.missing_libraries(r)]
+    return {"steam_found": bool(roots), "baseline": baseline, "steam_flatpak": False, "games": out,
+            "missing_libraries": list(dict.fromkeys(missing))}
 
 
 _PREFIX_LOCK = threading.Lock()      # one prefix edit at a time (web requests run in parallel)
@@ -111,11 +117,12 @@ def set_enabled(cfg_path, game, enabled):
 def _set_enabled(cfg_path, game, enabled):
     entry = dict(saved_games(cfg_path).get(game.appid) or {})
     if enabled:
-        pose = game_bridge.pose_path(game.appid, shm_dir())
+        pose = game_bridge.pose_path(game.appid, shm_dir(), game.flatpak)
         bridge_install.install(game, dll_dir(), pose, is_running)
     elif bridge_install.status(game) == "on" or bridge_install.has_our_files(game):
         bridge_install.uninstall(game, is_running)
     entry["enabled"] = bool(enabled)
+    entry["flatpak"] = game.flatpak                 # the bridge writes where that Steam looks
     entry["profile"] = normalize_profile(entry.get("profile"))
     return entry
 

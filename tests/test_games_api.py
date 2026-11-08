@@ -3,6 +3,7 @@
 
 Run:  python -m unittest tests.test_games_api -v
 """
+import dataclasses
 import json
 import os
 import queue
@@ -231,6 +232,50 @@ class GamesApiTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as cm:
             self.post("/api/games/999", {"enabled": True})
         self.assertEqual(cm.exception.code, 404)
+
+
+
+class FlatpakSteamApiTests(unittest.TestCase):
+    """Games from both Steams in one list; a game in both counts as the native one."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        from test_steam_games import make_steam as mk
+        native = mk(self.home)
+        flat = mk(self.home, rel=".var/app/com.valvesoftware.Steam/.local/share/Steam")
+        with open(os.path.join(flat, "steamapps", "appmanifest_447020.acf"), "w") as f:
+            f.write('"AppState"\n{\n\t"appid"\t\t"447020"\n\t"name"\t\t"Farming Simulator 22"\n}\n')
+        self.native = native
+        self.env = mock.patch.dict(os.environ, {"HOME": self.home})
+        self.env.start()
+        self.home_patch = mock.patch("os.path.expanduser", lambda p: p.replace("~", self.home, 1))
+        self.home_patch.start()
+
+    def tearDown(self):
+        self.home_patch.stop()
+        self.env.stop()
+        shutil.rmtree(self.home)
+
+    def test_both_steams_listed(self):
+        cfg = os.path.join(self.home, "config.json")
+        with open(cfg, "w") as f:
+            f.write("{}")
+        d = games_service.list_payload(cfg)
+        by = {g["appid"]: g for g in d["games"]}
+        self.assertFalse(by["244210"]["flatpak"])          # in both: the native one wins
+        self.assertTrue(by["447020"]["flatpak"])
+        self.assertFalse(d["steam_flatpak"])               # no "not supported" banner any more
+
+    def test_enabling_a_flatpak_game_remembers_it(self):
+        game = games_service.find("447020")
+        self.assertTrue(game.flatpak)
+        cfg = os.path.join(self.home, "config.json")
+        with open(cfg, "w") as f:
+            f.write("{}")
+        with mock.patch.object(games_service.bridge_install, "install") as inst:
+            entry = games_service.set_enabled(cfg, dataclasses.replace(game, prefix="/x/pfx"), True)
+        self.assertTrue(entry["flatpak"])
+        self.assertIn("/app/com.valvesoftware.Steam/mousepods/pose-447020", inst.call_args[0][2])
 
 
 if __name__ == "__main__":

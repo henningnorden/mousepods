@@ -405,6 +405,7 @@
  "js.games.edge_left": "Kopf links bis",
  "js.games.edge_right": "Kopf rechts bis",
  "js.games.edge_up": "Kopf oben bis",
+ "js.games.flatpak_title": "Installiert im Steam aus Flatpak",
  "js.games.foreign": "anderer Tracker",
  "js.games.hint_flatpak": "Steam als Flatpak wird noch nicht unterstützt.",
  "js.games.hint_foreign": "Für dieses Spiel ist {name} eingerichtet. Beim Anschalten wird das gesichert und beim Ausschalten wiederhergestellt.",

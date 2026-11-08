@@ -405,6 +405,7 @@
  "js.games.edge_left": "head left to",
  "js.games.edge_right": "head right to",
  "js.games.edge_up": "head up to",
+ "js.games.flatpak_title": "Installed in Steam from Flatpak",
  "js.games.foreign": "other tracker",
  "js.games.hint_flatpak": "Steam installed as Flatpak is not supported yet.",
  "js.games.hint_foreign": "{name} is set up for this game. Switching on keeps a backup and restores {name} when you switch off.",

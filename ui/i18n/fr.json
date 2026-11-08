@@ -405,6 +405,7 @@
  "js.games.edge_left": "tête à gauche jusqu'à",
  "js.games.edge_right": "tête à droite jusqu'à",
  "js.games.edge_up": "tête en haut jusqu'à",
+ "js.games.flatpak_title": "Installé dans Steam en Flatpak",
  "js.games.foreign": "autre tracker",
  "js.games.hint_flatpak": "Steam installé en Flatpak n'est pas encore pris en charge.",
  "js.games.hint_foreign": "{name} est configuré pour ce jeu. L'activation en garde une copie et le restaure à la désactivation.",

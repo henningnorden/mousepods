@@ -923,9 +923,9 @@ function curveToSens(c){return Math.min(Math.max((3-c)/2,0),1)}
 let gamesData=null,gamesTimer=null;
 const GAXES=["yaw","pitch","roll"];
 function axisLabel(n){return n==="yaw"?t("js.games.axis_yaw"):n==="pitch"?t("js.games.axis_pitch"):t("js.games.axis_roll")}
-function gameHint(g){if(g.flatpak)return t("js.games.hint_flatpak");if(!g.has_prefix)return t("js.games.hint_no_prefix");
+function gameHint(g){if(!g.has_prefix)return t("js.games.hint_no_prefix");
   if(g.running)return t("js.games.hint_running");if(g.status==="foreign"&&!g.enabled)return t("js.games.hint_foreign",{name:g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.other_tracker")});return ""}
-function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
+function gameCard(g){const p=g.profile,dis=!g.has_prefix||g.running;
   const pill=g.status==="on"?`<span class="pill g">${t("js.games.on")}</span>`:g.status==="foreign"?`<span class="pill o">${esc(g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.foreign"))}</span>`:`<span class="pill">${t("js.games.off")}</span>`;
   const EDGES={yaw:["js.games.edge_left","js.games.edge_right"],pitch:["js.games.edge_down","js.games.edge_up"]};
   const rng=(f,min,max,step,v,label)=>`<label>${label} <input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
@@ -935,7 +935,7 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
     ${e?rng("edge_neg",2,180,1,a.edge_neg,t(e[0]))+rng("edge_pos",2,180,1,a.edge_pos,t(e[1])):rng("edge_pos",2,180,1,a.edge_pos,t("js.games.edge_both"))}
     ${rng("target",0,180,5,a.target,t("js.games.target"))}
     ${rng("sens",0,1,0.05,curveToSens(a.curve),t("js.games.sensitivity"))}</div>`}).join("");
-  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
+  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${g.flatpak?`<span class="pill" title="${esc(t("js.games.flatpak_title"))}">Flatpak</span>`:""}${pill}
     <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
     ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
     ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
@@ -966,7 +966,7 @@ function renderGames(){const box=$("#games-list");if(!gamesData)return;
   if(!gamesData.steam_found){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_steam"))}</div>`;return}
   if(!gamesData.games.length){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_games"))}</div>`;return}
   const miss=(gamesData.missing_libraries||[]).map(p=>`<div class="card hint">${esc(t("js.games.hint_missing_library",{path:p}))}<br><code>flatpak override --user --filesystem=${esc(p)} io.github.henningnorden.MousePods</code></div>`).join("");
-  box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+miss+gamesData.games.map(gameCard).join("");
+  box.innerHTML=miss+gamesData.games.map(gameCard).join("");
   box.querySelectorAll(".game").forEach(card=>{const appid=card.dataset.appid,g=gamesData.games.find(x=>x.appid===appid);
     card.querySelector("[data-toggle]").onchange=e=>{const on=e.target.checked;e.target.disabled=true;
       postGame(appid,{enabled:on}).then(()=>{toast(on?t("js.games.toast_on",{name:g.name}):t("js.games.toast_off",{name:g.name}));loadGames()})

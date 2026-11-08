@@ -9,6 +9,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import game_bridge as gb  # noqa: E402
@@ -259,6 +260,41 @@ class ControllerSyncTests(unittest.TestCase):
                 ctl.opentrack.stop()
             del os.environ["MOUSEPODS_SHM_DIR"]
             shutil.rmtree(d)
+
+
+
+class FlatpakSteamPoseTests(unittest.TestCase):
+    """Steam as a Flatpak has its own /dev/shm; its app dir in XDG_RUNTIME_DIR is shared."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp()
+        self.shm = tempfile.mkdtemp()
+        self.env = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.run})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.run)
+        shutil.rmtree(self.shm)
+
+    def test_pose_path_for_flatpak_steam(self):
+        self.assertEqual(gb.pose_path("244210", self.shm, flatpak=True),
+                         os.path.join(self.run, "app", "com.valvesoftware.Steam", "mousepods", "pose-244210"))
+        self.assertEqual(gb.pose_path("244210", self.shm),
+                         os.path.join(self.shm, f"mousepods-{os.getuid()}", "pose-244210"))
+
+    def test_bridge_writes_where_each_steam_looks(self):
+        b = gb.GameBridge(shm_dir=self.shm)
+        try:
+            b.configure({"1": {"enabled": True, "profile": {"smoothing": 0}},
+                         "2": {"enabled": True, "flatpak": True, "profile": {"smoothing": 0}}})
+            b.tick(1.0, (0, 0, 0, 10, 0, 0))
+            self.assertTrue(os.path.exists(gb.pose_path("1", self.shm)))
+            flat = gb.pose_path("2", self.shm, flatpak=True)
+            self.assertTrue(os.path.exists(flat))
+            self.assertEqual(os.stat(os.path.dirname(flat)).st_mode & 0o777, 0o700)
+        finally:
+            b.close()
 
 
 if __name__ == "__main__":
