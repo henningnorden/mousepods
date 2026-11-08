@@ -37,6 +37,7 @@
       "build-commands": [
         "install -d /app/share/mousepods",
         "cp -r *.py mousepods-app desktop ui garmin /app/share/mousepods/",
+        "if [ -f build-info.json ]; then cp build-info.json /app/share/mousepods/; fi",
         "install -d /app/share/mousepods/native",
         "cp native/out/*.dll /app/share/mousepods/native/",
         "install -Dm644 LICENSE NOTICE -t /app/share/licenses/io.github.henningnorden.MousePods/",

@@ -2,6 +2,7 @@
 """Version and release notes: read from the AppStream metainfo (the same text Discover shows as
 "what's new"), channel and commit from /.flatpak-info inside the Flatpak."""
 import configparser
+import json
 import os
 import xml.etree.ElementTree as ET   # our own metainfo file only, never input from elsewhere
 
@@ -50,10 +51,22 @@ def flatpak_instance(path=None):
     return {"channel": inst.get("branch"), "commit": commit[:7] if commit else None}
 
 
-def info(meta_path=None, flatpak_info=None, seen=None):
+def build_commit(path=None):
+    """Git commit the CI wrote into the package (build-info.json), None if there is none."""
+    try:
+        with open(path or os.path.join(HERE, "build-info.json"), encoding="utf-8") as f:
+            commit = json.load(f).get("commit")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return commit[:7] if isinstance(commit, str) and commit else None
+
+
+def info(meta_path=None, flatpak_info=None, seen=None, build_info=None):
     """What the app shows: version, channel, all releases, and the release to announce once
     (the newest, if the user has seen an older one; nothing on the very first start)."""
     rs = load(meta_path or metainfo_path())
     version = rs[0]["version"] if rs else None
     whats_new = rs[0] if rs and seen and seen != version else None
-    return {"version": version, **flatpak_instance(flatpak_info), "releases": rs, "whats_new": whats_new}
+    inst = flatpak_instance(flatpak_info)
+    inst["commit"] = build_commit(build_info) or inst["commit"]      # git commit beats the Flatpak commit id
+    return {"version": version, **inst, "releases": rs, "whats_new": whats_new}

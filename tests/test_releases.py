@@ -73,6 +73,25 @@ class ReleasesTests(unittest.TestCase):
         self.assertEqual(releases.flatpak_instance(self.info), {"channel": "test", "commit": "25a6321"})
         self.assertEqual(releases.flatpak_instance(os.path.join(self.d, "none")), {"channel": None, "commit": None})
 
+    def test_git_commit_from_build_info_wins(self):
+        bi = os.path.join(self.d, "build-info.json")
+        with open(bi, "w") as f:
+            json.dump({"commit": "9e31a4d0123456789"}, f)
+        i = releases.info(self.meta, self.info, build_info=bi)
+        self.assertEqual((i["channel"], i["commit"]), ("test", "9e31a4d"))
+        self.assertEqual(releases.info(self.meta, self.info, build_info=os.path.join(self.d, "none"))["commit"],
+                         "25a6321")                                   # no build info: the Flatpak commit
+        with open(bi, "w") as f:
+            f.write("{broken")
+        self.assertEqual(releases.info(self.meta, self.info, build_info=bi)["commit"], "25a6321")
+
+    def test_ci_writes_build_info_and_the_manifest_ships_it(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
+            self.assertIn("build-info.json", f.read())
+        with open(os.path.join(ROOT, "packaging", "flatpak", "io.github.henningnorden.MousePods.json"),
+                  encoding="utf-8") as f:
+            self.assertIn("build-info.json", f.read())
+
     def test_info_and_whats_new(self):
         i = releases.info(self.meta, self.info, seen=None)
         self.assertEqual((i["version"], i["channel"], i["commit"]), ("1.1.0", "test", "25a6321"))

@@ -67,6 +67,7 @@ jobs:
         run: |
           set -o pipefail
           [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id    # the CI container has none
+          echo "{\"commit\": \"$GITHUB_SHA\", \"ref\": \"$GITHUB_REF_NAME\"}" > build-info.json   # shown in the app
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo \
               --default-branch="$CHANNEL" build \
