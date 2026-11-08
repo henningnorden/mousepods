@@ -173,6 +173,9 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("pull --mirror", s)           # keep the other channel already on Pages
         self.assertIn("build-commit-from", s)
         self.assertIn("published=false", s)         # not set up yet: skip, do not fail the build
+        # GitHub Pages of the repo also serve the project website from docs/: it must stay
+        self.assertIn('cp -a "$ROOT/docs/." site/', s)
+        self.assertIn("site/install.html", s)
 
     def test_build_uses_the_channel_as_branch(self):
         w = self.workflow()
@@ -269,3 +272,20 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertIn("release_notes.py check", w)
         self.assertIn("release_notes.py markdown", w)
         self.assertIn("--notes-file", w)
+
+
+class StoreScreenshotTests(unittest.TestCase):
+    """Bazaar / Discover show the metainfo <screenshots>; every one must exist in docs/screenshots."""
+
+    def test_screenshots_point_to_files_on_pages(self):
+        import xml.etree.ElementTree as ET
+        root = ET.parse(os.path.join(PKG, f"{APP_ID}.metainfo.xml")).getroot()
+        shots = root.findall("./screenshots/screenshot")
+        self.assertGreaterEqual(len(shots), 3)
+        self.assertEqual(sum(1 for s in shots if s.get("type") == "default"), 1)
+        for s in shots:
+            url = s.find("image").text.strip()
+            self.assertTrue(url.startswith("https://"), url)
+            self.assertIn("/screenshots/", url)
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, "docs", "screenshots", url.rsplit("/", 1)[1])), url)
+            self.assertTrue((s.findtext("caption") or "").strip(), url)

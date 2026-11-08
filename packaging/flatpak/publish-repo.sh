@@ -1,7 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 # Pushes to main and release tags: add the freshly built channel to the signed Flatpak repo on
-# GitHub Pages and lay out the site in ./site (repo/, one .flatpakref per channel, index.html).
+# GitHub Pages and lay out the site in ./site: the project website from docs/, plus repo/, one
+# .flatpakref per channel and install.html.
 #
 #   FLATPAK_GPG_PRIVATE_KEY=<armored secret key> publish-repo.sh <base-url> <channel>
 #
@@ -15,6 +16,7 @@ set -euo pipefail
 BASE_URL=${1:?usage: publish-repo.sh <base-url> <channel>}
 CHANNEL=${2:?usage: publish-repo.sh <base-url> <channel>}
 HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
 PUB="$HERE/mousepods-repo.asc"
 APP_ID=io.github.henningnorden.MousePods
 OUT=${GITHUB_OUTPUT:-/dev/null}
@@ -39,9 +41,12 @@ WANT=$(gpg --batch --with-colons --show-keys "$PUB" | awk -F: '/^fpr/ {print $10
 [ "$KEY" = "$WANT" ] || fail "secret key $KEY does not match the public key $WANT in mousepods-repo.asc"
 gpg --batch --yes --dearmor -o "$GNUPGHOME/public.gpg" "$PUB"
 
-# the repo that is live now, so the other channel survives this deploy
+# the project website (docs/) is served from the same GitHub Pages: it goes in first, unchanged
 rm -rf site
 mkdir -p site
+if [ -d "$ROOT/docs" ]; then cp -a "$ROOT/docs/." site/; fi
+
+# the repo that is live now, so the other channel survives this deploy
 ostree --repo=site/repo init --mode=archive-z2
 if curl -fsS -o /dev/null "${BASE_URL%/}/repo/config"; then
     ostree --repo=site/repo remote add --no-gpg-verify live "${BASE_URL%/}/repo/"
@@ -59,6 +64,7 @@ flatpak build-update-repo site/repo --title=MousePods --default-branch=stable --
     --gpg-sign="$KEY" --gpg-homedir="$GNUPGHOME"
 
 python3 "$HERE/make_refs.py" "$BASE_URL" "$GNUPGHOME/public.gpg" site
-cp "$HERE/site-index.html" site/index.html
+cp "$HERE/site-index.html" site/install.html                 # how to install, next to the website
+[ -e site/index.html ] || cp site/install.html site/index.html  # no website: the install page is the start
 echo "published=true" >> "$OUT"
 echo "channel $CHANNEL signed with $KEY, site ready for $BASE_URL"
