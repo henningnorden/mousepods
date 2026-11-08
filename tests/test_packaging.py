@@ -102,3 +102,81 @@ class RunningFromSandboxTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepoFilesTests(unittest.TestCase):
+    """Own Flatpak repo on GitHub Pages: the .flatpakref to install once, the .flatpakrepo for the remote."""
+
+    def setUp(self):
+        sys.path.insert(0, PKG)
+        import make_refs
+        self.mr = make_refs
+        self.key = b"\x99\x01\x0dpublic key bytes"
+
+    def parse(self, text):
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.optionxform = str
+        cp.read_string(text)
+        return cp
+
+    def test_flatpakref(self):
+        import base64
+        cp = self.parse(self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key))
+        r = cp["Flatpak Ref"]
+        self.assertEqual(r["Name"], APP_ID)
+        self.assertEqual(r["Branch"], "master")
+        self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
+        self.assertEqual(r["RuntimeRepo"], "https://dl.flathub.org/repo/flathub.flatpakrepo")
+        self.assertEqual(r["IsRuntime"], "false")
+        self.assertEqual(base64.b64decode(r["GPGKey"]), self.key)
+
+    def test_flatpakrepo(self):
+        cp = self.parse(self.mr.flatpakrepo("https://henningnorden.github.io/mousepods/", self.key))
+        r = cp["Flatpak Repo"]
+        self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
+        self.assertIn("GPGKey", r)
+
+    def test_needs_a_key_and_https(self):
+        with self.assertRaises(ValueError):
+            self.mr.flatpakref("https://henningnorden.github.io/mousepods", b"")
+        with self.assertRaises(ValueError):
+            self.mr.flatpakref("http://henningnorden.github.io/mousepods", self.key)
+
+    def test_branch_matches_manifest(self):
+        with open(os.path.join(PKG, f"{APP_ID}.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f).get("branch", "master"), self.mr.BRANCH)
+
+
+class PublishWorkflowTests(unittest.TestCase):
+    """Signed repo on GitHub Pages: only for release tags, the private key only in the signing step."""
+
+    def workflow(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_script_is_valid_bash_and_checks_the_key(self):
+        import subprocess
+        script = os.path.join(PKG, "publish-repo.sh")
+        self.assertTrue(os.access(script, os.X_OK))
+        subprocess.run(["bash", "-n", script], check=True)
+        with open(script, encoding="utf-8") as f:
+            s = f.read()
+        self.assertIn("FLATPAK_GPG_PRIVATE_KEY", s)
+        self.assertIn("does not match", s)          # secret key must belong to the committed public key
+        self.assertIn("build-update-repo", s)
+
+    def test_secret_only_in_the_tag_only_signing_step(self):
+        w = self.workflow()
+        self.assertEqual(w.count("secrets.FLATPAK_GPG_PRIVATE_KEY"), 1)
+        i = w.index("secrets.FLATPAK_GPG_PRIVATE_KEY")
+        step = w[w.rindex("- name:", 0, i):i]
+        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", step)
+
+    def test_pages_job_deploys_only_tags(self):
+        w = self.workflow()
+        job = w[w.index("\n  pages:"):]
+        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", job[:200])
+        self.assertIn("pages: write", job)
+        self.assertIn("id-token: write", job)
+        self.assertIn("actions/deploy-pages@", job)
+        self.assertIn("actions/upload-pages-artifact@", w)
