@@ -204,3 +204,59 @@ class RepoKeyTests(unittest.TestCase):
             text = f.read()
         self.assertIn("BEGIN PGP PUBLIC KEY BLOCK", text)
         self.assertNotIn("PRIVATE", text)                 # the secret key belongs in the Actions secret only
+
+
+class ReleaseNotesTests(unittest.TestCase):
+    """Release notes live in the metainfo <releases> (Discover shows them); a release tag needs one."""
+
+    META = """<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application"><id>x</id>
+  <releases>
+    <release version="1.1.0" date="2026-11-20">
+      <description>
+        <p>Head tracking for Proton games.</p>
+        <ul><li>Games page without opentrack</li><li>Calibration with points</li></ul>
+      </description>
+    </release>
+    <release version="1.0.0" date="2026-11-04"/>
+  </releases>
+</component>"""
+
+    def setUp(self):
+        sys.path.insert(0, PKG)
+        import release_notes
+        self.rn = release_notes
+        self.d = tempfile.mkdtemp()
+        self.path = os.path.join(self.d, "m.xml")
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write(self.META)
+
+    def tearDown(self):
+        shutil.rmtree(self.d)
+
+    def test_entry_for_tag(self):
+        e = self.rn.entry(self.path, "v1.1.0")
+        self.assertEqual((e["version"], e["date"]), ("1.1.0", "2026-11-20"))
+        self.assertEqual(self.rn.markdown(e), "Head tracking for Proton games.\n\n"
+                                               "- Games page without opentrack\n- Calibration with points\n")
+
+    def test_missing_or_empty_entry(self):
+        self.assertIsNone(self.rn.entry(self.path, "v2.0.0"))
+        self.assertIsNone(self.rn.entry(self.path, "v1.0.0"))          # no description: not enough
+        self.assertEqual(self.rn.check(self.path, "v2.0.0"), 1)
+        self.assertEqual(self.rn.check(self.path, "v1.1.0"), 0)
+
+    def test_prerelease_tags_need_no_entry(self):
+        self.assertTrue(self.rn.is_prerelease("v1.1.0-rc1"))
+        self.assertFalse(self.rn.is_prerelease("v1.1.0"))
+        self.assertEqual(self.rn.check(self.path, "v1.1.0-rc1"), 0)
+
+    def test_real_metainfo_has_releases(self):
+        self.assertIsNotNone(self.rn.entry(os.path.join(PKG, f"{APP_ID}.metainfo.xml"), "v1.0.0", require_text=False))
+
+    def test_workflow_checks_and_uses_the_notes(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
+            w = f.read()
+        self.assertIn("release_notes.py check", w)
+        self.assertIn("release_notes.py markdown", w)
+        self.assertIn("--notes-file", w)

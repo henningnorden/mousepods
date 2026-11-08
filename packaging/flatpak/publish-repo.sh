@@ -24,7 +24,7 @@ skip() { echo "::notice title=flatpak repo::$* - not publishing"; echo "publishe
 case "$CHANNEL" in stable|test) ;; *) fail "unknown channel $CHANNEL" ;; esac
 [ -s "$PUB" ] || skip "no public key in packaging/flatpak/mousepods-repo.asc yet"
 [ -n "${FLATPAK_GPG_PRIVATE_KEY:-}" ] || skip "secret FLATPAK_GPG_PRIVATE_KEY is not set"
-for tool in gpg ostree curl; do command -v "$tool" >/dev/null || fail "$tool is not installed in the build container"; done
+for tool in gpg ostree curl python3; do command -v "$tool" >/dev/null || fail "$tool is not installed in the build container"; done
 
 GNUPGHOME=$(mktemp -d)
 export GNUPGHOME

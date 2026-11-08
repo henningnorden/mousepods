@@ -14,4 +14,12 @@
   <url type="homepage">https://github.com/henningnorden/mousepods</url>
   <developer id="io.github.henningnorden"><name>Henning Norden</name></developer>
   <content_rating type="oars-1.1"/>
+  <!-- newest first; a release tag needs an entry with a description (release_notes.py check) -->
+  <releases>
+    <release version="1.0.0" date="2026-11-04">
+      <description>
+        <p>First release: head tracking from AirPods 3 and AirPods Pro on Linux, without an Apple device.</p>
+      </description>
+    </release>
+  </releases>
 </component>
