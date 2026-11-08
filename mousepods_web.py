@@ -53,7 +53,10 @@ from i18n import tr
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = os.path.join(HERE, "ui", "index.html")
 CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
-DEMO_FILE = os.path.join(HERE, "ui", "demo.html")
+DEMO_FILE = os.path.join(HERE, "ui", "cockpit.html")          # /demo : cockpit réaliste (WebGL)
+DEMO_SIMPLE_FILE = os.path.join(HERE, "ui", "demo.html")      # /demo/simple : rendu canvas léger
+VENDOR = {"three.module.min.js": "text/javascript", "Sky.js": "text/javascript",
+          "LICENSE-three.txt": "text/plain; charset=utf-8"}   # ui/vendor, liste fermée
 
 MODELS = ["2013", "2014", "200e", "200f", "2002", "200a", "2019", "201b", "2024", "2027", "202d"]  # -> model.<pid>
 INFO_LABEL_KEYS = ["info.name", "info.model", "info.manufacturer", "info.serial", "info.firmware", "info.firmware2",
@@ -771,8 +774,18 @@ class WebUI:
                     return self._json({"error": tr("srv.error.forbidden")}, 403)
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
-                if self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo.html"):
-                    page = {"/calibrate": CALIBRATE_FILE, "/demo": DEMO_FILE, "/demo.html": DEMO_FILE}.get(self.path, UI_FILE)
+                if self.path.startswith("/vendor/") and self.path[8:] in VENDOR:
+                    with open(os.path.join(HERE, "ui", "vendor", self.path[8:]), "rb") as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", VENDOR[self.path[8:]])
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                elif self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo/simple"):
+                    page = {"/calibrate": CALIBRATE_FILE, "/demo": DEMO_FILE,
+                            "/demo/simple": DEMO_SIMPLE_FILE}.get(self.path, UI_FILE)
                     with open(page, "rb") as f:
                         data = f.read()
                     self.send_response(200)

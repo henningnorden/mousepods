@@ -20,6 +20,7 @@ class ResolveLangTests(unittest.TestCase):
         self.assertEqual(i18n.resolve_lang("fr", "de_DE.UTF-8"), "fr")
 
     def test_resolve_lang_auto_from_env(self):
+        self.assertEqual(i18n.resolve_lang("auto", "fr_CA.UTF-8"), "fr")
         self.assertEqual(i18n.resolve_lang("auto", "de_AT.UTF-8"), "de")
 
     def test_resolve_lang_unsupported_env(self):

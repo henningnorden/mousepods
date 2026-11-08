@@ -1,0 +1,323 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MousePods · cockpit</title>
+<style>
+  :root { --fg:#f5f5f7; --dim:rgba(245,245,247,.72); --glass:rgba(18,20,26,.55); --accent:#0a84ff; }
+  html,body { margin:0; height:100%; background:#0b0d12 !important; color:var(--fg); overflow:hidden;
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif; }
+  canvas { display:block; }
+  .hud { position:fixed; left:16px; top:16px; right:16px; display:flex; gap:12px; align-items:flex-start;
+    justify-content:space-between; pointer-events:none; flex-wrap:wrap; }
+  .card { background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 14px; pointer-events:auto; }
+  h1 { font-size:15px; margin:0 0 2px; font-weight:650; letter-spacing:-.01em; }
+  .sub { color:var(--dim); font-size:12.5px; max-width:380px; }
+  .keys { color:var(--dim); font-size:12px; margin-top:4px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { font:inherit; color:var(--fg); background:rgba(255,255,255,.12); border:0; border-radius:9px; padding:6px 12px; cursor:pointer; }
+  button.p { background:var(--accent); }
+  a { color:var(--dim); font-size:12.5px; }
+  .mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12.5px; color:var(--dim); }
+  input[type=range] { width:110px; accent-color:var(--accent); }
+  #status { font-size:12.5px; color:#ffd60a; min-height:1em; }
+  #nogl { position:fixed; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:24px; }
+  body.clean .hud { display:none; }
+  body.clean { cursor:none; }
+</style>
+<script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div class="hud">
+  <div class="card">
+    <h1 data-i18n="demo.title">Head tracking demo</h1>
+    <div class="sub" data-i18n="demo.hint">Turn your head: the cockpit view follows the AirPods.</div>
+    <div class="keys" data-i18n="demo.keys">F: full screen · H: hide the controls · Esc: show them again</div>
+    <div id="status"></div>
+  </div>
+  <div class="card row">
+    <span class="mono" id="angles">yaw 0° · pitch 0° · roll 0°</span>
+    <label class="row"><span data-i18n="demo.gain">Amplification</span>
+      <input type="range" id="gain" min="1" max="3" step="0.1" value="1.8"><span class="mono" id="gainv">×1.8</span></label>
+    <button class="p" id="recenter" data-i18n="demo.recenter">Recenter</button>
+    <button id="fs" data-i18n="demo.fullscreen">Full screen</button>
+    <button id="hide" data-i18n="demo.hide">Hide controls</button>
+    <a href="/demo/simple" data-i18n="demo.mode_simple">Simple mode</a>
+    <a href="/" data-i18n="demo.back">Back to the app</a>
+  </div>
+</div>
+<div id="nogl"><div class="card" data-i18n="demo.no_webgl">WebGL is not available in this browser. Try the simple mode.</div></div>
+<script type="module">
+import * as THREE from "three";
+import { Sky } from "/vendor/Sky.js";
+
+// ---------------------------------------------------------------- UI, i18n, pose
+let I18N = {};
+const t = k => I18N[k] || null;
+fetch("/api/i18n").then(r => r.json()).then(j => {
+  I18N = j.strings || {}; document.documentElement.lang = j.lang || "en";
+  document.querySelectorAll("[data-i18n]").forEach(e => { const s = t(e.dataset.i18n); if (s) e.textContent = s; });
+}).catch(() => {});
+const q = new URLSearchParams(location.search);
+const ROLL_SIGN = q.get("roll") === "-1" ? -1 : 1;
+const gainEl = document.getElementById("gain");
+gainEl.oninput = () => document.getElementById("gainv").textContent = "×" + (+gainEl.value).toFixed(1);
+document.getElementById("recenter").onclick = () =>
+  fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd: "recenter" }) });
+const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
+const toggleClean = force => document.body.classList.toggle("clean", force);
+document.getElementById("fs").onclick = toggleFs;
+document.getElementById("hide").onclick = () => toggleClean(true);
+addEventListener("keydown", e => {
+  if (e.key === "f" || e.key === "F") toggleFs();
+  else if (e.key === "h" || e.key === "H") toggleClean();
+  else if (e.key === "Escape") toggleClean(false);
+});
+if (q.get("clean") === "1") toggleClean(true);
+
+let target = [0, 0, 0], live = false, connected = false, serverUp = true;
+const FAKE = (q.get("fake") || "").split(",").map(Number);          // ?fake=yaw,pitch : fixed view, for testing
+(async function poll() {
+  if (FAKE.length === 2 && FAKE.every(isFinite)) { target = [FAKE[0], FAKE[1], 0]; live = connected = true; return; }
+  try {
+    const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
+    serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
+    if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+  } catch (e) { serverUp = false; }
+  setTimeout(poll, 16);
+})();
+
+// ---------------------------------------------------------------- renderer
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true }); }
+catch (e) { document.getElementById("nogl").style.display = "flex"; throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.42;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.03, 160000);
+addEventListener("resize", () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+});
+
+// ---------------------------------------------------------------- sky, sun, light, fog
+const sky = new Sky(); sky.scale.setScalar(450000); scene.add(sky);
+const su = sky.material.uniforms;
+su.turbidity.value = 2.2; su.rayleigh.value = 2.4; su.mieCoefficient.value = 0.0035; su.mieDirectionalG.value = 0.86;
+const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 32), THREE.MathUtils.degToRad(30));
+su.sunPosition.value.copy(sunDir);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene(); const envSky = new Sky(); envSky.scale.setScalar(10000);
+for (const k of ["turbidity", "rayleigh", "mieCoefficient", "mieDirectionalG"]) envSky.material.uniforms[k].value = su[k].value;
+envSky.material.uniforms.sunPosition.value.copy(sunDir);
+envScene.add(envSky);
+scene.environment = pmrem.fromScene(envScene).texture;
+
+const sunLight = new THREE.DirectionalLight(0xfff1dc, 2.6); sunLight.position.copy(sunDir).multiplyScalar(1000); scene.add(sunLight);
+scene.add(new THREE.HemisphereLight(0xbcd6f5, 0x3e4a2c, 0.45));
+const FOG = new THREE.Color(0xa9c4de);
+scene.fog = new THREE.FogExp2(FOG, 0.000085);
+
+// ---------------------------------------------------------------- terrain (valley with a river, mountains on both sides)
+function hash2(x, y) { const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, o = 6) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * vnoise(x * f, y * f); a *= 0.5; f *= 2.03; } return s; }
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const riverX = z => Math.sin(z * 0.00031) * 900 + Math.sin(z * 0.00093) * 300;
+function height(x, z) {
+  const dx = Math.abs(x - riverX(z));
+  const ridge = 1 - Math.abs(fbm(x * 0.00022 + 7, z * 0.00022, 5) * 2 - 1);
+  const mountains = smooth(1800, 7000, dx) * (ridge * ridge * 2600 + fbm(x * 0.0006, z * 0.0006, 4) * 600);
+  const hills = fbm(x * 0.0011 + 3, z * 0.0011, 5) * 160 * smooth(250, 1500, dx);
+  const bed = -18 * (1 - smooth(60, 260, dx));
+  return mountains + hills + bed + 6;
+}
+const TW = 30000, TL = 70000, SX = 220, SZ = 520;
+const tg = new THREE.PlaneGeometry(TW, TL, SX, SZ); tg.rotateX(-Math.PI / 2);
+const pos = tg.attributes.position, col = new Float32Array(pos.count * 3);
+const cGrass = new THREE.Color(0x4f6b2f), cGrass2 = new THREE.Color(0x6d7f3a), cField = new THREE.Color(0x8a8746),
+      cRock = new THREE.Color(0x6b6560), cSnow = new THREE.Color(0xf2f5f8), cSand = new THREE.Color(0xa99c78), tmp = new THREE.Color();
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), zw = pos.getZ(i) - (TL / 2 - 4000);    // translate only: mirroring would flip the faces
+  pos.setY(i, height(x, -zw)); pos.setZ(i, zw);
+}
+tg.computeVertexNormals();
+const nrm = tg.attributes.normal;
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), slope = 1 - nrm.getY(i);
+  const n = fbm(x * 0.002, z * 0.002, 3);
+  tmp.copy(cGrass).lerp(cGrass2, n);
+  if (hash2(Math.floor(x / 420), Math.floor(z / 420)) > 0.62 && y < 80) tmp.lerp(cField, 0.6);   // fields in the valley
+  if (y < 12) tmp.lerp(cSand, 1 - smooth(4, 12, y));
+  tmp.lerp(cRock, smooth(0.18, 0.42, slope) * 0.9 + smooth(900, 1700, y) * 0.5);
+  tmp.lerp(cSnow, smooth(1650, 2100, y + n * 300) * (1 - smooth(0.5, 0.75, slope)));
+  col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
+}
+tg.setAttribute("color", new THREE.BufferAttribute(col, 3));
+const terrain = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.12 }));
+scene.add(terrain);
+const water = new THREE.Mesh(new THREE.PlaneGeometry(TW, TL).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0x23495e, roughness: 0.12, metalness: 0.2, envMapIntensity: 0.8 }));
+water.position.set(0, 0, -(TL / 2 - 4000)); scene.add(water);
+
+// trees: instanced cones on gentle slopes in the valley and the hills
+{
+  const N = 14000, geo = new THREE.ConeGeometry(7, 26, 6); geo.translate(0, 13, 0);
+  const trees = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x1f3a1c, roughness: 1, envMapIntensity: 0.1 }), N);
+  const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), s = new THREE.Vector3(); let k = 0, tries = 0;
+  while (k < N && tries++ < N * 12) {
+    const x = (hash2(tries, 1) - 0.5) * 9000, z = hash2(tries, 2) * (TL - 6000) - 3000;
+    const y = height(x, z), dxr = Math.abs(x - riverX(z));
+    if (y < 14 || y > 900 || dxr < 220) continue;
+    if (fbm(x * 0.0015 + 11, z * 0.0015, 3) < 0.5) continue;            // forests in patches
+    const sc = 0.7 + hash2(tries, 3) * 0.9;
+    m.compose(new THREE.Vector3(x, y - 1, -z), qq, s.set(sc, sc * (0.8 + hash2(tries, 4) * 0.5), sc));
+    trees.setMatrixAt(k++, m);
+  }
+  trees.count = k; scene.add(trees);
+}
+
+// clouds: soft billboards
+{
+  const c = document.createElement("canvas"); c.width = c.height = 256;
+  const g = c.getContext("2d");
+  for (let b = 0; b < 26; b++) {
+    const r = 22 + hash2(b, 31) * 46, bx = 128 + (hash2(b, 32) - 0.5) * 150, by = 140 + (hash2(b, 33) - 0.5) * 70 - r * 0.3;
+    const gr = g.createRadialGradient(bx, by, r * 0.1, bx, by, r);
+    gr.addColorStop(0, "rgba(255,255,255,.5)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr; g.beginPath(); g.arc(bx, by, r, 0, 2 * Math.PI); g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: true, color: 0xffffff, opacity: 0.85 });
+  for (let i = 0; i < 70; i++) {
+    const cx = (hash2(i, 9) - 0.5) * 20000, cz = hash2(i, 8) * TL - 3000, cy = 1500 + hash2(i, 7) * 900;
+    for (let p = 0; p < 7; p++) {
+      const sp = new THREE.Sprite(mat), sc = 500 + hash2(i, p) * 700;
+      sp.position.set(cx + (hash2(i, p + 20) - 0.5) * 1100, cy + (hash2(i, p + 40) - 0.3) * 260, -(cz + (hash2(i, p + 60) - 0.5) * 700));
+      sp.scale.set(sc * 1.6, sc, 1); scene.add(sp);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- aircraft: a closed cabin around the camera
+// The aircraft looks down -Z (three.js convention). Eye at the origin. Cabin: x ±0.95, floor -1.15, sill -0.36, roof 0.62.
+const plane = new THREE.Group(); scene.add(plane);
+const head = new THREE.Group(); plane.add(head); head.add(camera);
+const trim = new THREE.MeshStandardMaterial({ color: 0x343841, roughness: 0.9, metalness: 0.05, emissive: 0x0e1014, envMapIntensity: 0.35 });
+const dark = new THREE.MeshStandardMaterial({ color: 0x1d2026, roughness: 0.85, metalness: 0.1, emissive: 0x08090b, envMapIntensity: 0.3 });
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x25282e, roughness: 1, emissive: 0x08090b, envMapIntensity: 0.2 });
+// slab from bounds (simpler to keep every part closed and aligned)
+function slab(x0, x1, y0, y1, z0, z1, mat) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+  b.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); plane.add(b); return b;
+}
+// a strut between two points (pillars of the windshield)
+function strut(a, b, w, d, mat) {
+  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), len = A.distanceTo(B);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, d), mat);
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+  plane.add(m); return m;
+}
+const X = 0.95, FLOOR = -1.15, SILL = -0.36, ROOF = 0.62, FRONT = -1.3, BACK = 0.95;
+slab(-X, X, FLOOR - 0.03, FLOOR, FRONT, BACK, floorMat);                  // floor
+slab(-X, X, FLOOR, -0.92, FRONT, -0.86, dark);                            // footwell / firewall under the panel
+slab(-X, X, -0.94, -0.4, -0.9, -0.86, trim);                              // instrument panel (face at z = -0.86)
+slab(-X, X, -0.42, SILL, -1.28, -0.86, dark);                             // glare shield, does not overhang the gauges
+slab(-X, X, FLOOR, ROOF, BACK, BACK + 0.04, trim);                        // rear bulkhead
+slab(-X, X, ROOF, ROOF + 0.04, -0.33, BACK, trim);                        // roof
+for (const s of [-1, 1]) {
+  slab(s * X - 0.03 * s, s * X + 0.01 * s, FLOOR, SILL, FRONT, BACK, trim);                // side wall below the window
+  slab(Math.min(s * (X - 0.06), s * X), Math.max(s * (X - 0.06), s * X), SILL - 0.04, SILL, -1.2, BACK, dark); // sill
+  slab(s * X - 0.03 * s, s * X + 0.01 * s, SILL, ROOF, 0.4, BACK, trim);                   // rear quarter panel
+  strut([s * 0.93, SILL, -1.25], [s * 0.9, ROOF, -0.33], 0.045, 0.05, dark);               // A-pillars
+  strut([s * 0.95, SILL, 0.38], [s * 0.95, ROOF, 0.38], 0.05, 0.05, dark);                 // B-pillars
+}
+strut([0, SILL, -1.27], [0, ROOF, -0.35], 0.022, 0.03, dark);                             // centre strut
+slab(-X, X, ROOF - 0.05, ROOF, -0.36, -0.28, dark);                                       // windshield header
+// windshield glass: barely visible, catches the sky reflection
+{
+  const g = new THREE.PlaneGeometry(1.86, Math.hypot(ROOF - SILL, 0.92));
+  const glass = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xa8c8e0, transparent: true, opacity: 0.035,
+    roughness: 0.05, metalness: 0.9, depthWrite: false, envMapIntensity: 1 }));
+  glass.position.set(0, (SILL + ROOF) / 2, (-1.25 - 0.33) / 2);
+  glass.rotation.x = Math.atan2(0.92, ROOF - SILL) - Math.PI / 2; plane.add(glass);
+}
+// yoke on a column coming out of the panel
+strut([-0.32, -0.62, -0.86], [-0.32, -0.62, -0.62], 0.035, 0.035, dark).rotation.set(Math.PI / 2, 0, 0);
+const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.017, 10, 32, Math.PI), dark);
+yoke.position.set(-0.32, -0.6, -0.6); yoke.rotation.set(0, 0, Math.PI); plane.add(yoke);
+// gauges: one canvas texture on the panel, redrawn a few times per second
+const gc = document.createElement("canvas"); gc.width = 1024; gc.height = 320;
+const gctx = gc.getContext("2d"), gtex = new THREE.CanvasTexture(gc); gtex.colorSpace = THREE.SRGBColorSpace;
+const gauges = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.47), new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.4, metalness: 0.1, emissive: 0xffffff, emissiveMap: gtex, emissiveIntensity: 0.25 }));
+gauges.position.set(0, -0.665, -0.855); plane.add(gauges);
+function drawGauges(time) {
+  gctx.fillStyle = "#24272e"; gctx.fillRect(0, 0, 1024, 320);
+  for (let k = 0; k < 6; k++) {
+    const cx = 92 + k * 168, cy = 160, r = 70;
+    const face = gctx.createRadialGradient(cx, cy - 25, 8, cx, cy, r);
+    face.addColorStop(0, "#1c1f26"); face.addColorStop(1, "#06070a");
+    gctx.beginPath(); gctx.arc(cx, cy, r, 0, 2 * Math.PI); gctx.fillStyle = face; gctx.fill();
+    gctx.lineWidth = 7; gctx.strokeStyle = "#4a505c"; gctx.stroke();
+    gctx.strokeStyle = "rgba(240,240,240,.7)"; gctx.lineWidth = 3;
+    for (let m = 0; m < 24; m++) {
+      const a = m / 24 * 2 * Math.PI, l = m % 2 ? 0.86 : 0.78;
+      gctx.beginPath(); gctx.moveTo(cx + Math.cos(a) * r * l, cy + Math.sin(a) * r * l);
+      gctx.lineTo(cx + Math.cos(a) * r * 0.92, cy + Math.sin(a) * r * 0.92); gctx.stroke();
+    }
+    const a = time / (2400 + k * 300) + k * 1.4 + (k === 1 ? 0 : Math.sin(time / 1700 + k) * 0.3);
+    gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(cx + Math.cos(a) * r * 0.7, cy + Math.sin(a) * r * 0.7);
+    gctx.lineCap = "round"; gctx.lineWidth = 6; gctx.strokeStyle = k % 3 === 1 ? "#ff9f0a" : "#f2f2f2"; gctx.stroke();
+    gctx.beginPath(); gctx.arc(cx, cy, 7, 0, 2 * Math.PI); gctx.fillStyle = "#c9ccd3"; gctx.fill();
+  }
+  gtex.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- loop
+const ALT = 650, SPEED = 60, START_Z = 2000, END_Z = TL - 12000;
+let z = START_Z, cur = [0, 0, 0], last = performance.now(), lastGauge = 0;
+const euler = new THREE.Euler(0, 0, 0, "YXZ");
+function frame(now) {
+  const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05); last = now;   // never negative: the smoothing would diverge
+  // gentle straight flight down the valley, following the river a little; loops back at the end
+  z += SPEED * dt; if (z > END_Z) z = START_Z;
+  const x = riverX(z) * 0.6, ahead = riverX(z + 400) * 0.6;
+  plane.position.set(x, ALT + Math.sin(now / 4200) * 6, -z);
+  plane.rotation.set(Math.sin(now / 3100) * 0.006, Math.atan2(-(ahead - x), 400), Math.sin(now / 2700) * 0.01);
+  // head pose (+yaw = look right, +pitch = look up), amplified and smoothed
+  const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.03);
+  const want = [target[0] * g, target[1] * g * 0.85, target[2]];
+  cur = cur.map((v, i) => v + (want[i] - v) * k);
+  euler.set(THREE.MathUtils.degToRad(cur[1]), THREE.MathUtils.degToRad(-cur[0]), THREE.MathUtils.degToRad(-cur[2] * ROLL_SIGN));
+  head.quaternion.setFromEuler(euler);
+  if (now - lastGauge > 100) { drawGauges(now); lastGauge = now; }
+  renderer.render(scene, camera);
+  if (FAKE.length === 2) {                                   // test mode: expose the real view direction
+    const d = new THREE.Vector3(); camera.getWorldDirection(d);
+    document.title = `dir ${d.x.toFixed(2)} ${d.y.toFixed(2)} ${d.z.toFixed(2)} cur ${cur.map(v => v.toFixed(1)).join(" ")} cam ${camera.position.toArray().map(v => v.toFixed(2)).join(" ")}`;
+  }
+  const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
+           : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";
+  document.getElementById("status").textContent = st;
+  document.getElementById("angles").textContent =
+    `yaw ${target[0].toFixed(0)}° · pitch ${target[1].toFixed(0)}° · roll ${target[2].toFixed(0)}°`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
