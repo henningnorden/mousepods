@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MousePods head tracking",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Look around 360° videos on YouTube (and other 360° sites) by turning your head with your AirPods. Needs MousePods running on this computer.",
   "homepage_url": "https://github.com/starman-tech/mousepods",
   "permissions": ["storage"],
