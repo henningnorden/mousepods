@@ -1032,10 +1032,13 @@ function calibRun(){const c=calib,box=c.box;
     calibWait()}).catch(e=>{toast(e.message);box.innerHTML=""})}
 function calibFrame(){const f=document.createElement("iframe");f.src="/calibrate?roles=main,left,right";
   f.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:9999;background:#000";
-  document.body.appendChild(f);(f.requestFullscreen?f.requestFullscreen():Promise.resolve()).catch(()=>{});
-  const end=e=>{if(e.origin!==location.origin||!e.data||e.data.mousepods!=="calibration_end")return;
-    removeEventListener("message",end);if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});f.remove()};
-  addEventListener("message",end)}
+  document.body.appendChild(f);f.focus();(f.requestFullscreen?f.requestFullscreen():Promise.resolve()).catch(()=>{});
+  // a browser takes Esc to leave full screen before the overlay page sees it: leaving it cancels
+  const fs=()=>{if(!document.fullscreenElement&&f.isConnected){post("/api/calibration",{action:"cancel"});done()}};
+  const done=()=>{removeEventListener("message",end);document.removeEventListener("fullscreenchange",fs);
+    if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});f.remove()};
+  const end=e=>{if(e.origin!==location.origin||!e.data||e.data.mousepods!=="calibration_end")return;done()};
+  addEventListener("message",end);document.addEventListener("fullscreenchange",fs)}
 function calibWait(){if(!calib)return;
   fetch("/api/calibration").then(r=>r.json()).then(st=>{if(!calib)return;
     if(st.active||st.step===null)return setTimeout(calibWait,300);

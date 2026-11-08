@@ -145,14 +145,15 @@ class App(Gtk.Application):
 
     def _monitors(self):
         out = []
-        for m in self._gdk_monitors():
+        for i, m in enumerate(self._gdk_monitors()):
             g = m.get_geometry()
-            out.append({"connector": m.get_connector() or "?", "model": m.get_model() or "",
+            out.append({"connector": overlay.connector_name(m.get_connector(), i), "model": m.get_model() or "",
                         "width": g.width, "height": g.height})
         return out
 
     def _monitor(self, connector):
-        return next((m for m in self._gdk_monitors() if m.get_connector() == connector), None)
+        return next((m for i, m in enumerate(self._gdk_monitors())
+                     if overlay.connector_name(m.get_connector(), i) == connector), None)
 
     def _flash(self, connector):
         mon = self._monitor(connector)
@@ -170,16 +171,18 @@ class App(Gtk.Application):
 
     def _open_overlays(self, monitors):
         self._close_overlays()
-        for m in monitors:
-            mon = self._monitor(m["connector"])
-            if mon is None:
-                continue
+        present = [mon["connector"] for mon in self._monitors()]
+        for connector, roles in overlay.plan_overlays(monitors, present):
+            mon = self._monitor(connector) if connector else None
             win = Gtk.Window(application=self, decorated=False, title="MousePods")
             view = self._web_view()
-            view.load_uri(overlay.overlay_url(PORT, m["roles"]))
+            view.load_uri(overlay.overlay_url(PORT, roles))
             win.set_child(view)
             win.connect("close-request", self._overlay_closed)
-            win.fullscreen_on_monitor(mon)
+            if mon is not None:
+                win.fullscreen_on_monitor(mon)
+            else:
+                win.fullscreen()                  # monitor unknown: the one the app is on
             win.present()
             self.overlays.append(win)
 

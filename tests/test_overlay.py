@@ -66,5 +66,18 @@ class ResolveTests(unittest.TestCase):
                          "http://127.0.0.1:8737/calibrate?roles=main%2Cleft")
 
 
+class MonitorNameTests(unittest.TestCase):
+    def test_monitor_without_connector_gets_a_stable_name(self):
+        self.assertEqual(overlay.connector_name("DP-1", 0), "DP-1")
+        self.assertEqual(overlay.connector_name(None, 1), "monitor-2")
+        self.assertEqual(overlay.connector_name("", 0), "monitor-1")
+
+    def test_plan_falls_back_to_one_full_screen_overlay(self):
+        req = [{"connector": "L", "roles": ["left"]}, {"connector": "M", "roles": ["main", "right"]}]
+        self.assertEqual(overlay.plan_overlays(req, ["M", "X"]), [("M", ["main", "right"])])
+        self.assertEqual(overlay.plan_overlays(req, ["X"]), [(None, ["main", "left", "right"])])   # none left
+        self.assertEqual(overlay.plan_overlays([], ["X"]), [(None, ["main", "left", "right"])])
+
+
 if __name__ == "__main__":
     unittest.main()

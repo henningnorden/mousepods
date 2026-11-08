@@ -191,5 +191,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual([a.apply(s, 1 / 120) for s in seq], [b.apply(s, 1 / 120) for s in seq])
 
 
+class LegacyCurveOnlyTests(unittest.TestCase):
+    def test_profile_with_only_a_curve_is_converted_like_the_old_model(self):
+        """Saved before calibration with just "curve" changed: gain and limit were the old defaults."""
+        axis = gp.normalize_profile({"axes": {"yaw": {"curve": 1.0}}})["axes"]["yaw"]
+        old = lambda d: min(2.0 * 40 * (abs(d) / 40) ** 1.0, 180.0)   # noqa: E731  old default gain 2, limit 180
+        for d in (10.0, 30.0, 60.0):
+            self.assertAlmostEqual(gp.map_axis(d, axis), old(d), places=1, msg=d)
+
+
 if __name__ == "__main__":
     unittest.main()
