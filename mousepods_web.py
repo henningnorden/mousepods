@@ -1014,7 +1014,7 @@ class WebUI:
             def _games_post(self, appid, body):
                 import bridge_install
                 import games_service
-                game = games_service.find(appid)
+                game = games_service.find(appid, ui.cfg_path)
                 if game is None:
                     return self._json({"error": tr("srv.error.not_found")}, 404)
                 try:
@@ -1022,6 +1022,8 @@ class WebUI:
                         entry = games_service.set_enabled(ui.cfg_path, game, bool(body["enabled"]))
                     elif isinstance(body.get("profile"), dict):
                         entry = games_service.set_profile(ui.cfg_path, game, body["profile"])
+                    elif body.get("steam") in ("native", "flatpak"):      # game in both Steams
+                        entry = games_service.set_steam(ui.cfg_path, game, body["steam"] == "flatpak")
                     else:
                         return self._json({"error": tr("srv.error.bad_request")}, 400)
                 except bridge_install.BridgeError as e:

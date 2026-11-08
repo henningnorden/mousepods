@@ -105,5 +105,15 @@ class GamesUiTests(unittest.TestCase):
         self.assertEqual(out, "a&quot;b&#39;c&lt;d&gt;&amp;")
 
 
+
+class SteamChoiceUiTests(unittest.TestCase):
+    def test_choice_only_for_games_in_both_steams(self):
+        h = html()
+        card = h[h.index("function gameCard"):h.index("function readProfile")]
+        self.assertIn("g.both", card)
+        self.assertIn("data-steam", card)
+        self.assertIn('steam:', h[h.index("function renderGames"):h.index("function loadGames")])
+
+
 if __name__ == "__main__":
     unittest.main()

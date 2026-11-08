@@ -23,7 +23,7 @@ OUR_PATH = r"C:\\mousepods\\"           # as written in user.reg (escaped backsl
 
 
 class BridgeError(Exception):
-    """code: no_prefix | running | flatpak_steam | missing_dll | no_backup"""
+    """code: no_prefix | running | missing_dll | no_backup | switch_off_first"""
 
     def __init__(self, code):
         super().__init__(code)

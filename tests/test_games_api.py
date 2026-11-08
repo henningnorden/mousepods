@@ -266,6 +266,30 @@ class FlatpakSteamApiTests(unittest.TestCase):
         self.assertTrue(by["447020"]["flatpak"])
         self.assertFalse(d["steam_flatpak"])               # no "not supported" banner any more
 
+    def cfg(self, data):
+        path = os.path.join(self.home, "config.json")
+        with open(path, "w") as f:
+            json.dump(data, f)
+        return path
+
+    def test_game_in_both_steams_can_be_switched(self):
+        cfg = self.cfg({})
+        ac = {g["appid"]: g for g in games_service.list_payload(cfg)["games"]}["244210"]
+        self.assertEqual((ac["flatpak"], ac["both"]), (False, True))       # native by default
+        entry = games_service.set_steam(cfg, games_service.find("244210", cfg), True)
+        self.assertTrue(entry["flatpak"])
+        cfg = self.cfg({"games": {"244210": entry}})
+        self.assertTrue(games_service.find("244210", cfg).flatpak)
+        ac = {g["appid"]: g for g in games_service.list_payload(cfg)["games"]}["244210"]
+        self.assertEqual((ac["flatpak"], ac["both"]), (True, True))
+        self.assertFalse({g["appid"]: g for g in games_service.list_payload(cfg)["games"]}["447020"]["both"])
+
+    def test_switching_steam_needs_the_game_off(self):
+        cfg = self.cfg({"games": {"244210": {"enabled": True}}})
+        with self.assertRaises(games_service.bridge_install.BridgeError) as e:
+            games_service.set_steam(cfg, games_service.find("244210", cfg), True)
+        self.assertEqual(e.exception.code, "switch_off_first")
+
     def test_enabling_a_flatpak_game_remembers_it(self):
         game = games_service.find("447020")
         self.assertTrue(game.flatpak)
