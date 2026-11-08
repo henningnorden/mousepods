@@ -9,6 +9,7 @@ import os
 import socket
 import struct
 import sys
+import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -130,6 +131,44 @@ class TestTracker(unittest.TestCase):
         self.assertAlmostEqual(tr.out[3], -10.0, places=6)
         self.assertAlmostEqual(tr.out[4], 20.0, places=6)
         self.assertAlmostEqual(tr.out[5], -5.0, places=6)
+
+    def test_head_is_before_global_scale_and_invert(self):
+        """Game profiles get the head angle; the Simulators page gain/invert is for opentrack UDP."""
+        tr = ot.HeadTracker(raw(scale_yaw=3.0, invert_pitch=True))
+        for _ in range(100):
+            tr.update(10.0, 10.0, 0.0, 0.01)
+        self.assertAlmostEqual(tr.out[3], 30.0, places=6)
+        self.assertAlmostEqual(tr.out[4], -10.0, places=6)
+        self.assertAlmostEqual(tr.head[0], 10.0, places=6)
+        self.assertAlmostEqual(tr.head[1], 10.0, places=6)
+        tr.recenter()
+        self.assertEqual(tr.head, (0.0, 0.0, 0.0))
+
+    def test_autocenter_suspended(self):
+        def hold(suspend):
+            tr = ot.HeadTracker(raw(yaw_autocenter_s=1.0))
+            tr.suspend_autocenter = suspend
+            for _ in range(30):
+                tr.update(100.0, 0, 0, 0.01)           # turn to 30 degrees
+            for _ in range(200):
+                tr.update(0.0, 0, 0, 0.01)             # hold still 2 s
+            return tr.head[0]
+        self.assertAlmostEqual(hold(True), 30.0, places=4)
+        self.assertLess(hold(False), 10.0)
+
+    def test_bridge_gets_head_pose(self):
+        out = ot.OpenTrackOutput(raw(scale_yaw=3.0, invert_pitch=True), udp=False)
+        got = []
+        out.set_game_bridge(types.SimpleNamespace(active=True, tick=lambda now, pose: got.append(pose)))
+        for _ in range(100):
+            out.feed(10.0, 10.0, 0.0, 0.01)
+        self.assertIsNotNone(out.head())
+        out.tick(1000.0)
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0][:3], (0.0, 0.0, 0.0))
+        self.assertAlmostEqual(got[0][3], 10.0, places=6)
+        self.assertAlmostEqual(got[0][4], 10.0, places=6)
+        self.assertAlmostEqual(out.pose[3], 30.0, places=6)     # UDP keeps the global gain
 
     def test_smoothing_converges(self):
         tr = ot.HeadTracker({"smoothing": 0.8, "drift_correction": False})

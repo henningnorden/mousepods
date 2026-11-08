@@ -212,6 +212,7 @@ class HeadTracker:
 
     def __init__(self, cfg=None):
         self.cfg = {**DEFAULTS, **(cfg or {})}
+        self.suspend_autocenter = False       # set during a game-profile calibration
         self._make_filters()
         self.recenter()
 
@@ -238,6 +239,7 @@ class HeadTracker:
             for f in self.filters:
                 f.reset()
         self.out = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self.head = (0.0, 0.0, 0.0)            # yaw, pitch, roll before the global scale/invert (game profiles)
         self.used = None                      # "quaternion" | "gyro" : source réellement utilisée
 
     def gravity_angles(self, up, signs=(1, 1)):
@@ -336,7 +338,7 @@ class HeadTracker:
         yaw, pitch, roll = ang
         # --- lacet : retour lent au centre (optionnel), seulement quand la tête est quasi immobile
         ac = float(c["yaw_autocenter_s"])
-        if ac > 0 and abs(yaw_rate) < 5.0:
+        if ac > 0 and abs(yaw_rate) < 5.0 and not self.suspend_autocenter:
             self.yaw_off += _wrap180(yaw - self.yaw_off) * (1.0 - math.exp(-dt / ac))
         yaw = _wrap180(yaw - self.yaw_off)
         # lacet déroulé pour le filtre (pas de saut de 360° à ±180°)
@@ -347,6 +349,7 @@ class HeadTracker:
             pitch = self.filters[1](pitch, dt)
             roll = self.filters[2](roll, dt)
         yaw = _wrap180(yaw)
+        self.head = (yaw, pitch, roll)
         yaw *= float(c["scale_yaw"]) * (-1.0 if c["invert_yaw"] else 1.0)
         pitch *= float(c["scale_pitch"]) * (-1.0 if c["invert_pitch"] else 1.0)
         roll *= float(c["scale_roll"]) * (-1.0 if c["invert_roll"] else 1.0)
@@ -481,6 +484,11 @@ class OpenTrackOutput:
             self.pose = self.tracker.update(yaw_rate, pitch_rate, roll_rate, dt, up, lat, signs, att)
             self.last_feed = time.monotonic()
 
+    def head(self):
+        """Latest head angles (yaw, pitch, roll) before the global scale/invert, None before any data."""
+        with self.lock:
+            return self.tracker.head if self.last_feed else None
+
     def recenter(self):
         with self.lock:
             self.tracker.recenter()
@@ -490,11 +498,12 @@ class OpenTrackOutput:
         now = time.monotonic() if now is None else now
         with self.lock:
             pose, js, udp, bridge = self.pose, self.joystick, self.udp, self.game_bridge
+            head_pose = (0.0, 0.0, 0.0) + tuple(self.tracker.head)
         if not self.sender.due(now):
             return False
         if bridge is not None:
             try:
-                bridge.tick(now, pose)
+                bridge.tick(now, head_pose)
             except Exception as e:  # noqa: BLE001  (the bridge must never stop UDP / joystick output)
                 self.bridge_error = str(e)
         if js is not None:
