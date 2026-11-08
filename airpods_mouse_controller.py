@@ -52,6 +52,7 @@ log = logging.getLogger("airpods-mouse")
 DEFAULTS = {
     "device_address": "auto",
     "ui_lang": "auto",
+    "wizard_done": False,          # first-run wizard in the web UI completed
     "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)             # "auto" (system language) | "en" | "de" | "fr"
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"

@@ -60,7 +60,7 @@ h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;le
 .big{font-size:30px;font-weight:650;letter-spacing:-.02em}
 .kv{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);gap:14px}
 .kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text2)}.kv span:last-child{text-align:right;font-weight:500}
-.game{margin-bottom:12px}.game .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#p-welcome .card{margin-bottom:12px}#p-welcome .card .btn{margin-top:8px}.game{margin-bottom:12px}.game .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .game .name{font-weight:600;font-size:15px;flex:1}.game details{margin-top:10px}.game summary{cursor:pointer;color:var(--text2);font-size:13px}
 .game .axis{display:grid;grid-template-columns:70px repeat(5,minmax(0,1fr));gap:8px;align-items:center;margin-top:8px;font-size:12.5px}
 .game .axis input[type=range]{width:100%}.game .prev{font-family:var(--mono,monospace);font-size:12px;color:var(--text2)}
@@ -465,6 +465,25 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 </section>
 
 <!-- =============================== GARMIN -->
+<section class="page" id="p-welcome">
+  <h1 data-i18n="welcome.title">Welcome to MousePods</h1><div class="sub" data-i18n="welcome.intro">Five short steps and your AirPods steer the camera in your games.</div>
+  <div class="card" id="wz-lang"><h3 data-i18n="welcome.step_lang">1 · Language</h3>
+    <div class="seg" data-key="ui_lang"><button data-v="auto" data-i18n="lang.auto">Automatic</button><button data-v="en" data-i18n="lang.en">English</button><button data-v="de" data-i18n="lang.de">Deutsch</button><button data-v="fr" data-i18n="lang.fr">Français</button></div></div>
+  <div class="card" id="wz-airpods"><h3 data-i18n="welcome.step_airpods">2 · AirPods</h3>
+    <div class="hint" data-i18n="welcome.airpods_hint">Pair your AirPods in the system Bluetooth settings and put them in. MousePods connects by itself.</div>
+    <div class="kv"><span data-i18n="welcome.status">Status</span><span id="wz-status">—</span></div>
+    <button class="btn sm" id="wz-reconnect" data-i18n="welcome.reconnect">Connect again</button></div>
+  <div class="card" id="wz-calib"><h3 data-i18n="welcome.step_calib">3 · Head calibration</h3>
+    <div class="hint" data-i18n="welcome.calib_hint">Once per AirPods model: MousePods learns how the earbuds sit on your head. Takes about 15 seconds.</div>
+    <button class="btn sm" id="wz-calib-go" data-i18n="welcome.calib_go">Calibrate head</button></div>
+  <div class="card" id="wz-recenter"><h3 data-i18n="welcome.step_recenter">4 · Centre</h3>
+    <div class="hint" data-i18n="welcome.recenter_hint">Look straight at the screen and set the centre. You can do this any time from the tray icon.</div>
+    <button class="btn sm" data-cmd="recenter" data-i18n="welcome.recenter_go">Set centre</button></div>
+  <div class="card" id="wz-autostart"><h3 data-i18n="welcome.step_autostart">5 · Start with the computer</h3>
+    <div class="set toggle"><label data-i18n="welcome.autostart_label">Start MousePods hidden at login (recommended)</label><label class="sw"><input type="checkbox" id="wz-autostart-on" checked><span></span></label></div></div>
+  <div class="row" style="margin-top:14px"><button class="btn p" id="wz-done" data-i18n="welcome.done">Done – to the games</button></div>
+</section>
+
 <section class="page" id="p-games">
   <h1 data-i18n="games.title">Games</h1><div class="sub" data-i18n="games.intro">Tick a Steam game and its in-game camera follows your head, without opentrack. The game must be closed while you switch it on or off.</div>
   <div class="card" style="margin-bottom:14px"><h3 data-i18n="games.live">Live head pose</h3><div class="vec" id="games-live"></div>
@@ -763,7 +782,15 @@ function anonymize(s){const c=JSON.parse(JSON.stringify(s));if(c.addr)c.addr="XX
 // ---------- rendu état (1 Hz)
 function esc(s){return String(s).replace(/[&<>\x22\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\x22":"&quot;","\x27":"&#39;"})[c])}
 const ANON=location.search.includes("anon");if(ANON)document.documentElement.classList.add("shot");
-function renderState(){
+// ---------- first-run wizard
+let wizardChecked=false;
+function checkWizard(){if(wizardChecked||!S.config)return;wizardChecked=true;if(S.config.wizard_done===false)go("welcome")}
+function renderWizard(){if(page!=="welcome")return;$("#wz-status").textContent=S.status||"—"}
+$("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconnecting"))};
+$("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
+$("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").checked})
+  .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("games")});
+function renderState(){checkWizard();renderWizard();
   const s=ANON?anonymize(S):S;
   $("#side-model").textContent=s.model||"—";
   const name=(s.info||[]).find(i=>i.key==="info.name");

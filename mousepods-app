@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Launcher for the MousePods desktop app (window + tray + background controller)."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from desktop.app import main  # noqa: E402
+
+sys.exit(main(sys.argv))

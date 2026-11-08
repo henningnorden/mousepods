@@ -367,6 +367,30 @@ class CalibSession:
                 "profile": getattr(self, "profile", None)}
 
 
+def write_instance_token():
+    """Random token proving to the desktop app that this server is our controller
+    (desktop/controller.py). Per-user file, 0600, replaced atomically, never followed as a link."""
+    import secrets
+    from desktop.controller import token_path
+    token = secrets.token_hex(16)
+    path = token_path()
+    tmp = f"{path}.{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
+    os.replace(tmp, path)
+    return token
+
+
+def saved_config_value(cfg_path, key):
+    """A top-level value from config.json as saved on disk (None if missing/unreadable)."""
+    try:
+        with open(cfg_path) as f:
+            return json.load(f).get(key)
+    except (OSError, ValueError):
+        return None
+
+
 class WebUI:
     def __init__(self, ctl, cfg_path, port=8737):
         self.ctl, self.cfg_path, self.port = ctl, cfg_path, port
@@ -744,9 +768,14 @@ class WebUI:
                     self.end_headers()
                     self.wfile.write(data)
                 elif self.path == "/api/ping":
-                    self._json({"ok": True})
+                    self._json({"ok": True, "instance": ui.instance_token})
                 elif self.path == "/api/i18n":
                     self._json(i18n.i18n_payload(ui.ctl.cfg, i18n.env_lang()))
+                elif self.path == "/api/autostart":
+                    from desktop import autostart
+                    saved = saved_config_value(ui.cfg_path, "autostart")
+                    self._json({"enabled": bool(saved if autostart.in_flatpak() else autostart.is_enabled() or saved),
+                                "flatpak": autostart.in_flatpak()})
                 elif self.path == "/api/games":
                     import games_service
                     self._json(games_service.list_payload(ui.cfg_path))
@@ -888,6 +917,20 @@ class WebUI:
                         return self._json({"error": str(e)}, 400)
                     except RuntimeError as e:
                         return self._json({"error": str(e)}, 503)
+                elif self.path == "/api/wizard":
+                    done = bool(body.get("done"))
+                    m.update_config_file(ui.cfg_path, {"wizard_done": done})
+                    ui.ctl.cfg["wizard_done"] = done
+                    return self._json({"ok": True})
+                elif self.path == "/api/autostart":
+                    from desktop import autostart
+                    on = bool(body.get("enabled"))
+                    try:
+                        autostart.set_enabled(on)
+                    except Exception as e:  # noqa: BLE001  (portal / filesystem error -> report)
+                        return self._json({"error": tr("srv.error.autostart", error=e)}, 500)
+                    m.update_config_file(ui.cfg_path, {"autostart": on})
+                    return self._json({"ok": True, "enabled": on})
                 elif self.path.startswith("/api/games/"):
                     return self._games_post(self.path[len("/api/games/"):], body)
                 else:
@@ -913,6 +956,7 @@ class WebUI:
                 ui.q.put(("cmd", "reload"))          # the controller re-syncs the game bridge
                 return self._json({"ok": True, "game": entry})
 
+        self.instance_token = write_instance_token()
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
