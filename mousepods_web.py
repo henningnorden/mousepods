@@ -21,6 +21,9 @@ Tourne dans le processus du contrôleur, dans un thread :
   GET  /api/labo?since=t Labo : courbes pleine cadence (|acc passe-haut|, |gyro|), impulsions, session guidée
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
+  GET  /api/calibration  calibration of a game profile: {"active", "step", "progress", "hint", "result"}
+  POST /api/calibration  {"action": "start" | "cancel"}
+  GET  /calibrate        full-screen overlay for that calibration (ui/calibrate.html?roles=main,left,right)
   POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ..., "joystick": {"enabled": true, ...}}
                          | {"action": "recenter"}       (page Simulateurs ; voir docs/SIMS.md)
   GET  /api/garmin       montre Garmin : module installé ?, connexion, calibration guidée, réglages
@@ -785,6 +788,9 @@ class WebUI:
                 elif self.path == "/api/games":
                     import games_service
                     self._json(games_service.list_payload(ui.cfg_path))
+                elif self.path == "/api/calibration":
+                    ui.ctl.calibration_tick(time.monotonic())       # also ends it when the AirPods are gone
+                    self._json(ui.ctl.calibration_state())
                 elif self.path == "/api/state":
                     self._json(ui.state())
                 elif self.path == "/api/gestures":
@@ -939,6 +945,15 @@ class WebUI:
                     return self._json({"ok": True, "enabled": on})
                 elif self.path.startswith("/api/games/"):
                     return self._games_post(self.path[len("/api/games/"):], body)
+                elif self.path == "/api/calibration":
+                    action = body.get("action")
+                    if action == "start":
+                        ui.ctl.start_calibration()
+                    elif action == "cancel":
+                        ui.ctl.cancel_calibration()
+                    else:
+                        return self._json({"error": tr("srv.error.not_found")}, 400)
+                    return self._json(ui.ctl.calibration_state())
                 else:
                     return self._json({"error": tr("srv.error.not_found")}, 404)
                 self._json({"ok": True})

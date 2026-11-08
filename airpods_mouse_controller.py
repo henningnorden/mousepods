@@ -985,6 +985,10 @@ class Controller:
         self.sample_times = []
         self.opentrack = None        # OpenTrackOutput actif (voir sync_opentrack)
         self.game_bridge = None      # game_bridge.GameBridge while at least one game is enabled
+        self.calibration = None      # calibration.Calibration of a game profile while it runs
+        self.last_calibration = None # the finished one, until the next start (its result is read once)
+        self._calib_prev_paused = False
+        self._calib_lock = threading.Lock()
         self.opentrack_forced = False  # --opentrack : activé pour la session
         self.joystick_forced = False   # --sim-joystick : activé pour la session
 
@@ -1173,7 +1177,8 @@ class Controller:
         want_udp, want_js = bool(oc.get("enabled")), bool(jc.get("enabled"))
         games_cfg = self.cfg.get("games") or {}
         want_games = any((g or {}).get("enabled") for g in games_cfg.values())
-        if (want_udp or want_js or want_games) and not self.opentrack:
+        want_calib = getattr(self, "calibration", None) is not None   # calibration reads the head angle
+        if (want_udp or want_js or want_games or want_calib) and not self.opentrack:
             try:
                 import opentrack_out
                 try:
@@ -1189,7 +1194,7 @@ class Controller:
                     notify(self.cfg, tr("srv.status.opentrack_on"))
             except (OSError, ValueError) as e:
                 log.warning("OpenTrack indisponible : %s", e)
-        elif want_udp or want_js or want_games:
+        elif want_udp or want_js or want_games or want_calib:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
             try:
@@ -1204,9 +1209,11 @@ class Controller:
                 self.game_bridge.close()
                 self.game_bridge = None
             log.info("Sorties simulateur : arrêtées")
-            notify(self.cfg, tr("srv.status.sim_outputs_off"))
+            if not getattr(self, "_calib_ending", False):
+                notify(self.cfg, tr("srv.status.sim_outputs_off"))
             return
         if self.opentrack:
+            self.opentrack.tracker.suspend_autocenter = want_calib
             if want_games:
                 if not self.game_bridge:
                     import game_bridge
@@ -1227,6 +1234,68 @@ class Controller:
                 else:
                     log.warning("Manette virtuelle impossible : %s", self.opentrack.joystick_error)
     # ---- /OpenTrack ------------------------------------------------------------------------
+
+    # ---- calibration of a game profile (overlay with points, see calibration.py)
+    _calib_ending = False
+
+    def start_calibration(self):
+        """Start (or restart) a calibration: mouse paused for its duration, tracker running."""
+        import calibration
+        with self._calib_lock:
+            if self.calibration is None:
+                self._calib_prev_paused = self.paused
+            self.paused = True                    # not set_paused: nothing is saved
+            self.vel = (0.0, 0.0)
+            self.calibration = calibration.Calibration(on_center=lambda: self.recenter(quiet=True))
+            self.last_calibration = None
+        self.sync_opentrack()
+
+    def calibration_feed(self, now, yaw, pitch):
+        with self._calib_lock:
+            c = self.calibration
+            if c is None:
+                return
+            c.feed(now, yaw, pitch)
+            ended = c.finished
+        if ended:
+            self._end_calibration()
+
+    def calibration_tick(self, now):
+        with self._calib_lock:
+            c = self.calibration
+            if c is None:
+                return
+            c.tick(now)
+            ended = c.finished
+        if ended:
+            self._end_calibration()
+
+    def cancel_calibration(self):
+        with self._calib_lock:
+            if self.calibration is None:
+                return
+            self.calibration.cancel()
+        self._end_calibration()
+
+    def _end_calibration(self):
+        with self._calib_lock:
+            if self.calibration is None:
+                return
+            self.last_calibration, self.calibration = self.calibration, None
+            self.paused = self._calib_prev_paused
+            self.vel = (0.0, 0.0)
+        self._calib_ending = True
+        try:
+            self.sync_opentrack()
+        finally:
+            self._calib_ending = False
+
+    def calibration_state(self):
+        with self._calib_lock:
+            c = self.calibration or self.last_calibration
+            if c is None:
+                return {"active": False, "step": None}
+            return {**c.state(), "active": self.calibration is not None}
 
     # ---- échantillons
     def on_packet(self, pkt, aap):
@@ -1274,6 +1343,10 @@ class Controller:
             p = self.engine.p
             self.opentrack.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
                                 (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
+            if self.calibration is not None:
+                head = self.opentrack.head()
+                if head is not None:
+                    self.calibration_feed(now, head[0], head[1])
         for hook in list(self.sample_hooks):
             hook(w, g, dt, a)
         for hook in list(self.gesture_hooks):
