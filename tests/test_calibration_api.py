@@ -205,6 +205,30 @@ class CalibrationApiTests(unittest.TestCase):
                                      headers={"Content-Type": "application/json"})
         return json.load(urllib.request.urlopen(req))
 
+    def test_save_baseline_sets_games_and_pointer_range(self):
+        key = self.ctl.profile_key()
+        m.update_config_file(self.cfg_path, {"profiles": {key: {"lat": [0, 1, 0], "yaw_sign": 1}}})
+        body = {"action": "save_baseline", "yaw": {"neg": 19, "pos": 17}, "pitch": {"neg": 8, "pos": 11},
+                "target_side": 150, "target_vert": 70, "monitors": [{"connector": "DP-1", "main": True}]}
+        self.assertEqual(self.post(body), {"ok": True, "pointer": True})
+        with open(self.cfg_path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["game_baseline"]["yaw"], {"neg": 19.0, "pos": 17.0})
+        self.assertEqual(saved["game_baseline"]["target_side"], 150.0)
+        self.assertEqual(saved["profiles"][key]["range"], {"x_neg": 19.0, "x_pos": 17.0, "y_pos": 11.0, "y_neg": 8.0})
+        self.assertEqual(saved["profiles"][key]["lat"], [0, 1, 0])          # the rest of the profile stays
+
+    def test_save_baseline_without_head_calibration_leaves_pointer(self):
+        body = {"action": "save_baseline", "yaw": {"neg": 19, "pos": 17}, "pitch": {"neg": 8, "pos": 11},
+                "target_side": 150, "target_vert": 70}
+        self.assertEqual(self.post(body), {"ok": True, "pointer": False})
+        with open(self.cfg_path) as f:
+            saved = json.load(f)
+        self.assertNotIn(self.ctl.profile_key(), saved.get("profiles", {}))
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self.post({"action": "save_baseline", "yaw": {"neg": "x"}})
+        self.assertEqual(e.exception.code, 400)
+
     def test_api_start_get_cancel(self):
         self.assertEqual(self.get("/api/calibration"), {"active": False, "step": None})
         st = self.post({"action": "start"})

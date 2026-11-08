@@ -67,6 +67,20 @@ class GamesApiTests(unittest.TestCase):
         with open(self.cfg_path) as f:
             return json.load(f)
 
+    def test_list_shows_baseline_for_games_without_own_values(self):
+        with open(self.cfg_path, "w") as f:
+            json.dump({"game_baseline": {"yaw": {"neg": 19, "pos": 17}, "pitch": {"neg": 8, "pos": 11},
+                                         "target_side": 150, "target_vert": 70},
+                       "games": {"227300": {"enabled": False, "profile": {"own": True}}}}, f)
+        games = {g["appid"]: g for g in self.get("/api/games")["games"]}
+        ac, ets = games["244210"]["profile"], games["227300"]["profile"]
+        self.assertFalse(ac["own"])
+        self.assertEqual((ac["axes"]["yaw"]["edge_neg"], ac["axes"]["yaw"]["edge_pos"], ac["axes"]["yaw"]["target"]),
+                         (19.0, 17.0, 150.0))
+        self.assertTrue(ets["own"])
+        self.assertEqual(ets["axes"]["yaw"]["target"], 180.0)
+        self.assertTrue(self.get("/api/games")["baseline"])
+
     def test_list_games(self):
         d = self.get("/api/games")
         self.assertTrue(d["steam_found"])

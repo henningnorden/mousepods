@@ -22,7 +22,7 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
   GET  /api/calibration  calibration of a game profile: {"active", "step", "progress", "hint", "result"}
-  POST /api/calibration  {"action": "start" | "cancel"}
+  POST /api/calibration  {"action": "start" | "cancel"} | {"action": "save_baseline", "yaw", "pitch", ...}
   GET  /calibrate        full-screen overlay for that calibration (ui/calibrate.html?roles=main,left,right)
   POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ..., "joystick": {"enabled": true, ...}}
                          | {"action": "recenter"}       (page Simulateurs ; voir docs/SIMS.md)
@@ -953,6 +953,12 @@ class WebUI:
                         ui.ctl.start_calibration()
                     elif action == "cancel":
                         ui.ctl.cancel_calibration()
+                    elif action == "save_baseline":
+                        pointer = ui.ctl.save_baseline(body)
+                        if pointer is None:
+                            return self._json({"error": tr("srv.error.bad_request")}, 400)
+                        ui.q.put(("cmd", "reload"))                # main loop applies it
+                        return self._json({"ok": True, "pointer": pointer})
                     else:
                         return self._json({"error": tr("srv.error.not_found")}, 400)
                     return self._json(ui.ctl.calibration_state())

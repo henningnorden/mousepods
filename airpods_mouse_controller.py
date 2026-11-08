@@ -56,6 +56,7 @@ DEFAULTS = {
     "wizard_done": False,          # first-run wizard in the web UI completed
     "mouse_paused": True,          # mouse control starts off; Pause/Resume is remembered
     "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)
+    "game_baseline": None,         # Calibration page: edges for every game without own values
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"
     "source": "auto",              # "auto" | "head" | "case" | "hand"
@@ -1231,7 +1232,7 @@ class Controller:
                 if not self.game_bridge:
                     import game_bridge
                     self.game_bridge = game_bridge.GameBridge(os.environ.get("MOUSEPODS_SHM_DIR", "/dev/shm"))
-                self.game_bridge.configure(games_cfg)
+                self.game_bridge.configure(games_cfg, self.cfg.get("game_baseline"))
                 self.opentrack.set_game_bridge(self.game_bridge)
             else:
                 self.opentrack.set_game_bridge(None)
@@ -1302,6 +1303,27 @@ class Controller:
             self.sync_opentrack()
         finally:
             self._calib_ending = False
+
+    def save_baseline(self, raw):
+        """Baseline calibration: default range for every game, and the pointer's screen edges for
+        the current AirPods profile (if that one is calibrated). Returns whether the pointer got it,
+        None if the values are unusable."""
+        import game_profiles
+        base = game_profiles.normalize_baseline(raw)
+        if base is None or not self.cfg_path:
+            return None
+        updates = {"game_baseline": base}
+        key = self.profile_key()
+        with open(self.cfg_path) as f:
+            prof = (json.load(f).get("profiles") or {}).get(key)
+        pointer = isinstance(prof, dict) and "lat" in prof
+        if pointer:
+            prof = dict(prof)
+            prof["range"] = {"x_neg": base["yaw"]["neg"], "x_pos": base["yaw"]["pos"],
+                             "y_pos": base["pitch"]["pos"], "y_neg": base["pitch"]["neg"]}
+            updates["profiles"] = {key: prof}
+        update_config_file(self.cfg_path, updates)
+        return pointer
 
     def calibration_state(self):
         with self._calib_lock:

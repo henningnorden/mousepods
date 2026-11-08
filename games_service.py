@@ -7,7 +7,7 @@ import threading
 import bridge_install
 import game_bridge
 import steam_games
-from game_profiles import normalize_profile
+from game_profiles import effective_profile, normalize_baseline, normalize_profile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DLL_DIRS = (os.path.join(HERE, "native", "out"), "/app/share/mousepods/native")
@@ -40,13 +40,22 @@ def shm_dir():
     return os.environ.get("MOUSEPODS_SHM_DIR", "/dev/shm")
 
 
-def saved_games(cfg_path):
+def _saved(cfg_path):
     try:
         with open(cfg_path) as f:
-            games = json.load(f).get("games")
+            data = json.load(f)
     except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+def saved_games(cfg_path):
+    games = _saved(cfg_path).get("games")
     return games if isinstance(games, dict) else {}
+
+
+def saved_baseline(cfg_path):
+    return normalize_baseline(_saved(cfg_path).get("game_baseline"))
 
 
 def _games():
@@ -65,6 +74,7 @@ def find(appid):
 def list_payload(cfg_path):
     root, games = _games()
     saved = saved_games(cfg_path)
+    baseline = saved_baseline(cfg_path)
     running = bridge_install.running_appids()        # one /proc pass for the whole list
     out = []
     adopted = {}
@@ -80,11 +90,11 @@ def list_payload(cfg_path):
                     "foreign_tracker": bridge_install.foreign_tracker(g),
                     "enabled": bool(entry.get("enabled")), "running": g.appid in running,
                     "launch_option_hint": "opentrack-launcher" in g.launch_options,
-                    "profile": normalize_profile(entry.get("profile"))})
+                    "profile": effective_profile(normalize_profile(entry.get("profile")), baseline)})
     if adopted:
         from airpods_mouse_controller import update_config_file
         update_config_file(cfg_path, {"games": adopted})
-    return {"steam_found": root is not None, "steam_flatpak": bool(root and root.flatpak), "games": out,
+    return {"steam_found": root is not None, "baseline": baseline, "steam_flatpak": bool(root and root.flatpak), "games": out,
             "missing_libraries": steam_games.missing_libraries(root) if root else []}
 
 

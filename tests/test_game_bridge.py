@@ -51,6 +51,22 @@ class GameBridgeTests(unittest.TestCase):
         self.assertAlmostEqual(pose[3], 10.0)
         self.assertEqual(t, 1.0)
 
+    def test_baseline_applies_to_games_without_own_values(self):
+        base = {"yaw": {"neg": 10, "pos": 10}, "pitch": {"neg": 10, "pos": 10}, "target_side": 100, "target_vert": 50}
+        own = {"smoothing": 0, "own": True, "axes": {"yaw": {"edge_neg": 50, "edge_pos": 50, "target": 50, "curve": 1}}}
+        follow = {"smoothing": 0, "axes": {"yaw": {"curve": 1.0}}, "own": False}
+        self.bridge.configure({"1": {"enabled": True, "profile": follow}, "2": {"enabled": True, "profile": own}},
+                              baseline=base)
+        self.bridge.tick(1.0, (0, 0, 0, 5, 0, 0))
+        self.assertAlmostEqual(read_pose(self.path("1"))[2][3], 50.0)    # 100 * 5/10
+        self.assertAlmostEqual(read_pose(self.path("2"))[2][3], 5.0)     # 50 * 5/50
+        base["yaw"]["pos"] = 5
+        self.bridge.configure({"1": {"enabled": True, "profile": follow}, "2": {"enabled": True, "profile": own}},
+                              baseline=base)                               # a new baseline reaches game 1 only
+        self.bridge.tick(2.0, (0, 0, 0, 5, 0, 0))
+        self.assertAlmostEqual(read_pose(self.path("1"))[2][3], 100.0)
+        self.assertAlmostEqual(read_pose(self.path("2"))[2][3], 5.0)
+
     def test_disabled_game_file_removed(self):
         self.bridge.configure(games(**{"1": 1.0}))
         self.bridge.tick(1.0, (0,) * 6)

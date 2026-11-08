@@ -13,7 +13,7 @@ import stat
 import struct
 import threading
 
-from game_profiles import ProfileFilter, normalize_profile
+from game_profiles import ProfileFilter, effective_profile, normalize_baseline, normalize_profile
 
 log = logging.getLogger(__name__)
 
@@ -88,12 +88,14 @@ class GameBridge:
     def active(self):
         return bool(self.games)          # a dict truth test is atomic, no lock needed
 
-    def configure(self, games_cfg):
+    def configure(self, games_cfg, baseline=None):
+        """baseline: the Calibration page's baseline (config "game_baseline"), used by every game
+        without own values."""
         with self.lock:
-            self._configure(games_cfg)
+            self._configure(games_cfg, normalize_baseline(baseline))
 
-    def _configure(self, games_cfg):
-        wanted = {str(appid): normalize_profile((g or {}).get("profile"))
+    def _configure(self, games_cfg, baseline=None):
+        wanted = {str(appid): effective_profile(normalize_profile((g or {}).get("profile")), baseline)
                   for appid, g in (games_cfg or {}).items()
                   if (g or {}).get("enabled") and _APPID.match(str(appid))}
         for appid in list(self.games):

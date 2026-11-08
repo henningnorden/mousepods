@@ -40,6 +40,7 @@ DEFAULT_PROFILE = {
     "neck": {"enabled": False, "strength": 1.0, "lean_forward": False},
     "axes": {name: _axis_from_legacy(*vals) for name, vals in LEGACY_DEFAULTS.items()},
     "monitors": [],                 # calibration: chosen monitors, left to right, one marked main
+    "own": False,                   # False: yaw/pitch range come from the baseline calibration
 }
 
 
@@ -85,6 +86,38 @@ def normalize_profile(raw):
         for key, (lo, hi) in _RANGES.items():
             dst[key] = _clamp(src.get(key, dst[key]), lo, hi, dst[key])
     p["monitors"] = _monitors(raw.get("monitors"))
+    # saved before the baseline existed: a profile whose axes differ from the default has own values
+    p["own"] = bool(raw["own"]) if "own" in raw else p["axes"] != DEFAULT_PROFILE["axes"]
+    return p
+
+
+def normalize_baseline(raw):
+    """Baseline calibration (Calibration page): head angle at each edge, camera at the edge, monitors.
+    None if missing or unusable."""
+    if not isinstance(raw, dict):
+        return None
+    lo, hi = _RANGES["edge_pos"]
+    out = {}
+    for axis in ("yaw", "pitch"):
+        src = raw.get(axis) if isinstance(raw.get(axis), dict) else {}
+        vals = {k: _clamp(src.get(k), lo, hi, None) for k in ("neg", "pos")}
+        if None in vals.values():
+            return None
+        out[axis] = vals
+    out["target_side"] = _clamp(raw.get("target_side"), 0.0, 180.0, 180.0)
+    out["target_vert"] = _clamp(raw.get("target_vert"), 0.0, 180.0, 90.0)
+    out["monitors"] = _monitors(raw.get("monitors"))
+    return out
+
+
+def effective_profile(profile, baseline):
+    """The profile a game gets: its own values, or yaw/pitch range from the baseline."""
+    if profile.get("own") or not baseline:
+        return profile
+    p = copy.deepcopy(profile)
+    for axis, target in (("yaw", "target_side"), ("pitch", "target_vert")):
+        a = p["axes"][axis]
+        a["edge_neg"], a["edge_pos"], a["target"] = baseline[axis]["neg"], baseline[axis]["pos"], baseline[target]
     return p
 
 

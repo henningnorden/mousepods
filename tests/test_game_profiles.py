@@ -31,6 +31,7 @@ class ProfileTests(unittest.TestCase):
     def test_defaults_and_clamping(self):
         p = gp.normalize_profile(None)
         self.assertEqual(p, gp.DEFAULT_PROFILE)
+        self.assertIs(p["own"], False)
         self.assertIsNot(p, gp.DEFAULT_PROFILE)
         q = gp.normalize_profile({"smoothing": 5, "axes": {"yaw": {"edge_neg": 500, "edge_pos": 0, "target": 999,
                                                                    "curve": 0.2}},
@@ -93,6 +94,36 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(gp.normalize_profile({"monitors": [{"connector": "A"}, {"connector": "B"}]})["monitors"],
                          [{"connector": "A", "main": True}, {"connector": "B", "main": False}])
         self.assertEqual(gp.normalize_profile({})["monitors"], [])
+
+    def test_baseline_normalized(self):
+        self.assertIsNone(gp.normalize_baseline(None))
+        self.assertIsNone(gp.normalize_baseline({"yaw": {"neg": "x"}}))
+        b = gp.normalize_baseline({"yaw": {"neg": 19, "pos": 500}, "pitch": {"neg": 8, "pos": 1},
+                                   "target_side": 999, "target_vert": 60, "monitors": [{"connector": "DP-1"}], "junk": 1})
+        self.assertEqual(b, {"yaw": {"neg": 19.0, "pos": 180.0}, "pitch": {"neg": 8.0, "pos": 2.0},
+                             "target_side": 180.0, "target_vert": 60.0,
+                             "monitors": [{"connector": "DP-1", "main": True}]})
+
+    def test_own_flag(self):
+        self.assertFalse(gp.normalize_profile({})["own"])                       # default: follows the baseline
+        changed = {"axes": {"yaw": {"edge_neg": 20, "edge_pos": 20, "target": 180, "curve": 1.4}}}
+        self.assertTrue(gp.normalize_profile(changed)["own"])                   # saved before: own values
+        self.assertTrue(gp.normalize_profile({"axes": {"yaw": {"gain": 3}}})["own"])
+        self.assertFalse(gp.normalize_profile({**changed, "own": False})["own"])
+        self.assertTrue(gp.normalize_profile({"own": True})["own"])
+
+    def test_effective_profile_uses_baseline_unless_own(self):
+        base = gp.normalize_baseline({"yaw": {"neg": 18, "pos": 17}, "pitch": {"neg": 8, "pos": 11},
+                                      "target_side": 150, "target_vert": 70})
+        p = gp.effective_profile(gp.normalize_profile({}), base)
+        y, pi = p["axes"]["yaw"], p["axes"]["pitch"]
+        self.assertEqual((y["edge_neg"], y["edge_pos"], y["target"]), (18.0, 17.0, 150.0))
+        self.assertEqual((pi["edge_neg"], pi["edge_pos"], pi["target"]), (8.0, 11.0, 70.0))
+        self.assertEqual(p["axes"]["roll"], gp.DEFAULT_PROFILE["axes"]["roll"])
+        self.assertEqual(y["curve"], gp.DEFAULT_PROFILE["axes"]["yaw"]["curve"])
+        own = gp.normalize_profile({"own": True})
+        self.assertEqual(gp.effective_profile(own, base), own)
+        self.assertEqual(gp.effective_profile(gp.normalize_profile({}), None), gp.normalize_profile({}))
 
     def test_sensitivity_curve_roundtrip(self):
         self.assertEqual(gp.sensitivity_to_curve(0), 3.0)
