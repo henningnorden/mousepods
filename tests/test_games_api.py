@@ -40,6 +40,7 @@ class GamesApiTests(unittest.TestCase):
             f.write("{}")
         self.env = mock.patch.dict(os.environ, {"MOUSEPODS_STEAM_ROOT": self.steam, "MOUSEPODS_DLL_DIR": self.dlls})
         self.env.start()
+        games_service.bridge_install._LAST_SEEN.clear()
         self.running = set()
         self.run_patch = mock.patch.object(games_service, "is_running", lambda appid: appid in self.running)
         self.run_patch.start()
@@ -76,6 +77,7 @@ class GamesApiTests(unittest.TestCase):
                          ("244210", True, "foreign", False, False))
         self.assertTrue(ac["launch_option_hint"])
         self.assertEqual(ac["foreign_tracker"], "opentrack")
+        self.assertEqual(d["missing_libraries"], [])
         self.assertEqual(ac["profile"]["axes"]["yaw"]["gain"], 2.0)
         self.assertFalse(d["games"][1]["has_prefix"])
 
@@ -146,6 +148,70 @@ class GamesApiTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 403, method)
+
+    def test_parallel_installs_into_one_prefix_stay_consistent(self):
+        import threading
+        game = games_service.find("244210")
+        reg = os.path.join(game.prefix, "user.reg")
+        barrier = threading.Barrier(6)
+        errors = []
+
+        def flip(on):
+            barrier.wait()
+            try:
+                games_service.set_enabled(self.cfg_path, game, on)
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+        real = games_service.bridge_install._set_section
+
+        def slow(*a):
+            import time
+            time.sleep(0.02)                         # widen the read-modify-write window
+            return real(*a)
+
+        threads = [threading.Thread(target=flip, args=(i % 3 != 0,)) for i in range(6)]
+        with mock.patch.object(games_service.bridge_install, "_set_section", side_effect=slow):
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        with open(reg) as f:
+            text = f.read()
+        self.assertEqual(text.count("[Software\\\\NaturalPoint\\\\NATURALPOINT\\\\NPClient Location]"), 1)
+        games_service.set_enabled(self.cfg_path, game, True)
+        games_service.set_enabled(self.cfg_path, game, False)
+        with open(reg) as f:
+            self.assertIn("opentrack-launcher/install/modules/", f.read())   # original tracker restored
+        self.assertEqual([e for e in errors if not isinstance(e, games_service.bridge_install.BridgeError)], [])
+
+    def test_filesystem_error_is_reported_not_dropped(self):
+        with mock.patch.object(games_service.bridge_install, "install",
+                               side_effect=PermissionError(13, "Permission denied")):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.post("/api/games/244210", {"enabled": True})
+        self.assertEqual(cm.exception.code, 500)
+        body = json.load(cm.exception)
+        self.assertEqual(body["code"], "io_error")
+        self.assertIn("Permission denied", body["error"])
+
+    def test_disable_cleans_up_even_if_status_is_foreign(self):
+        self.post("/api/games/244210", {"enabled": True})
+        game = games_service.find("244210")
+        with mock.patch.object(games_service.bridge_install, "status", return_value="foreign"):
+            self.post("/api/games/244210", {"enabled": False})
+        self.assertFalse(games_service.bridge_install.has_our_files(game))
+
+    def test_list_scans_running_games_once(self):
+        calls = []
+        with mock.patch.object(games_service.bridge_install, "running_appids",
+                               side_effect=lambda *a, **k: calls.append(1) or set()):
+            self.run_patch.stop()
+            try:
+                self.get("/api/games")
+            finally:
+                self.run_patch.start()
+        self.assertEqual(len(calls), 1)
 
     def test_unknown_game_is_404(self):
         with self.assertRaises(urllib.error.HTTPError) as cm:

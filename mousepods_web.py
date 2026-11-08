@@ -375,7 +375,12 @@ def write_instance_token():
     from desktop.controller import token_path
     token = secrets.token_hex(16)
     path = token_path()
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        os.unlink(tmp)                   # left over by a crashed process with the same pid
+    except FileNotFoundError:
+        pass
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(token)
@@ -953,6 +958,8 @@ class WebUI:
                         return self._json({"error": tr("srv.error.bad_request")}, 400)
                 except bridge_install.BridgeError as e:
                     return self._json({"error": tr("games.error." + e.code), "code": e.code}, 409)
+                except OSError as e:
+                    return self._json({"error": tr("games.error.io_error", error=e), "code": "io_error"}, 500)
                 m.update_config_file(ui.cfg_path, {"games": {game.appid: entry}})
                 ui.q.put(("cmd", "reload"))          # the controller re-syncs the game bridge
                 return self._json({"ok": True, "game": entry})

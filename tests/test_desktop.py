@@ -63,6 +63,20 @@ class AutostartTests(unittest.TestCase):
         autostart.set_enabled(False)
         self.assertFalse(os.path.exists(path))
 
+    def test_exec_quotes_paths_with_spaces(self):
+        autostart.set_enabled(True, command=["/home/h/My Apps/mousepods-app"])
+        path = os.path.join(self.home, ".config", "autostart", "io.github.henningnorden.MousePods.desktop")
+        with open(path) as f:
+            self.assertIn('Exec="/home/h/My Apps/mousepods-app" --background', f.read())
+
+    def test_wizard_autostart_default_only_in_flatpak(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "ui", "index.html"), encoding="utf-8") as f:
+            h = f.read()
+        tag = h[h.index('id="wz-autostart-on"') - 40:h.index('id="wz-autostart-on"') + 40]
+        self.assertNotIn("checked", tag)                       # not pre-ticked in the markup
+        self.assertIn('$("#wz-autostart-on").checked=!!S.flatpak', h)
+
     def test_flatpak_uses_portal(self):
         calls = []
         with mock.patch.dict(os.environ, {"FLATPAK_ID": "io.github.henningnorden.MousePods"}), \
@@ -137,6 +151,26 @@ class InstanceTokenTests(unittest.TestCase):
         finally:
             ui.server.shutdown()
 
+    def test_token_written_without_runtime_dir_or_cache(self):
+        import mousepods_web as web
+        home = tempfile.mkdtemp()
+        try:
+            with mock.patch.dict(os.environ, {"HOME": home}):
+                os.environ.pop("XDG_RUNTIME_DIR", None)
+                token = web.write_instance_token()
+                self.assertEqual(controller.read_token(), token)
+        finally:
+            shutil.rmtree(home)
+
+    def test_stale_temp_file_does_not_block_token(self):
+        import mousepods_web as web
+        stale = f"{controller.token_path()}.{os.getpid()}.tmp"
+        with open(stale, "w") as f:
+            f.write("old")
+        token = web.write_instance_token()
+        self.assertEqual(controller.read_token(), token)
+        self.assertFalse(os.path.exists(stale))
+
     def test_nothing_listening(self):
         import socket
         s = socket.socket()
@@ -144,6 +178,26 @@ class InstanceTokenTests(unittest.TestCase):
         port = s.getsockname()[1]
         s.close()
         self.assertEqual(controller.ping(port), "down")
+
+
+class ErrorPageTests(unittest.TestCase):
+    def tearDown(self):
+        i18n.set_lang("en")
+
+    def test_foreign_server_page_is_translated_and_escaped(self):
+        from desktop import errors
+        i18n.set_lang("de")
+        page = errors.error_page("foreign_server", "<script>x</script> port 8737")
+        self.assertIn(i18n.tr("app.error.foreign_server.title", "de"), page)
+        self.assertIn("&lt;script&gt;", page)
+        self.assertNotIn("<script>", page)
+        self.assertIn('<html lang="de">', page)
+
+    def test_controller_failed_page_names_the_log(self):
+        from desktop import errors
+        page = errors.error_page("controller_failed", "/home/h/.local/state/mousepods/controller.log")
+        self.assertIn("controller.log", page)
+        self.assertIn(i18n.tr("app.error.controller_failed.title", "en"), page)
 
 
 class ControllerStartTests(unittest.TestCase):

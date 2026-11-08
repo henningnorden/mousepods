@@ -11,6 +11,7 @@ import os
 import re
 import stat
 import struct
+import threading
 
 from game_profiles import ProfileFilter, normalize_profile
 
@@ -80,12 +81,18 @@ class GameBridge:
         self.shm_dir = shm_dir
         self.games = {}        # appid -> (PoseFile, ProfileFilter, normalized profile)
         self.last_now = None
+        # configure() runs on the controller thread, tick() on the output thread
+        self.lock = threading.Lock()
 
     @property
     def active(self):
-        return bool(self.games)
+        return bool(self.games)          # a dict truth test is atomic, no lock needed
 
     def configure(self, games_cfg):
+        with self.lock:
+            self._configure(games_cfg)
+
+    def _configure(self, games_cfg):
         wanted = {str(appid): normalize_profile((g or {}).get("profile"))
                   for appid, g in (games_cfg or {}).items()
                   if (g or {}).get("enabled") and _APPID.match(str(appid))}
@@ -108,12 +115,14 @@ class GameBridge:
             self.games[appid] = (pf, ProfileFilter(profile), profile)
 
     def tick(self, now, pose6):
-        dt = 0.0 if self.last_now is None else min(max(now - self.last_now, 0.0), MAX_DT)
-        self.last_now = now
-        for pf, flt, _ in self.games.values():
-            pf.write(flt.apply(pose6, dt), now)
+        with self.lock:
+            dt = 0.0 if self.last_now is None else min(max(now - self.last_now, 0.0), MAX_DT)
+            self.last_now = now
+            for pf, flt, _ in self.games.values():
+                pf.write(flt.apply(pose6, dt), now)
 
     def close(self):
-        for pf, _, _ in self.games.values():
-            pf.close(remove=True)
-        self.games = {}
+        with self.lock:
+            for pf, _, _ in self.games.values():
+                pf.close(remove=True)
+            self.games = {}

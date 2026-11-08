@@ -47,7 +47,8 @@ class BluezDbusTests(unittest.TestCase):
         self.assertIsNone(bluez_dbus.info_from_managed_objects(OBJECTS, "99:99:99:99:99:99"))
 
     def test_available_false_without_gi(self):
-        with mock.patch.dict(sys.modules, {"gi": None}):
+        with mock.patch.dict(sys.modules, {"gi": None}), \
+                mock.patch.object(bluez_dbus.time, "monotonic", return_value=1.0):
             bluez_dbus._reset()
             self.assertFalse(bluez_dbus.available())
         bluez_dbus._reset()
@@ -59,6 +60,39 @@ class BluezDbusTests(unittest.TestCase):
             self.assertEqual([d[0] for d in m.apple_audio_devices()], ["11:22:33:44:55:66", "AA:BB:CC:DD:EE:FF"])
             self.assertEqual(m.product_id("AA:BB:CC:DD:EE:FF"), "2024")
             self.assertTrue(m.bt_connected("AA:BB:CC:DD:EE:FF"))
+
+    def test_dbus_error_becomes_oserror(self):
+        class GLibError(RuntimeError):            # gi.repository.GLib.Error is a RuntimeError
+            pass
+        with mock.patch.object(bluez_dbus, "_call_managed_objects", side_effect=GLibError("Timeout was reached")):
+            with self.assertRaises(OSError):
+                bluez_dbus.managed_objects()
+
+    def test_connect_loop_survives_dbus_error(self):
+        class GLibError(RuntimeError):
+            pass
+        c = m.AAPClient("auto", auto_connect=True)
+        with mock.patch.object(bluez_dbus, "available", return_value=True), \
+                mock.patch.object(bluez_dbus, "_call_managed_objects", side_effect=GLibError("bluetoothd restarting")):
+            with self.assertRaises(OSError):         # the controller's connect loop catches OSError and retries
+                c._pick()
+
+    def test_unavailable_is_probed_again_later(self):
+        bluez_dbus._reset()
+        with mock.patch.object(bluez_dbus, "_call_managed_objects", side_effect=OSError("no bus")), \
+                mock.patch.object(bluez_dbus.time, "monotonic", return_value=100.0):
+            self.assertFalse(bluez_dbus.available())
+        with mock.patch.object(bluez_dbus, "_call_managed_objects", return_value={}), \
+                mock.patch.object(bluez_dbus.time, "monotonic", return_value=100.0 + bluez_dbus.REPROBE_S + 1):
+            self.assertTrue(bluez_dbus.available())
+        bluez_dbus._reset()
+
+    def test_disconnect_uses_dbus_when_available(self):
+        with mock.patch.object(bluez_dbus, "available", return_value=True), \
+                mock.patch.object(bluez_dbus, "disconnect") as dc, \
+                mock.patch.object(m.subprocess, "run", side_effect=AssertionError("bluetoothctl used")):
+            m.bt_disconnect("AA:BB:CC:DD:EE:FF")
+        dc.assert_called_once_with("AA:BB:CC:DD:EE:FF")
 
     def test_controller_falls_back_to_bluetoothctl(self):
         out = "Device AA:BB:CC:DD:EE:FF AirPods\n"

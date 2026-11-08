@@ -108,6 +108,73 @@ class GameBridgeTests(unittest.TestCase):
         self.assertNotIn("games", out.outputs)
 
 
+class BridgeThreadingTests(unittest.TestCase):
+    def test_configure_while_ticking_never_breaks_the_output_thread(self):
+        import threading
+        d = tempfile.mkdtemp()
+        bridge = gb.GameBridge(shm_dir=d)
+        out = opentrack_out.OpenTrackOutput({"rate_hz": 1000}, udp=False)
+        out.set_game_bridge(bridge)
+        stop = threading.Event()
+        errors = []
+
+        def ticker():
+            t = 0.0
+            while not stop.is_set():
+                t += 0.001
+                try:
+                    out.tick(t)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+                    return
+
+        th = threading.Thread(target=ticker)
+        th.start()
+        try:
+            for i in range(300):
+                bridge.configure(games(**{str(n): 1.0 + i % 3 for n in range(1, 2 + i % 6)}))
+        finally:
+            stop.set()
+            th.join()
+            bridge.close()
+            shutil.rmtree(d)
+        self.assertEqual(errors, [])
+        self.assertIsNone(out.bridge_error)
+
+    def test_output_thread_survives_a_failing_bridge(self):
+        class Broken:
+            active = True
+
+            def tick(self, now, pose):
+                raise ValueError("mmap closed or invalid")
+        out = opentrack_out.OpenTrackOutput({"rate_hz": 120}, udp=False)
+        out.set_game_bridge(Broken())
+        out.tick(1.0)                               # must not raise
+        self.assertIn("mmap closed", out.bridge_error)
+
+
+class BadUdpConfigTests(unittest.TestCase):
+    def test_games_start_even_with_broken_opentrack_settings(self):
+        import types
+        import airpods_mouse_controller as m
+        d = tempfile.mkdtemp()
+        os.environ["MOUSEPODS_SHM_DIR"] = d
+        ctl = types.SimpleNamespace(cfg={"opentrack": {"enabled": False, "port": "not-a-port", "rate_hz": "x"},
+                                         "sim_joystick": {"enabled": False}, "games": games(**{"1": 1.0})},
+                                    opentrack=None, opentrack_forced=False, joystick_forced=False, game_bridge=None)
+        try:
+            m.Controller.sync_opentrack(ctl)
+            self.assertIsNotNone(ctl.opentrack)
+            self.assertIn("games", ctl.opentrack.outputs)
+            m.Controller.sync_opentrack(ctl)          # every config reload syncs again
+            self.assertIn("games", ctl.opentrack.outputs)
+        finally:
+            if ctl.opentrack:
+                ctl.opentrack.stop()
+            del os.environ["MOUSEPODS_SHM_DIR"]
+            shutil.rmtree(d)
+
+
 class PoseFileSafetyTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

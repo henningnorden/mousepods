@@ -26,7 +26,7 @@ jobs:
           set -o pipefail
           if ! python -m unittest discover -s tests 2>&1 | tee tests.log; then
             # job logs need a login; the failing tests go into a public annotation
-            echo "::error title=tests::$( (grep -E '^(FAIL|ERROR):' tests.log; grep -A25 -m3 -E '^(FAIL|ERROR):' tests.log | grep -E 'Error|assert|line [0-9]+') | head -n 60 | sed -e ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            echo "::error title=tests::$(grep -E '^(FAIL|ERROR):' tests.log | head -n 20 | sed -e ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
             exit 1
           fi
 

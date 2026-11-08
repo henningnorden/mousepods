@@ -10,6 +10,7 @@
 #include <string.h>
 #include <windows.h>
 #include "fttypes.h"
+#include "pose_stale.h"
 
 #define FT_EXPORT(t) __declspec(dllexport) t
 #define POSE_PATH_DEFAULT "Z:\\dev\\shm\\mousepods-headpose"
@@ -27,6 +28,7 @@ static void pose_path(char *out, DWORD size)
 
 static const volatile unsigned char *pPose = NULL;
 static unsigned int dataId = 0;
+static PoseStale poseStale;
 static FILE *g_log = NULL;
 
 static int debug_on = -1;
@@ -65,6 +67,10 @@ FT_EXPORT(BOOL) FTGetData(FTData *data)
     double v[6];
     if (!pose_map()) return FALSE;
     for (int i = 0; i < 6; i++) memcpy(&v[i], (const void *)(pPose + 8 + 8 * i), 8);
+    uint32_t seq;
+    memcpy(&seq, (const void *) pPose, 4);
+    if (!pose_fresh(&poseStale, seq, GetTickCount64()))
+        for (int i = 0; i < 6; i++) v[i] = 0.0;      /* MousePods gone: centre instead of freezing */
     memset((void *) data, 0, sizeof(FTData));
     data->DataID = ++dataId;
     data->CamWidth = 250; data->CamHeight = 100;

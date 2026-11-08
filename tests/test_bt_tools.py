@@ -30,9 +30,7 @@ class BtToolTests(unittest.TestCase):
 
     def test_pick_propagates_missing(self):
         c = m.AAPClient("auto", auto_connect=True)
-        # bluetoothctl on PATH at _pick time, gone when it is called
-        with mock.patch.object(m.shutil, "which", return_value="/usr/bin/bluetoothctl"), \
-                mock.patch.object(m.subprocess, "run", side_effect=MISSING):
+        with mock.patch.object(m.subprocess, "run", side_effect=MISSING):
             with self.assertRaises(m.BluetoothToolMissing):
                 c._pick()
 

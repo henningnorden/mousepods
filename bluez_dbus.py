@@ -6,16 +6,19 @@ reads devices and asks BlueZ to connect; the AirPods data channel itself is stil
 socket in airpods_mouse_controller.
 """
 import re
+import time
 
 BUS_NAME = "org.bluez"
 DEVICE_IFACE = "org.bluez.Device1"
 CALL_TIMEOUT_MS = 2000
+REPROBE_S = 10.0          # after a failed probe, try D-Bus again this much later
 _APPLE = re.compile(r"^bluetooth:v004Cp([0-9A-Fa-f]{4})")
-_state = {"available": None}
+_state = {"available": None, "next_probe": 0.0}
 
 
 def _reset():
     _state["available"] = None
+    _state["next_probe"] = 0.0
 
 
 def _gio():
@@ -26,7 +29,18 @@ def _gio():
 
 
 def managed_objects():
-    """org.freedesktop.DBus.ObjectManager.GetManagedObjects on org.bluez, unpacked to dicts."""
+    """org.freedesktop.DBus.ObjectManager.GetManagedObjects on org.bluez, unpacked to dicts.
+    D-Bus failures (GLib.Error is a RuntimeError) are raised as OSError, which the controller's
+    connect loop already treats as "retry later"."""
+    try:
+        return _call_managed_objects()
+    except OSError:
+        raise
+    except Exception as e:  # noqa: BLE001  (GLib.Error, ImportError from gi, ...)
+        raise OSError(f"BlueZ D-Bus: {e}") from e
+
+
+def _call_managed_objects():
     Gio, GLib = _gio()
     bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
     res = bus.call_sync(BUS_NAME, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None,
@@ -35,13 +49,18 @@ def managed_objects():
 
 
 def available():
-    """True when PyGObject is importable and BlueZ answers on the system bus (cached)."""
-    if _state["available"] is None:
-        try:
-            managed_objects()
-            _state["available"] = True
-        except Exception:  # noqa: BLE001  (no gi, no system bus, no bluetoothd: all mean "use bluetoothctl")
-            _state["available"] = False
+    """True when PyGObject is importable and BlueZ answers on the system bus. Success is cached;
+    a failure is re-probed after REPROBE_S (bluetoothd may come up after us, e.g. at login)."""
+    if _state["available"]:
+        return True
+    now = time.monotonic()
+    if _state["available"] is False and now < _state["next_probe"]:
+        return False
+    try:
+        managed_objects()
+        _state["available"] = True
+    except OSError:
+        _state["available"], _state["next_probe"] = False, now + REPROBE_S
     return _state["available"]
 
 
@@ -85,15 +104,23 @@ def info(addr):
 
 def connect(addr, timeout_s=12):
     """Ask BlueZ to connect the device; True if it reports Connected afterwards."""
-    Gio, _ = _gio()
-    path, _dev = _device(managed_objects(), addr)
-    if path is None:
-        return False
-    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-    try:
-        bus.call_sync(BUS_NAME, path, DEVICE_IFACE, "Connect", None, None, Gio.DBusCallFlags.NONE,
-                      int(timeout_s * 1000), None)
-    except Exception:  # noqa: BLE001  (GLib.Error: already connected, timeout, refused)
-        pass
+    _device_call(addr, "Connect", timeout_s)
     got = info(addr)
     return bool(got and got["connected"])
+
+
+def disconnect(addr, timeout_s=10):
+    _device_call(addr, "Disconnect", timeout_s)
+
+
+def _device_call(addr, method, timeout_s):
+    path, _dev = _device(managed_objects(), addr)
+    if path is None:
+        return
+    try:
+        Gio, _ = _gio()
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        bus.call_sync(BUS_NAME, path, DEVICE_IFACE, method, None, None, Gio.DBusCallFlags.NONE,
+                      int(timeout_s * 1000), None)
+    except Exception:  # noqa: BLE001  (GLib.Error: already (dis)connected, timeout, refused - state is re-read)
+        pass

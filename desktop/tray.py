@@ -55,20 +55,33 @@ def _layout_variant(node):
 
 
 class Tray:
-    def __init__(self, on_action):
+    def __init__(self, on_action, cfg_path=None):
         self.on_action = on_action
+        self.cfg_path = cfg_path
+        self.revision = 1
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
         dbm = Gio.DBusNodeInfo.new_for_xml(MENU_XML).interfaces[0]
         self.bus.register_object("/StatusNotifierItem", sni, self._sni_call, self._sni_get, None)
         self.bus.register_object("/MenuBar", dbm, self._menu_call, self._menu_get, None)
+        # Register whenever a tray host (StatusNotifierWatcher) appears: at login we may start before
+        # plasmashell, and the host re-appears after a plasmashell restart.
+        self._watch = Gio.bus_watch_name_on_connection(self.bus, "org.kde.StatusNotifierWatcher",
+                                                       Gio.BusNameWatcherFlags.NONE,
+                                                       self._watcher_appeared, self._watcher_vanished)
+
+    def _watcher_appeared(self, _conn, _name, _owner):
         try:
             self.bus.call_sync("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
                                "org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem",
                                GLib.Variant("(s)", (self.bus.get_unique_name(),)), None,
                                Gio.DBusCallFlags.NONE, 3000, None)
+            log.info("tray icon registered")
         except GLib.Error as e:
-            log.warning("no tray available (StatusNotifierWatcher): %s", e.message)
+            log.warning("tray registration failed: %s", e.message)
+
+    def _watcher_vanished(self, _conn, _name):
+        log.info("tray host gone - waiting for it to come back")
 
     # ---- StatusNotifierItem
     def _sni_get(self, _conn, _sender, _path, _iface, name):
@@ -84,6 +97,22 @@ class Tray:
             self.on_action("open")
         invocation.return_value(None)
 
+    def _refresh_language(self):
+        """The UI language may have been switched in the web UI (other process): re-read it from
+        the config before the menu opens. True if the labels changed."""
+        if not self.cfg_path:
+            return False
+        import i18n
+        before = i18n.get_lang()
+        i18n.apply_config({"ui_lang": i18n.setting_from_file(self.cfg_path)})
+        if i18n.get_lang() == before:
+            return False
+        self.revision += 1
+        self.bus.emit_signal(None, "/MenuBar", "com.canonical.dbusmenu", "LayoutUpdated",
+                             GLib.Variant("(ui)", (self.revision, 0)))
+        self.bus.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewTitle", None)
+        return True
+
     # ---- dbusmenu
     def _menu_get(self, _conn, _sender, _path, _iface, name):
         return {"Version": GLib.Variant("u", 3), "TextDirection": GLib.Variant("s", "ltr"),
@@ -91,7 +120,7 @@ class Tray:
 
     def _menu_call(self, _conn, _sender, _path, _iface, method, params, invocation):
         if method == "GetLayout":
-            rev, node = menu.layout()
+            rev, node = menu.layout(revision=self.revision)
             invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("u", rev), _layout_variant(node)))
         elif method == "GetGroupProperties":
             ids = params.unpack()[0]
@@ -116,7 +145,7 @@ class Tray:
                     GLib.idle_add(self.on_action, menu.action_for(item_id))
             invocation.return_value(GLib.Variant("(ai)", ([],)))
         elif method == "AboutToShow":
-            invocation.return_value(GLib.Variant("(b)", (False,)))
+            invocation.return_value(GLib.Variant("(b)", (self._refresh_language(),)))
         elif method == "AboutToShowGroup":
             invocation.return_value(GLib.Variant("(aiai)", ([], [])))
         else:

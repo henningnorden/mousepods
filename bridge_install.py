@@ -39,12 +39,12 @@ def _sections(text):
     out = {}
     for i, m in enumerate(marks):
         end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
-        out[m.group(1)] = (m.start(), end)
+        out[m.group(1).lower()] = (m.start(), end)          # Wine key names are case-insensitive
     return out
 
 
 def _value(text, section, name):
-    span = _sections(text).get(section)
+    span = _sections(text).get(section.lower())
     if not span:
         return None
     m = re.search(r'^"%s"="(.*)"$' % re.escape(name), text[span[0]:span[1]], re.M)
@@ -53,15 +53,38 @@ def _value(text, section, name):
 
 def _set_section(text, section, lines):
     block = "[%s] %d\n%s\n\n" % (section, int(time.time()), "\n".join(lines))
-    span = _sections(text).get(section)
+    span = _sections(text).get(section.lower())
     if span:
         return text[:span[0]] + block + text[span[1]:]
     return text.rstrip("\n") + "\n\n" + block
 
 
 def _drop_section(text, section):
-    span = _sections(text).get(section)
+    span = _sections(text).get(section.lower())
     return text[:span[0]] + text[span[1]:] if span else text
+
+
+def _write_reg(path, text):
+    """Replace user.reg atomically: temp file in the same directory, fsync, rename. A full disk or
+    a crash leaves the old registry in place instead of a truncated one."""
+    import tempfile
+    fd, tmp = tempfile.mkstemp(prefix=".user.reg.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.chmod(tmp, os.stat(path).st_mode & 0o777)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _paths(game):
@@ -86,24 +109,41 @@ def steam_running_appid():
     return None
 
 
-def process_running(appid, proc="/proc"):
-    """True if the game runs: Steam's RunningAppID, or any process with SteamAppId /
-    STEAM_COMPAT_APP_ID / AppId= for it."""
-    if steam_running_appid() == str(appid):
-        return True
-    needles = (f"SteamAppId={appid}\0".encode(), f"STEAM_COMPAT_APP_ID={appid}\0".encode())
+GRACE_S = 8.0          # Wine may still flush user.reg a few seconds after the game is gone
+_LAST_SEEN = {}        # appid -> monotonic time it was last seen running
+_ENV_KEYS = (b"SteamAppId=", b"STEAM_COMPAT_APP_ID=")
+
+
+def running_appids(proc="/proc", now=None):
+    """Steam appids that run now or ran within GRACE_S: Steam's RunningAppID plus one pass over
+    /proc (SteamAppId / STEAM_COMPAT_APP_ID in the environment, AppId= on the command line)."""
+    import time as _time
+    now = _time.monotonic() if now is None else now
+    seen = set()
+    steam = steam_running_appid()
+    if steam:
+        seen.add(steam)
     for d in glob.glob(os.path.join(proc, "[0-9]*")):
         try:
             with open(os.path.join(d, "environ"), "rb") as f:
-                env = f.read() + b"\0"
-            if any(n in env for n in needles):
-                return True
+                for item in f.read().split(b"\0"):
+                    for key in _ENV_KEYS:
+                        if item.startswith(key) and item[len(key):].isdigit() and item[len(key):] != b"0":
+                            seen.add(item[len(key):].decode())
             with open(os.path.join(d, "cmdline"), "rb") as f:
-                if f"AppId={appid}".encode() in f.read().split(b"\0"):
-                    return True
+                for arg in f.read().split(b"\0"):
+                    if arg.startswith(b"AppId=") and arg[6:].isdigit():
+                        seen.add(arg[6:].decode())
         except OSError:
             continue
-    return False
+    for appid in seen:
+        _LAST_SEEN[appid] = now
+    return {a for a, t in _LAST_SEEN.items() if now - t <= GRACE_S}
+
+
+def process_running(appid, proc="/proc"):
+    """True if the game runs (or quit less than GRACE_S ago)."""
+    return str(appid) in running_appids(proc)
 
 
 def _check(game, is_running):
@@ -133,8 +173,7 @@ def install(game, dll_dir, pose_file, is_running=process_running):
         text = _set_section(text, key, ['"Path"="%s"' % OUR_PATH])
     win_pose = "Z:" + pose_file.replace("/", "\\")
     text = _set_section(text, KEY_MOUSEPODS, ['"PoseFile"="%s"' % _reg_escape(win_pose)])
-    with open(reg, "w", encoding="utf-8", errors="surrogateescape") as f:
-        f.write(text)
+    _write_reg(reg, text)
 
 
 def uninstall(game, is_running=process_running):
@@ -148,12 +187,14 @@ def uninstall(game, is_running=process_running):
     with open(reg, encoding="utf-8", errors="surrogateescape") as f:
         text = f.read()
     for key in (KEY_NPCLIENT, KEY_FREETRACK, KEY_MOUSEPODS):
+        current = _value(text, key, "Path")
+        if key != KEY_MOUSEPODS and current is not None and current != OUR_PATH:
+            continue                     # another tracker took this key over after us: leave it
         text = _drop_section(text, key)
-        span = _sections(before).get(key)
+        span = _sections(before).get(key.lower())
         if span:
             text = text.rstrip("\n") + "\n\n" + before[span[0]:span[1]]
-    with open(reg, "w", encoding="utf-8", errors="surrogateescape") as f:
-        f.write(text)
+    _write_reg(reg, text)
     shutil.rmtree(dest)
 
 
@@ -170,6 +211,11 @@ def foreign_tracker(game):
     with open(os.path.join(game.prefix, "user.reg"), encoding="utf-8", errors="surrogateescape") as f:
         path = (_value(f.read(), KEY_NPCLIENT, "Path") or "").lower()
     return next((name for needle, name in KNOWN_TRACKERS if needle in path), "?")
+
+
+def has_our_files(game):
+    """Our DLL folder (with the registry backup) is in the prefix, whatever the keys say now."""
+    return bool(game.prefix) and os.path.isfile(os.path.join(game.prefix, "drive_c", DIR_NAME, BACKUP))
 
 
 def status(game):

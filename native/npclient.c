@@ -21,6 +21,7 @@
 #include <stdio.h>
 
 #include <windows.h>
+#include "pose_stale.h"
 
 #define FREETRACK_MUTEX "FT_Mutext"
 #define FT_MM_DATA "FT_SharedMem"
@@ -333,6 +334,7 @@ static const char *PosePath(void)
 static HANDLE hPoseFile = INVALID_HANDLE_VALUE, hPoseMap = NULL;
 static const volatile unsigned char *pPose = NULL;
 static int poseLogged = 0;
+static PoseStale poseStale;
 
 static bool PoseRead(double v[6])
 {
@@ -349,6 +351,10 @@ static bool PoseRead(double v[6])
         dbg_report("PoseRead: mapped %s\n", PosePath());
     }
     for (int i = 0; i < 6; i++) memcpy(&v[i], (const void *)(pPose + 8 + 8 * i), 8);
+    uint32_t seq;
+    memcpy(&seq, (const void *) pPose, 4);
+    if (!pose_fresh(&poseStale, seq, GetTickCount64()))
+        for (int i = 0; i < 6; i++) v[i] = 0.0;      /* MousePods gone: centre instead of freezing */
     return true;
 }
 

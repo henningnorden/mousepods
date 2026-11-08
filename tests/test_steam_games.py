@@ -122,6 +122,16 @@ class SteamGamesTests(unittest.TestCase):
         ids = [g.appid for g in sg.list_games(sg.find_steam_roots(self.home)[0])]
         self.assertEqual(sorted(ids), ["227300", "244210"])
 
+    def test_unreachable_library_is_reported(self):
+        # e.g. a second drive the Flatpak sandbox cannot see
+        root = make_steam(self.home)
+        write(os.path.join(root, "steamapps", "libraryfolders.vdf"),
+              '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n\t"1"\n\t{\n\t\t"path"\t\t'
+              '"/run/media/henning/Games/SteamLibrary"\n\t}\n}\n' % root)
+        r = sg.find_steam_roots(self.home)[0]
+        self.assertEqual(sg.missing_libraries(r), ["/run/media/henning/Games/SteamLibrary"])
+        self.assertEqual(sg.missing_libraries(sg.SteamRoot(root, False)), ["/run/media/henning/Games/SteamLibrary"])
+
     def test_no_steam_is_empty(self):
         self.assertEqual(sg.find_steam_roots(self.home), [])
 

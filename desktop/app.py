@@ -40,6 +40,7 @@ class App(Gtk.Application):
         self.proc = None
         self.tray = None
         self.refused = False
+        self.error = None                             # (kind, detail) shown instead of the UI
         self.cfg_path, self.log_path = data_dirs()
 
     def do_startup(self):
@@ -51,12 +52,15 @@ class App(Gtk.Application):
         except controller.ForeignServer as e:
             log.error("%s - not opening it in the MousePods window", e)
             self.refused = True
-            self.release()
-            self.quit()
+            self.error = ("foreign_server", f"127.0.0.1:{PORT}")
+            return
+        if controller.ping(PORT) != "ours":
+            log.error("controller did not start, see %s", self.log_path)
+            self.error = ("controller_failed", self.log_path)
             return
         try:
             from desktop.tray import Tray
-            self.tray = Tray(self.on_action)
+            self.tray = Tray(self.on_action, self.cfg_path)
         except Exception as e:  # noqa: BLE001  (no session bus / watcher: run without tray)
             log.warning("tray unavailable: %s", e)
 
@@ -69,16 +73,25 @@ class App(Gtk.Application):
         self.show_window()
 
     def show_window(self):
-        if self.refused:
-            return
         if self.win is None:
             self.win = Gtk.ApplicationWindow(application=self, title="MousePods")
             self.win.set_default_size(1280, 860)
             view = WebKit.WebView()
-            view.load_uri(f"http://127.0.0.1:{PORT}/")
+            if self.error:
+                from desktop.errors import error_page
+                view.load_html(error_page(*self.error), None)      # never load a foreign server
+            else:
+                view.load_uri(f"http://127.0.0.1:{PORT}/")
             self.win.set_child(view)
-            self.win.connect("close-request", self._hide)
+            self.win.connect("close-request", self._close)
         self.win.present()
+
+    def _close(self, win):
+        if self.error:                                # nothing runs in the background: really quit
+            self.release()
+            self.quit()
+            return False
+        return self._hide(win)
 
     def _hide(self, win):
         win.set_visible(False)

@@ -25,7 +25,7 @@ FRENCH = re.compile(r"[éèêàâçùûôîœÉÈÀÊ]|\b(de|la|le|les|des|du|en
 import airpods_mouse_controller as _ctl  # noqa: E402
 
 IDENTIFIERS = {
-    _ctl.BLUETOOTHCTL_MISSING,   # bilingual log/exception text; the UI shows srv.status.bluetoothctl_missing
+    _ctl.BLUETOOTHCTL_MISSING,   # upstream's bilingual log/exception text (dd70e4f); UI shows srv.status.bluetoothctl_missing
 }
 SKIP_CALLS = {"debug", "info", "warning", "error", "exception", "critical", "print", "add_argument",
               "ArgumentParser", "tr", "_"}

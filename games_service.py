@@ -2,6 +2,7 @@
 """Glue for the Games page: Steam discovery + prefix installer + saved per-game settings."""
 import json
 import os
+import threading
 
 import bridge_install
 import game_bridge
@@ -64,26 +65,36 @@ def find(appid):
 def list_payload(cfg_path):
     root, games = _games()
     saved = saved_games(cfg_path)
+    running = bridge_install.running_appids()        # one /proc pass for the whole list
     out = []
     for g in games:
         entry = saved.get(g.appid) or {}
         out.append({"appid": g.appid, "name": g.name, "has_prefix": bool(g.prefix), "proton": g.proton,
                     "flatpak": g.flatpak, "status": bridge_install.status(g),
                     "foreign_tracker": bridge_install.foreign_tracker(g),
-                    "enabled": bool(entry.get("enabled")), "running": is_running(g.appid),
+                    "enabled": bool(entry.get("enabled")), "running": g.appid in running,
                     "launch_option_hint": "opentrack-launcher" in g.launch_options,
                     "profile": normalize_profile(entry.get("profile"))})
-    return {"steam_found": root is not None, "steam_flatpak": bool(root and root.flatpak), "games": out}
+    return {"steam_found": root is not None, "steam_flatpak": bool(root and root.flatpak), "games": out,
+            "missing_libraries": steam_games.missing_libraries(root) if root else []}
+
+
+_PREFIX_LOCK = threading.Lock()      # one prefix edit at a time (web requests run in parallel)
 
 
 def set_enabled(cfg_path, game, enabled):
     """Install or remove the bridge in the game's prefix; returns the entry to save.
     Raises bridge_install.BridgeError."""
+    with _PREFIX_LOCK:
+        return _set_enabled(cfg_path, game, enabled)
+
+
+def _set_enabled(cfg_path, game, enabled):
     entry = dict(saved_games(cfg_path).get(game.appid) or {})
     if enabled:
         pose = game_bridge.pose_path(game.appid, shm_dir())
         bridge_install.install(game, dll_dir(), pose, is_running)
-    elif bridge_install.status(game) == "on":
+    elif bridge_install.status(game) == "on" or bridge_install.has_our_files(game):
         bridge_install.uninstall(game, is_running)
     entry["enabled"] = bool(enabled)
     entry["profile"] = normalize_profile(entry.get("profile"))

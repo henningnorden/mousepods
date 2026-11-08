@@ -495,7 +495,7 @@ class OpenTrackOutput:
         if bridge is not None:
             try:
                 bridge.tick(now, pose)
-            except OSError as e:
+            except Exception as e:  # noqa: BLE001  (the bridge must never stop UDP / joystick output)
                 self.bridge_error = str(e)
         if js is not None:
             try:

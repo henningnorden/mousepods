@@ -480,7 +480,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="hint" data-i18n="welcome.recenter_hint">Look straight at the screen and set the centre. You can do this any time from the tray icon.</div>
     <button class="btn sm" data-cmd="recenter" data-i18n="welcome.recenter_go">Set centre</button></div>
   <div class="card" id="wz-autostart"><h3 data-i18n="welcome.step_autostart">5 · Start with the computer</h3>
-    <div class="set toggle"><label data-i18n="welcome.autostart_label">Start MousePods hidden at login (recommended)</label><label class="sw"><input type="checkbox" id="wz-autostart-on" checked><span></span></label></div></div>
+    <div class="set toggle"><label data-i18n="welcome.autostart_label">Start MousePods hidden at login (recommended)</label><label class="sw"><input type="checkbox" id="wz-autostart-on"><span></span></label></div></div>
   <div class="row" style="margin-top:14px"><button class="btn p" id="wz-done" data-i18n="welcome.done">Done – to the games</button></div>
 </section>
 
@@ -784,7 +784,9 @@ function esc(s){return String(s).replace(/[&<>\x22\x27]/g,c=>({"&":"&amp;","<":"
 const ANON=location.search.includes("anon");if(ANON)document.documentElement.classList.add("shot");
 // ---------- first-run wizard
 let wizardChecked=false;
-function checkWizard(){if(wizardChecked||!S.config)return;wizardChecked=true;if(S.config.wizard_done===false)go("welcome")}
+function checkWizard(){if(wizardChecked||!S.config)return;wizardChecked=true;
+  // autostart pre-ticked only for the Flatpak app; a source checkout may lack PyGObject for the desktop shell
+  $("#wz-autostart-on").checked=!!S.flatpak;if(S.config.wizard_done===false)go("welcome")}
 function renderWizard(){if(page!=="welcome")return;$("#wz-status").textContent=S.status||"—"}
 $("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconnecting"))};
 $("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
@@ -941,7 +943,8 @@ function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appi
 function renderGames(){const box=$("#games-list");if(!gamesData)return;
   if(!gamesData.steam_found){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_steam"))}</div>`;return}
   if(!gamesData.games.length){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_games"))}</div>`;return}
-  box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+gamesData.games.map(gameCard).join("");
+  const miss=(gamesData.missing_libraries||[]).map(p=>`<div class="card hint">${esc(t("js.games.hint_missing_library",{path:p}))}<br><code>flatpak override --user --filesystem=${esc(p)} io.github.henningnorden.MousePods</code></div>`).join("");
+  box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+miss+gamesData.games.map(gameCard).join("");
   box.querySelectorAll(".game").forEach(card=>{const appid=card.dataset.appid,g=gamesData.games.find(x=>x.appid===appid);
     card.querySelector("[data-toggle]").onchange=e=>{const on=e.target.checked;e.target.disabled=true;
       postGame(appid,{enabled:on}).then(()=>{toast(on?t("js.games.toast_on",{name:g.name}):t("js.games.toast_off",{name:g.name}));loadGames()})

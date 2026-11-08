@@ -34,6 +34,10 @@ class ConnectStatusTests(unittest.TestCase):
         self.assertEqual(text, i18n.tr("srv.status.no_airpods", "de"))
         self.assertNotIn("aucun", text)
 
+    def test_missing_bluetoothctl_status_is_translated(self):
+        text = str(m.connect_failure_status(m.BluetoothToolMissing()))
+        self.assertEqual(text, i18n.tr("srv.status.bluetoothctl_missing", "de"))
+
     def test_other_errors_keep_their_detail(self):
         text = str(m.connect_failure_status(OSError(111, "Connection refused")))
         self.assertIn("Connection refused", text)

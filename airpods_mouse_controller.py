@@ -34,6 +34,7 @@ import shutil
 import socket
 import struct
 import subprocess
+import tempfile
 import sys
 import threading
 import time
@@ -51,9 +52,9 @@ log = logging.getLogger("airpods-mouse")
 # =========================================================================== configuration
 DEFAULTS = {
     "device_address": "auto",
-    "ui_lang": "auto",
+    "ui_lang": "auto",             # "auto" (system language) | "en" | "de" | "fr"
     "wizard_done": False,          # first-run wizard in the web UI completed
-    "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)             # "auto" (system language) | "en" | "de" | "fr"
+    "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"
     "source": "auto",              # "auto" | "head" | "case" | "hand"
@@ -161,22 +162,35 @@ def load_config(path):
     return cfg
 
 
+_CONFIG_LOCK = threading.Lock()     # web request threads and the controller write config.json
+
+
 def update_config_file(path, updates):
-    """Fusionne `updates` dans config.json (préserve les autres clés et l'aide)."""
-    user = {}
-    if os.path.exists(path):
-        with open(path) as f:
-            user = json.load(f)
-    for k, v in updates.items():
-        if isinstance(v, dict) and isinstance(user.get(k), dict):
-            user[k].update(v)
-        else:
-            user[k] = v
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(user, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp, path)
+    """Fusionne `updates` dans config.json (préserve les autres clés et l'aide).
+    Read-merge-write under one lock, through a private temp file, so concurrent writers keep
+    each other's updates and never leave a half-written file."""
+    with _CONFIG_LOCK:
+        user = {}
+        if os.path.exists(path):
+            with open(path) as f:
+                user = json.load(f)
+        for k, v in updates.items():
+            if isinstance(v, dict) and isinstance(user.get(k), dict):
+                user[k].update(v)
+            else:
+                user[k] = v
+        fd, tmp = tempfile.mkstemp(prefix=".config-", suffix=".tmp", dir=os.path.dirname(os.path.abspath(path)))
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(user, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except FileNotFoundError:
+                pass
+            raise
 
 
 # =========================================================================== Bluetooth
@@ -190,7 +204,7 @@ def have_bluetoothctl():
 
 
 class BluetoothToolMissing(OSError):
-    """bluetoothctl disappeared between the check and the call (errno 112, like _pick)."""
+    """No way to list/connect paired devices: no bluetoothctl and no BlueZ D-Bus (errno 112 as upstream)."""
 
     def __init__(self):
         super().__init__(112, BLUETOOTHCTL_MISSING)
@@ -241,6 +255,13 @@ def bt_connect(addr, timeout):
         return bluez_dbus.connect(addr, timeout)
     subprocess.run(["bluetoothctl", "connect", addr], capture_output=True, text=True, timeout=timeout)
     return bt_connected(addr)
+
+
+def bt_disconnect(addr):
+    if bluez_dbus.available():
+        bluez_dbus.disconnect(addr)
+    else:
+        subprocess.run(["bluetoothctl", "disconnect", addr], capture_output=True, timeout=10)
 
 
 def product_id(addr):
@@ -388,7 +409,7 @@ class NoAirPodsConnected(OSError):
 
 def connect_failure_status(error):
     """Status text for the UI after a failed connection attempt."""
-    if isinstance(error, BluetoothToolMissing) or getattr(error, "strerror", None) == BLUETOOTHCTL_MISSING:
+    if isinstance(error, BluetoothToolMissing):
         return i18n.tr_lazy("srv.status.bluetoothctl_missing")
     if isinstance(error, NoAirPodsConnected):
         return i18n.tr_lazy("srv.status.no_airpods")
@@ -1147,7 +1168,14 @@ class Controller:
         if (want_udp or want_js or want_games) and not self.opentrack:
             try:
                 import opentrack_out
-                self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
+                try:
+                    self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
+                except (OSError, ValueError, TypeError) as e:
+                    if want_udp:
+                        raise
+                    # broken UDP settings must not keep the game bridge / joystick from running
+                    log.warning("OpenTrack settings ignored (%s) - output without UDP", e)
+                    self.opentrack = opentrack_out.OpenTrackOutput({}, udp=False).start()
                 if want_udp:
                     log.info("OpenTrack : envoi vers %s:%s à %s Hz", oc.get("host"), oc.get("port"), oc.get("rate_hz"))
                     notify(self.cfg, tr("srv.status.opentrack_on"))
@@ -1156,7 +1184,11 @@ class Controller:
         elif want_udp or want_js or want_games:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
-            self.opentrack.configure(oc, udp=want_udp)
+            try:
+                self.opentrack.configure(oc, udp=want_udp)
+            except (OSError, ValueError, TypeError) as e:
+                log.warning("OpenTrack settings ignored (%s)", e)
+                self.opentrack.configure({}, udp=False)
         elif self.opentrack:
             self.opentrack.stop()
             self.opentrack = None
@@ -1438,7 +1470,7 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
             try:
                 aap.connect()
             except (OSError, subprocess.TimeoutExpired) as e:
-                if isinstance(e, BluetoothToolMissing) or getattr(e, "strerror", None) == BLUETOOTHCTL_MISSING:
+                if isinstance(e, BluetoothToolMissing):
                     if not tool_missing_logged[0]:
                         log.error("%s", e)
                         tool_missing_logged[0] = True
@@ -1508,7 +1540,7 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
                         last_recovery[0] = now
                         log.warning("Capteurs non annoncés — reconnexion Bluetooth complète")
                         aap.close()
-                        subprocess.run(["bluetoothctl", "disconnect", aap.addr], capture_output=True, timeout=10)
+                        bt_disconnect(aap.addr)
                         time.sleep(2)
                         raise OSError("relance Bluetooth")
                     if aap.place == "case" and aap.pid == "2013" and not aap.rhid_devs and not warned_case:

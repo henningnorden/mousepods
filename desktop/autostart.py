@@ -43,6 +43,13 @@ def _portal_request(enabled, commandline):
                   GLib.Variant("(sa{sv})", ("", options)), None, Gio.DBusCallFlags.NONE, 5000, None)
 
 
+def _exec_quote(arg):
+    """Quote one argument for a .desktop Exec= line (freedesktop Desktop Entry spec)."""
+    if arg and not any(c in arg for c in ' \t\n"\'\\><~|&;$*?#()`'):
+        return arg
+    return '"' + "".join("\\" + c if c in '"`$\\' else c for c in arg) + '"'
+
+
 def set_enabled(enabled, command=None):
     cmd = list(command or default_command())
     if in_flatpak():
@@ -58,7 +65,7 @@ def set_enabled(enabled, command=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write("[Desktop Entry]\nType=Application\nName=MousePods\n"
-                f"Exec={' '.join(cmd)} --background\nIcon={APP_ID}\n"
+                f"Exec={' '.join(_exec_quote(a) for a in cmd)} --background\nIcon={APP_ID}\n"
                 "X-GNOME-Autostart-enabled=true\nNoDisplay=true\n")
 
 

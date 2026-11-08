@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -41,6 +42,7 @@ class BridgeInstallTests(unittest.TestCase):
             f.write(OPENTRACK_REG)
 
     def tearDown(self):
+        bi._LAST_SEEN.clear()            # fake timestamps must not leak into other tests
         shutil.rmtree(self.home)
 
     def read_reg(self):
@@ -117,6 +119,82 @@ class BridgeInstallTests(unittest.TestCase):
         self.assertEqual(bi.foreign_tracker(self.ac), "Beam Eye Tracker")
         self.install()
         self.assertIsNone(bi.foreign_tracker(self.ac))
+
+    def test_failed_write_leaves_registry_intact(self):
+        # disk full / crash while writing user.reg must not truncate the prefix registry
+        real_replace = os.replace
+
+        def boom(src, dst):
+            if dst.endswith("user.reg"):
+                raise OSError(28, "No space left on device")
+            return real_replace(src, dst)
+        with mock.patch.object(bi.os, "replace", side_effect=boom):
+            with self.assertRaises(OSError):
+                self.install()
+        self.assertEqual(self.read_reg(), OPENTRACK_REG)
+        leftovers = [n for n in os.listdir(self.ac.prefix) if n.startswith(".user.reg")]
+        self.assertEqual(leftovers, [])
+
+    def test_section_match_ignores_case(self):
+        # Wine treats key names case-insensitively; another tool may write different casing
+        with open(self.reg, "w") as f:
+            f.write(OPENTRACK_REG.replace("NaturalPoint\\\\NATURALPOINT\\\\NPClient Location",
+                                          "NATURALPOINT\\\\NATURALPOINT\\\\NPCLIENT LOCATION"))
+        self.assertEqual(bi.status(self.ac), "foreign")
+        self.install()
+        with open(self.reg) as f:
+            self.assertEqual(f.read().lower().count("npclient location]"), 1)
+        bi.uninstall(self.ac, lambda appid: False)
+        self.assertIn("opentrack-launcher/install/modules/", self.read_reg())
+
+    def test_untick_after_other_tracker_took_over_still_cleans_up(self):
+        self.install()
+        reg = self.read_reg().replace('"Path"="C:\\\\mousepods\\\\"', '"Path"="C:\\\\beam\\\\"', 1)
+        with open(self.reg, "w") as f:
+            f.write(reg)
+        self.assertEqual(bi.status(self.ac), "foreign")
+        self.assertTrue(bi.has_our_files(self.ac))
+        bi.uninstall(self.ac, lambda appid: False)
+        self.assertFalse(bi.has_our_files(self.ac))
+        self.assertNotIn("MousePods", self.read_reg())
+        self.assertIn('"Path"="C:\\\\beam\\\\"', self.read_reg())     # the newer tracker keeps its key
+
+    def make_proc(self, entries):
+        proc = os.path.join(self.home, "proc")
+        for pid, env, cmd in entries:
+            os.makedirs(os.path.join(proc, pid), exist_ok=True)
+            with open(os.path.join(proc, pid, "environ"), "wb") as f:
+                f.write(env)
+            with open(os.path.join(proc, pid, "cmdline"), "wb") as f:
+                f.write(cmd)
+        return proc
+
+    def test_running_appids_scans_proc_once(self):
+        proc = self.make_proc([("100", b"SteamAppId=244210\0", b"acs.exe\0"),
+                               ("200", b"HOME=/x\0", b"reaper\0AppId=227300\0"),
+                               ("300", b"STEAM_COMPAT_APP_ID=1066890\0", b"x\0")])
+        real_open = open
+        opened = []
+
+        def counting_open(path, *a, **k):
+            opened.append(path)
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", side_effect=counting_open):
+            ids = bi.running_appids(proc, now=1000.0)
+        self.assertEqual(ids, {"244210", "227300", "1066890"})
+        self.assertLessEqual(len([p for p in opened if p.startswith(proc)]), 6)
+
+    def test_recently_quit_game_counts_as_running_for_a_grace_period(self):
+        # inside the Flatpak only Steam's RunningAppID is visible; wineserver may still flush
+        # user.reg for a few seconds after it drops to 0
+        bi._LAST_SEEN.clear()
+        busy = self.make_proc([("100", b"SteamAppId=244210\0", b"acs.exe\0")])
+        self.assertIn("244210", bi.running_appids(busy, now=1000.0))
+        empty = os.path.join(self.home, "proc-empty")
+        os.makedirs(empty)
+        self.assertIn("244210", bi.running_appids(empty, now=1000.0 + bi.GRACE_S - 1))
+        self.assertNotIn("244210", bi.running_appids(empty, now=1000.0 + bi.GRACE_S + 1))
+        bi._LAST_SEEN.clear()
 
     def test_flatpak_steam_refused(self):
         with self.assertRaises(bi.BridgeError) as cm:

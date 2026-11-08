@@ -34,7 +34,8 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(m["command"], "mousepods-app")
         need = {"--share=network", "--socket=wayland", "--socket=fallback-x11", "--device=all", "--device=shm",
                 "--allow=bluetooth", "--system-talk-name=org.bluez", "--talk-name=org.kde.StatusNotifierWatcher",
-                "--filesystem=~/.local/share/Steam", "--filesystem=~/.steam:ro"}
+                "--filesystem=~/.local/share/Steam", "--filesystem=~/.steam:ro",
+                "--filesystem=~/.var/app/com.valvesoftware.Steam:ro"}
         self.assertTrue(need <= set(m["finish-args"]), sorted(need - set(m["finish-args"])))
         self.assertNotIn("--talk-name=org.freedesktop.Flatpak", m["finish-args"])   # no sandbox escape
 

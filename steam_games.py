@@ -115,6 +115,19 @@ def libraries(root):
     return libs
 
 
+def missing_libraries(root):
+    """Library paths Steam lists that we cannot see (another drive outside a Flatpak sandbox,
+    an unmounted disk)."""
+    text = _read(os.path.join(root.path, "steamapps", "libraryfolders.vdf")) or ""
+    data = _get_ci(parse_vdf(text), "libraryfolders") or {}
+    out = []
+    for entry in data.values():
+        if isinstance(entry, dict) and entry.get("path") and not os.path.isdir(entry["path"]):
+            if entry["path"] not in out:
+                out.append(entry["path"])
+    return out
+
+
 # Steam tools that come with an app manifest but are not games
 TOOL_APPIDS = {"228980", "1070560", "1391110", "1628350", "1493710", "2180100", "2348590", "1887720",
                "2805730", "3658110"}
