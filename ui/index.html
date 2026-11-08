@@ -299,7 +299,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
   <h1 data-i18n="calib.calibration">Calibration</h1><div class="sub" data-i18n="calib.one_profile_per_model_and_per_source_hea">Un profil par modèle et par source (tête, boîtier, en main). Environ 15 secondes.</div>
   <div class="card calib-hero">
     <div class="row" style="justify-content:center;gap:14px">
-      <div class="seg" id="cal-flow"><button data-v="souris" data-i18n="calib.rotation_mouse">Rotation (souris)</button><button data-v="pointeur" data-i18n="calib.pointer_corners">Pointeur + coins</button><button data-v="glisse" data-i18n="calib.glide_on_table">Glisse sur table</button></div>
+      <div class="seg" id="cal-flow"><button data-v="souris" data-i18n="calib.rotation_mouse">Rotation (souris)</button><button data-v="pointeur" data-i18n="calib.pointer_corners">Pointeur + coins</button><button data-v="points" data-i18n="calib_ui.flow_points">Games + pointer (points)</button><button data-v="glisse" data-i18n="calib.glide_on_table">Glisse sur table</button></div>
       <div class="seg" id="cal-src"><button data-v="auto" class="on" data-i18n="calib.auto">Auto</button><button data-v="head" data-i18n="calib.head">Tête</button><button data-v="case" data-i18n="calib.case">Boîtier</button><button data-v="hand" data-i18n="calib.in_hand">En main</button></div>
     </div>
     <div class="instr" id="cal-instr" data-i18n="calib.ready_to_calibrate">Prêt à calibrer</div>
@@ -308,12 +308,10 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <svg class="pring" viewBox="0 0 120 120" style="margin-top:18px"><circle class="bg" cx="60" cy="60" r="50"/><circle class="fg" id="cal-ring" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>
     <div class="steps" id="cal-steps"></div>
     <div class="row" style="justify-content:center;margin-top:22px"><button class="btn p" id="cal-start" data-i18n="calib.start">Commencer</button><button class="btn" id="cal-cancel" data-i18n="calib.cancel">Annuler</button></div>
+    <div id="cal-base" style="display:none;margin-top:14px;text-align:left"><div class="hint" data-i18n="calib_ui.baseline_hint">Look at five points on the monitors you play on. This sets the range for every game without own values and the pointer's screen edges.</div>
+      <div class="kv"><span data-i18n="calib_ui.baseline_now">Now</span><span id="cal-base-now">—</span></div>
+      <div id="cal-base-panel"></div></div>
   </div>
-  <h2 data-i18n="calib_ui.baseline">Baseline calibration</h2>
-  <div class="card" style="margin-bottom:14px"><div class="hint" data-i18n="calib_ui.baseline_hint">Look at five points on the monitors you play on. This sets the range for every game without own values and the pointer's screen edges.</div>
-    <div class="kv"><span data-i18n="calib_ui.baseline_now">Now</span><span id="cal-base-now">—</span></div>
-    <div class="row" style="margin-top:8px"><button class="btn p" id="cal-base-go" data-i18n="calib_ui.baseline_go">Start baseline calibration</button></div>
-    <div id="cal-base-panel"></div></div>
   <h2 data-i18n="calib.saved_profiles">Profils enregistrés</h2>
   <div class="card"><table><thead><tr><th data-i18n="calib.profile">Profil</th><th data-i18n="calib.content">Contenu</th></tr></thead><tbody id="cal-prof"></tbody></table></div>
 </section>
@@ -645,10 +643,12 @@ function fillSettings(cfg){$$("#p-settings input[data-k], #p-sims input[data-k]"
   else inp.checked=!!v})}
 // ---------- calibration
 let calSrc="auto",calFlow=null;
-$$("#cal-flow button").forEach(b=>b.onclick=()=>{calFlow=b.dataset.v;$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x===b))});
+$$("#cal-flow button").forEach(b=>b.onclick=()=>{calFlow=b.dataset.v;$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x===b));
+  $("#cal-base").style.display=calFlow==="points"?"block":"none";$("#cal-ring").parentNode.style.display=calFlow==="points"?"none":""});
 $$("#cal-src button").forEach(b=>b.onclick=()=>{calSrc=b.dataset.v;$$("#cal-src button").forEach(x=>x.classList.toggle("on",x===b))});
-$("#cal-start").onclick=()=>{post("/api/calib",{action:"start",source:calSrc,flow:calFlow||T.mode});toast(t("js.toast.calib_started"))};
-$("#cal-cancel").onclick=()=>{post("/api/calib",{action:"cancel"});toast(t("js.toast.calib_cancelled"))};
+$("#cal-start").onclick=()=>{if(calFlow==="points")return startBaseline();post("/api/calib",{action:"start",source:calSrc,flow:calFlow||T.mode});toast(t("js.toast.calib_started"))};
+$("#cal-cancel").onclick=()=>{if(calFlow==="points"){post("/api/calibration",{action:"cancel"});$("#cal-base-panel").innerHTML="";calib=null}
+  else post("/api/calib",{action:"cancel"});toast(t("js.toast.calib_cancelled"))};
 // ---------- appareil
 $("#ctl-send").onclick=()=>{const id=parseInt($("#ctl-id").value);const vals=$("#ctl-val").value.trim().split(/\s+/).filter(Boolean).map(x=>parseInt(x));
   if(isNaN(id))return toast(t("js.toast.invalid_id"));post("/api/control",{ident:id,values:vals});toast(t("js.toast.command_sent"))};
@@ -1062,7 +1062,7 @@ function calibResult(r){const c=calib,box=c.box,f=v=>Math.round(v*10)/10;
 // baseline calibration on the Calibration page: default for every game without own values + pointer edges
 function renderBaseline(){const b=S&&S.config&&S.config.game_baseline,el=$("#cal-base-now");if(!el)return;
   el.textContent=b&&b.yaw?t("js.games.res_values",{l:Math.round(b.yaw.neg),r:Math.round(b.yaw.pos),u:Math.round(b.pitch.pos),d:Math.round(b.pitch.neg)}):t("js.calib_ui.no_baseline")}
-$("#cal-base-go").onclick=()=>{const b=(S&&S.config&&S.config.game_baseline)||{};
+function startBaseline(){const b=(S&&S.config&&S.config.game_baseline)||{};
   calibBegin({box:$("#cal-base-panel"),saved:b.monitors||[],targets:{side:b.target_side??180,vert:b.target_vert??90},
     save:(r,tg,sel)=>post("/api/calibration",{action:"save_baseline",...r,target_side:tg.side,target_vert:tg.vert,monitors:sel})
       .then(x=>x.json()).then(j=>{if(j.error)throw new Error(j.error);
