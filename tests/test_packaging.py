@@ -104,8 +104,9 @@ if __name__ == "__main__":
     unittest.main()
 
 
+
 class RepoFilesTests(unittest.TestCase):
-    """Own Flatpak repo on GitHub Pages: the .flatpakref to install once, the .flatpakrepo for the remote."""
+    """Own Flatpak repo on GitHub Pages, two channels: stable (release tags) and test (main)."""
 
     def setUp(self):
         sys.path.insert(0, PKG)
@@ -119,64 +120,78 @@ class RepoFilesTests(unittest.TestCase):
         cp.read_string(text)
         return cp
 
-    def test_flatpakref(self):
+    def test_flatpakref_per_channel(self):
         import base64
-        cp = self.parse(self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key))
-        r = cp["Flatpak Ref"]
-        self.assertEqual(r["Name"], APP_ID)
-        self.assertEqual(r["Branch"], "master")
-        self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
-        self.assertEqual(r["RuntimeRepo"], "https://dl.flathub.org/repo/flathub.flatpakrepo")
-        self.assertEqual(r["IsRuntime"], "false")
-        self.assertEqual(base64.b64decode(r["GPGKey"]), self.key)
+        for channel in ("stable", "test"):
+            r = self.parse(self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key, channel))["Flatpak Ref"]
+            self.assertEqual(r["Name"], APP_ID)
+            self.assertEqual(r["Branch"], channel)
+            self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
+            self.assertEqual(r["RuntimeRepo"], "https://dl.flathub.org/repo/flathub.flatpakrepo")
+            self.assertEqual(r["IsRuntime"], "false")
+            self.assertEqual(base64.b64decode(r["GPGKey"]), self.key)
+        self.assertEqual(self.mr.REF_FILES, {"stable": "MousePods.flatpakref", "test": "MousePods-test.flatpakref"})
 
     def test_flatpakrepo(self):
-        cp = self.parse(self.mr.flatpakrepo("https://henningnorden.github.io/mousepods/", self.key))
-        r = cp["Flatpak Repo"]
+        r = self.parse(self.mr.flatpakrepo("https://henningnorden.github.io/mousepods/", self.key))["Flatpak Repo"]
         self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
         self.assertIn("GPGKey", r)
 
-    def test_needs_a_key_and_https(self):
+    def test_needs_a_key_https_and_a_known_channel(self):
         with self.assertRaises(ValueError):
-            self.mr.flatpakref("https://henningnorden.github.io/mousepods", b"")
+            self.mr.flatpakref("https://henningnorden.github.io/mousepods", b"", "stable")
         with self.assertRaises(ValueError):
-            self.mr.flatpakref("http://henningnorden.github.io/mousepods", self.key)
+            self.mr.flatpakref("http://henningnorden.github.io/mousepods", self.key, "stable")
+        with self.assertRaises(ValueError):
+            self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key, "master")
 
-    def test_branch_matches_manifest(self):
+    def test_channel_for_ref(self):
+        self.assertEqual(self.mr.channel_for("refs/tags/v0.1.0"), "stable")
+        self.assertEqual(self.mr.channel_for("refs/heads/main"), "test")
+        self.assertEqual(self.mr.channel_for("refs/pull/7/merge"), "test")
+
+    def test_manifest_leaves_the_branch_to_the_build(self):
         with open(os.path.join(PKG, f"{APP_ID}.json"), encoding="utf-8") as f:
-            self.assertEqual(json.load(f).get("branch", "master"), self.mr.BRANCH)
+            self.assertNotIn("branch", json.load(f))      # flatpak-builder --default-branch=<channel>
 
 
 class PublishWorkflowTests(unittest.TestCase):
-    """Signed repo on GitHub Pages: only for release tags, the private key only in the signing step."""
+    """Signed repo on GitHub Pages: stable from tags, test from main; never from pull requests."""
 
     def workflow(self):
         with open(os.path.join(ROOT, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
             return f.read()
 
-    def test_script_is_valid_bash_and_checks_the_key(self):
+    def test_script_is_valid_bash_mirrors_and_checks_the_key(self):
         import subprocess
         script = os.path.join(PKG, "publish-repo.sh")
         self.assertTrue(os.access(script, os.X_OK))
         subprocess.run(["bash", "-n", script], check=True)
         with open(script, encoding="utf-8") as f:
             s = f.read()
-        self.assertIn("FLATPAK_GPG_PRIVATE_KEY", s)
         self.assertIn("does not match", s)          # secret key must belong to the committed public key
-        self.assertIn("build-update-repo", s)
+        self.assertIn("pull --mirror", s)           # keep the other channel already on Pages
+        self.assertIn("build-commit-from", s)
+        self.assertIn("published=false", s)         # not set up yet: skip, do not fail the build
 
-    def test_secret_only_in_the_tag_only_signing_step(self):
+    def test_build_uses_the_channel_as_branch(self):
+        w = self.workflow()
+        self.assertIn("--default-branch=", w)
+        self.assertRegex(w, r"build-bundle repo MousePods\.flatpak io\.github\.henningnorden\.MousePods \"\$CHANNEL\"")
+
+    def test_secret_only_in_the_publish_step_never_for_pull_requests(self):
         w = self.workflow()
         self.assertEqual(w.count("secrets.FLATPAK_GPG_PRIVATE_KEY"), 1)
         i = w.index("secrets.FLATPAK_GPG_PRIVATE_KEY")
         step = w[w.rindex("- name:", 0, i):i]
-        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", step)
+        self.assertIn("if: github.event_name == 'push'", step)
 
-    def test_pages_job_deploys_only_tags(self):
+    def test_pages_job_only_after_a_publish(self):
         w = self.workflow()
         job = w[w.index("\n  pages:"):]
-        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", job[:200])
+        self.assertIn("needs.flatpak.outputs.published == 'true'", job[:300])
         self.assertIn("pages: write", job)
         self.assertIn("id-token: write", job)
+        self.assertIn("concurrency:", job)
         self.assertIn("actions/deploy-pages@", job)
         self.assertIn("actions/upload-pages-artifact@", w)

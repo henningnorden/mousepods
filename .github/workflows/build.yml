@@ -46,6 +46,10 @@ jobs:
   flatpak:
     needs: [tests, dlls]
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    env:
+      CHANNEL: ${{ startsWith(github.ref, 'refs/tags/v') && 'stable' || 'test' }}   # Flatpak branch
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
@@ -61,7 +65,8 @@ jobs:
           set -o pipefail
           [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id    # the CI container has none
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo build \
+          if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo \
+              --default-branch="$CHANNEL" build \
               packaging/flatpak/io.github.henningnorden.MousePods.json 2>&1 | tee build.log; then
             # job logs need a login; an annotation is public, so the tail of the log goes there
             echo "::error title=flatpak-builder::$(tail -n 60 build.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
@@ -83,26 +88,30 @@ jobs:
           print('imports ok')" 2>&1 | tee check.log || { echo "::error title=imports::$(tail -n 40 check.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"; exit 1; }
       - name: Bundle
         run: |
-          flatpak build-bundle repo MousePods.flatpak io.github.henningnorden.MousePods \
+          flatpak build-bundle repo MousePods.flatpak io.github.henningnorden.MousePods "$CHANNEL" \
             --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: MousePods-flatpak
           path: MousePods.flatpak
-      - name: Sign the repo and lay out the Pages site
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Sign the repo and lay out the Pages site (stable from tags, test from main)
+        id: publish
+        if: github.event_name == 'push'
         shell: bash
         env:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
-        run: packaging/flatpak/publish-repo.sh "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+        run: packaging/flatpak/publish-repo.sh "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" "$CHANNEL"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.publish.outputs.published == 'true'
         with:
           path: site
 
   pages:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: needs.flatpak.outputs.published == 'true'
     needs: [flatpak]
+    concurrency:
+      group: pages                   # one deploy at a time; each one mirrors the repo that is live
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       pages: write
