@@ -21,7 +21,7 @@ class ResolveLangTests(unittest.TestCase):
 
     def test_resolve_lang_auto_from_env(self):
         self.assertEqual(i18n.resolve_lang("auto", "fr_CA.UTF-8"), "fr")
-        self.assertEqual(i18n.resolve_lang("auto", "de_AT.UTF-8"), "en")   # not translated yet
+        self.assertEqual(i18n.resolve_lang("auto", "de_AT.UTF-8"), "de")
 
     def test_resolve_lang_unsupported_env(self):
         self.assertEqual(i18n.resolve_lang("auto", "pt_BR.UTF-8"), "en")
@@ -79,6 +79,7 @@ class TablesTests(unittest.TestCase):
             with open(os.path.join(ROOT, "ui", "i18n", f"{lang}.json"), encoding="utf-8") as f:
                 keys[lang] = set(json.load(f))
         self.assertEqual(keys["en"], keys["fr"])
+        self.assertEqual(keys["en"], keys["de"])
 
     def test_payload_shape(self):
         p = i18n.i18n_payload({"ui_lang": "fr"}, None)
@@ -133,7 +134,7 @@ class LanguageSwitchTests(unittest.TestCase):
             html = f.read()
         self.assertIn('data-key="ui_lang"', html)
         block = html.split('data-key="ui_lang"', 1)[1].split("</div>", 1)[0]
-        for v in ("auto", "en", "fr"):
+        for v in ("auto", "en", "de", "fr"):
             self.assertIn(f'data-v="{v}"', block)
 
     def test_ui_reloads_translations_on_switch(self):
