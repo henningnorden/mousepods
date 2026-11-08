@@ -239,7 +239,8 @@ function frame(now) {
   cur = cur.map((v, i) => v + (want[i] - v) * k);
   if (yt && ytReady && now - lastYt > 33) {                 // YouTube: yaw 0..360 clockwise, pitch up positive
     lastYt = now;
-    try { yt.setSphericalProperties({ yaw: ((cur[0] % 360) + 360) % 360, pitch: cur[1], roll: -cur[2], enableOrientationSensor: false }); } catch (_) {}
+    // YouTube's yaw grows when the viewer turns LEFT (ours grows to the right)
+    try { yt.setSphericalProperties({ yaw: ((-cur[0] % 360) + 360) % 360, pitch: cur[1], roll: -cur[2], enableOrientationSensor: false }); } catch (_) {}
   } else if (!yt) {
     euler.set(THREE.MathUtils.degToRad(cur[1]), THREE.MathUtils.degToRad(-cur[0]), THREE.MathUtils.degToRad(-cur[2]));
     camera.quaternion.setFromEuler(euler);

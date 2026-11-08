@@ -30,7 +30,8 @@
     cur = cur ? cur.map((v, i) => v + (want[i] - v) * 0.5) : want;     // light smoothing at 50 Hz
     const [yaw, pitch, roll] = cur;
     const p = settings.youtube && ytPlayer();
-    if (p) p.setSphericalProperties({ yaw: ((yaw % 360) + 360) % 360, pitch, roll: -roll, enableOrientationSensor: false });
+    // YouTube's yaw grows when the viewer turns LEFT (ours grows to the right)
+    if (p) p.setSphericalProperties({ yaw: ((-yaw % 360) + 360) % 360, pitch, roll: -roll, enableOrientationSensor: false });
     if (settings.gyro) {
       // phone held upright in front of the face: beta 90 = level, alpha grows when turning left
       window.dispatchEvent(new DeviceOrientationEvent("deviceorientation", {
