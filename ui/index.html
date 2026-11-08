@@ -63,7 +63,7 @@ h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;le
 .kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text2)}.kv span:last-child{text-align:right;font-weight:500}
 #p-welcome .card{margin-bottom:12px}#p-welcome .card .btn{margin-top:8px}.game{margin-bottom:12px}.game .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .game .name{font-weight:600;font-size:15px;flex:1}.game details{margin-top:10px}.game summary{cursor:pointer;color:var(--text2);font-size:13px}
-.game .axis{display:grid;grid-template-columns:70px repeat(5,minmax(0,1fr));gap:8px;align-items:center;margin-top:8px;font-size:12.5px}
+.game .axis{display:grid;grid-template-columns:70px repeat(6,minmax(0,1fr));gap:8px;align-items:center;margin-top:8px;font-size:12.5px}
 .game .axis input[type=range]{width:100%}.game .prev{font-family:var(--mono,monospace);font-size:12px;color:var(--text2)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--card2);font-size:12px;font-weight:600}
 .pill.g{color:var(--green)}.pill.o{color:var(--orange)}.pill.r{color:var(--red)}.pill.b{color:var(--accent)}
@@ -919,18 +919,24 @@ function gameHint(g){if(g.flatpak)return t("js.games.hint_flatpak");if(!g.has_pr
   if(g.running)return t("js.games.hint_running");if(g.status==="foreign"&&!g.enabled)return t("js.games.hint_foreign",{name:g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.other_tracker")});return ""}
 function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
   const pill=g.status==="on"?`<span class="pill g">${t("js.games.on")}</span>`:g.status==="foreign"?`<span class="pill o">${esc(g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.foreign"))}</span>`:`<span class="pill">${t("js.games.off")}</span>`;
-  const ax=GAXES.map(n=>{const a=p.axes[n];return `<div class="axis" data-axis="${n}"><b>${axisLabel(n)}</b>
+  const EDGES={yaw:["js.games.edge_left","js.games.edge_right"],pitch:["js.games.edge_down","js.games.edge_up"]};
+  const rng=(f,min,max,step,v,label)=>`<label>${label} <input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
+  const ax=GAXES.map(n=>{const a=p.axes[n];const e=EDGES[n];return `<div class="axis" data-axis="${n}"><b>${axisLabel(n)}</b>
     <label><input type="checkbox" data-f="enabled" ${a.enabled?"checked":""}> ${t("js.games.on_short")}</label>
     <label><input type="checkbox" data-f="invert" ${a.invert?"checked":""}> ${t("js.games.invert")}</label>
-    <label>${t("js.games.gain")} <input type="range" data-f="gain" min="0.1" max="12" step="0.1" value="${a.gain}"></label>
-    <label>${t("js.games.curve")} <input type="range" data-f="curve" min="1" max="3" step="0.05" value="${a.curve}"></label>
-    <label>${t("js.games.limit")} <input type="range" data-f="limit" min="0" max="180" step="5" value="${a.limit}"></label></div>`}).join("");
+    ${e?rng("edge_neg",2,180,1,a.edge_neg,t(e[0]))+rng("edge_pos",2,180,1,a.edge_pos,t(e[1])):rng("edge_pos",2,180,1,a.edge_pos,t("js.games.edge_both"))}
+    ${rng("target",0,180,5,a.target,t("js.games.target"))}
+    ${rng("sens",0,1,0.05,curveToSens(a.curve),t("js.games.sensitivity"))}</div>`}).join("");
   return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
     <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
     ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
     ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
     <details><summary>${t("js.games.profile")}${g.proton?" · "+esc(g.proton.split("/").pop()):""}</summary>
+      <div class="row" style="margin:8px 0"><button class="btn sm p" data-calibrate>${t("js.games.calibrate")}</button>
+        <span class="hint">${t("js.games.calibrate_hint")}</span></div>
+      <div data-calpanel></div>
       <div class="kv"><span>${t("js.games.receives")}</span><span class="prev mono" data-prev>—</span></div>
+      <div class="hint">${t("js.games.sens_hint")}</div>
       <div class="kv"><span>${t("js.games.smoothing")}</span><span><input type="range" data-f="smoothing" min="0" max="1" step="0.05" value="${p.smoothing}"></span></div>
       ${ax}
       <div class="kv"><span>${t("js.games.neck")}</span><span><label><input type="checkbox" data-f="neck.enabled" ${p.neck.enabled?"checked":""}> ${t("js.games.on_short")}</label>
@@ -939,10 +945,11 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
       <div class="hint">${t("js.games.neck_hint")}</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" data-reset>${t("js.games.reset")}</button></div>
     </details></div>`}
-function readProfile(card){const v=f=>card.querySelector(`[data-f="${f}"]`);const num=e=>+e.value;
+function readProfile(card,prev){const v=f=>card.querySelector(`[data-f="${f}"]`);const num=e=>+e.value;
   const axes={};GAXES.forEach(n=>{const r=card.querySelector(`[data-axis="${n}"]`),q=f=>r.querySelector(`[data-f="${f}"]`);
-    axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,gain:num(q("gain")),curve:num(q("curve")),limit:num(q("limit"))}});
-  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes}}
+    const pos=num(q("edge_pos")),neg=r.querySelector('[data-f="edge_neg"]')?num(q("edge_neg")):pos;
+    axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,edge_neg:neg,edge_pos:pos,target:num(q("target")),curve:sensToCurve(num(q("sens")))}});
+  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes,monitors:(prev&&prev.monitors)||[]}}
 function gameError(r){return r.json().then(j=>{throw new Error(j.error||r.status)})}
 function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appid),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
   .then(r=>r.ok?r.json():gameError(r))}
@@ -957,15 +964,82 @@ function renderGames(){const box=$("#games-list");if(!gamesData)return;
         .catch(err=>{toast(err.message);loadGames()})};
     card.querySelectorAll('details input[type=range]').forEach(inp=>{const o=document.createElement("output");o.className="prev";
       const show=()=>o.textContent=" "+(+inp.value).toFixed(inp.step<1?(inp.step<0.1?2:1):0);show();inp.after(o);inp.addEventListener("input",show)});
-    card.querySelectorAll("details input").forEach(inp=>inp.onchange=()=>{const prof=readProfile(card);g.profile=prof;
+    card.querySelectorAll("details input").forEach(inp=>inp.onchange=()=>{const prof=readProfile(card,g.profile);g.profile=prof;
       postGame(appid,{profile:prof}).then(()=>toast(t("js.games.toast_profile"))).catch(err=>toast(err.message))});
-    card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()})})}
+    card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()});
+    card.querySelector("[data-calibrate]").onclick=()=>calibStart(card,g)})}
 function loadGames(){return fetch("/api/games").then(r=>r.json()).then(d=>{gamesData=d;renderGames()}).catch(()=>{})}
 function refreshGamesLive(){if(page!=="games"){clearInterval(gamesTimer);gamesTimer=null;return}
   fetch("/api/opentrack").then(r=>r.json()).then(o=>{const p=o.pose||[0,0,0,0,0,0];
     $("#games-live").textContent=GAXES.map((n,i)=>`${axisLabel(n)} ${p[3+i]>=0?"+":""}${p[3+i].toFixed(1)}°`).join(" · ");
     if(gamesData)$$("#games-list .game").forEach(card=>{const g=gamesData.games.find(x=>x.appid===card.dataset.appid);if(!g||!g.enabled)return;
       card.querySelector("[data-prev]").textContent="→ "+GAXES.map((n,i)=>`${mapAxis(p[3+i],g.profile.axes[n]).toFixed(0)}°`).join(" / ")})}).catch(()=>{})}
+// ---------- calibration of a game profile: monitors, overlay with points, result (/api/calibration)
+// mirror of desktop/overlay.roles_for (tests/test_games_ui.py checks they agree)
+function rolesFor(sel){if(!sel.length)return {};const r={};sel.forEach(m=>r[m.connector]=[]);const main=(sel.find(m=>m.main)||sel[0]).connector;r[main].push("main");r[sel[0].connector].push("left");r[sel[sel.length-1].connector].push("right");return r}
+const desktopBridge=()=>window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.mousepods;
+let calib=null;          // {card, g, sel, list}
+window.mpDesktop={onMessage(msg){if(msg.cmd==="monitors"&&calib)calibMonitors(msg.list,msg.selection)}};
+function calibStart(card,g){calib={card,g,sel:[],list:[]};
+  if(desktopBridge())desktopBridge().postMessage({cmd:"monitors",saved:g.profile.monitors||[]});
+  else calibRun()}
+function calibMonitors(list,sel){calib.list=list;calib.sel=sel;if(list.length<=1)return calibRun();calibDialog()}
+function calibDialog(){const c=calib,box=c.card.querySelector("[data-calpanel]");
+  const order=[...c.sel.map(s=>s.connector),...c.list.map(m=>m.connector).filter(x=>!c.sel.some(s=>s.connector===x))];
+  const info=x=>c.list.find(m=>m.connector===x)||{connector:x,model:"",width:"?",height:"?"};
+  box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.mon_title")}</b><div class="hint">${t("js.games.mon_hint")}</div>
+    ${order.map((x,i)=>{const m=info(x),s=c.sel.find(v=>v.connector===x);return `<div class="kv" data-mon="${esc(x)}"><span>
+      <label><input type="checkbox" data-mon-on ${s?"checked":""}> <b>${esc(x)}</b> ${esc(m.model)} · ${m.width}×${m.height}</label></span><span>
+      <label><input type="radio" name="mon-main-${esc(c.g.appid)}" data-mon-main ${s&&s.main?"checked":""}> ${t("js.games.mon_main")}</label>
+      <button class="btn sm" data-mon-up ${i?"":"disabled"}>↑</button><button class="btn sm" data-mon-down ${i<order.length-1?"":"disabled"}>↓</button>
+      <button class="btn sm" data-mon-flash>${t("js.games.mon_flash")}</button></span></div>`}).join("")}
+    <div class="row" style="margin-top:10px"><button class="btn sm p" data-mon-start>${t("js.games.start")}</button><button class="btn sm" data-cal-close>${t("js.games.discard")}</button></div></div>`;
+  const read=()=>{const rows=[...box.querySelectorAll("[data-mon]")];
+    c.sel=rows.filter(r=>r.querySelector("[data-mon-on]").checked).map(r=>({connector:r.dataset.mon,main:r.querySelector("[data-mon-main]").checked}));
+    if(c.sel.length&&!c.sel.some(s=>s.main))c.sel[0].main=true;
+    return rows.map(r=>r.dataset.mon)};
+  box.querySelectorAll("[data-mon]").forEach(r=>{const x=r.dataset.mon;
+    r.querySelector("[data-mon-flash]").onclick=()=>desktopBridge().postMessage({cmd:"flash",connector:x});
+    const move=d=>{const o=read(),i=o.indexOf(x),j=i+d;[o[i],o[j]]=[o[j],o[i]];
+      c.sel=o.filter(y=>c.sel.some(s=>s.connector===y)).map(y=>c.sel.find(s=>s.connector===y));calibDialog()};
+    r.querySelector("[data-mon-up]").onclick=()=>move(-1);r.querySelector("[data-mon-down]").onclick=()=>move(1)});
+  box.querySelector("[data-cal-close]").onclick=()=>{box.innerHTML="";calib=null};
+  box.querySelector("[data-mon-start]").onclick=()=>{read();if(!c.sel.length)return toast(t("js.games.mon_none"));calibRun()}}
+function calibRun(){const c=calib,box=c.card.querySelector("[data-calpanel]");
+  box.innerHTML=`<div class="hint" style="margin:8px 0">${t("js.games.calib_running")}</div>`;
+  post("/api/calibration",{action:"start"}).then(()=>{
+    if(desktopBridge()){const roles=rolesFor(c.sel);
+      desktopBridge().postMessage({cmd:"overlay",monitors:c.sel.map(m=>({connector:m.connector,roles:roles[m.connector]}))})}
+    else calibFrame();
+    calibWait()}).catch(e=>{toast(e.message);box.innerHTML=""})}
+function calibFrame(){const f=document.createElement("iframe");f.src="/calibrate?roles=main,left,right";
+  f.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:9999;background:#000";
+  document.body.appendChild(f);(f.requestFullscreen?f.requestFullscreen():Promise.resolve()).catch(()=>{});
+  const end=e=>{if(e.origin!==location.origin||!e.data||e.data.mousepods!=="calibration_end")return;
+    removeEventListener("message",end);if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});f.remove()};
+  addEventListener("message",end)}
+function calibWait(){if(!calib)return;
+  fetch("/api/calibration").then(r=>r.json()).then(st=>{if(!calib)return;
+    if(st.active||st.step===null)return setTimeout(calibWait,300);
+    const box=calib.card.querySelector("[data-calpanel]");
+    if(st.step==="done")return calibResult(st.result);
+    box.innerHTML=st.hint==="no_signal"?`<div class="hint">${t("js.games.calib_no_signal")}</div>`:"";
+    calib=null}).catch(()=>setTimeout(calibWait,1000))}
+function calibResult(r){const c=calib,g=c.g,box=c.card.querySelector("[data-calpanel]"),A=g.profile.axes,f=v=>v.toFixed(0);
+  box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.res_title")}</b>
+    <div class="hint">${t("js.games.res_values",{l:f(r.yaw.neg),r:f(r.yaw.pos),u:f(r.pitch.pos),d:f(r.pitch.neg)})}</div>
+    <div class="kv"><span>${t("js.games.target_side")}</span><span><input type="range" data-res="side" min="30" max="180" step="5" value="${A.yaw.target}"> <output></output></span></div>
+    <div class="kv"><span>${t("js.games.target_vert")}</span><span><input type="range" data-res="vert" min="10" max="90" step="5" value="${A.pitch.target}"> <output></output></span></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm p" data-res-save>${t("js.games.save")}</button>
+      <button class="btn sm" data-res-again>${t("js.games.repeat")}</button><button class="btn sm" data-res-discard>${t("js.games.discard")}</button></div></div>`;
+  box.querySelectorAll("[data-res]").forEach(i=>{const o=i.nextElementSibling,s=()=>o.textContent=i.value+"°";s();i.oninput=s});
+  box.querySelector("[data-res-discard]").onclick=()=>{box.innerHTML="";calib=null};
+  box.querySelector("[data-res-again]").onclick=()=>calibRun();
+  box.querySelector("[data-res-save]").onclick=()=>{const p=JSON.parse(JSON.stringify(g.profile));
+    Object.assign(p.axes.yaw,{edge_neg:r.yaw.neg,edge_pos:r.yaw.pos,target:+box.querySelector('[data-res="side"]').value});
+    Object.assign(p.axes.pitch,{edge_neg:r.pitch.neg,edge_pos:r.pitch.pos,target:+box.querySelector('[data-res="vert"]').value});
+    if(c.sel.length)p.monitors=c.sel;
+    postGame(g.appid,{profile:p}).then(()=>{toast(t("js.games.toast_calibrated"));calib=null;loadGames()}).catch(e=>toast(e.message))}}
 function showGames(){loadGames();if(!gamesTimer)gamesTimer=setInterval(refreshGamesLive,250)}
 // ---------- Simulateurs : OpenTrack + manette virtuelle (passent par /api/opentrack)
 $("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?t("js.toast.ot_on"):t("js.toast.ot_off")));
