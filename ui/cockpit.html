@@ -26,6 +26,8 @@
   #status { font-size:12.5px; color:#ffd60a; min-height:1em; }
   #nogl { position:fixed; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:24px; }
   body.clean .hud { display:none; }
+  #flash { position:fixed; left:50%; top:24px; transform:translateX(-50%); background:rgba(18,20,26,.75); color:#fff;
+    padding:8px 16px; border-radius:12px; font-size:15px; font-weight:600; display:none; z-index:5; }
   body.clean { cursor:none; }
 </style>
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
@@ -49,6 +51,7 @@
     <a href="/" data-i18n="demo.back">Back to the app</a>
   </div>
 </div>
+<div id="flash"></div>
 <div id="nogl"><div class="card" data-i18n="demo.no_webgl">WebGL is not available in this browser. Try the simple mode.</div></div>
 <script type="module">
 import * as THREE from "three";
@@ -75,7 +78,18 @@ addEventListener("keydown", e => {
   if (e.key === "f" || e.key === "F") toggleFs();
   else if (e.key === "h" || e.key === "H") toggleClean();
   else if (e.key === "Escape") toggleClean(false);
+  else if (e.key === "r" || e.key === "R") document.getElementById("recenter").click();
+  else if ("yYpPoO".includes(e.key)) {                      // invert an axis live (remembered)
+    const ax = { y: "yaw", p: "pitch", o: "roll" }[e.key.toLowerCase()];
+    SIGNS[ax] *= -1;
+    try { localStorage.setItem("mp_cockpit_signs", JSON.stringify(SIGNS)); } catch (_) {}
+    flash(`${ax} ${SIGNS[ax] > 0 ? "normal" : "inverted"}`);
+  }
 });
+let SIGNS = { yaw: 1, pitch: 1, roll: 1 };
+try { Object.assign(SIGNS, JSON.parse(localStorage.getItem("mp_cockpit_signs") || "{}")); } catch (_) {}
+let flashMsg = "", flashUntil = 0;
+const flash = m => { flashMsg = m; flashUntil = performance.now() + 1500; };
 if (q.get("clean") === "1") toggleClean(true);
 
 let target = [0, 0, 0], live = false, connected = false, serverUp = true;
@@ -302,7 +316,7 @@ function frame(now) {
   const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.03);
   const want = [target[0] * g, target[1] * g * 0.85, target[2]];
   cur = cur.map((v, i) => v + (want[i] - v) * k);
-  euler.set(THREE.MathUtils.degToRad(cur[1]), THREE.MathUtils.degToRad(-cur[0]), THREE.MathUtils.degToRad(-cur[2] * ROLL_SIGN));
+  euler.set(THREE.MathUtils.degToRad(cur[1] * SIGNS.pitch), THREE.MathUtils.degToRad(-cur[0] * SIGNS.yaw), THREE.MathUtils.degToRad(-cur[2] * ROLL_SIGN * SIGNS.roll));
   head.quaternion.setFromEuler(euler);
   if (now - lastGauge > 100) { drawGauges(now); lastGauge = now; }
   renderer.render(scene, camera);
@@ -313,6 +327,8 @@ function frame(now) {
   const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
            : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";
   document.getElementById("status").textContent = st;
+  const fl = document.getElementById("flash");
+  if (now < flashUntil) { fl.textContent = flashMsg; fl.style.display = "block"; } else fl.style.display = "none";
   document.getElementById("angles").textContent =
     `yaw ${target[0].toFixed(0)}° · pitch ${target[1].toFixed(0)}° · roll ${target[2].toFixed(0)}°`;
   requestAnimationFrame(frame);
