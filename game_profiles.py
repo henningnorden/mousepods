@@ -25,7 +25,7 @@ DEFAULT_PROFILE = {
     },
 }
 
-_RANGES = {"gain": (0.1, 6.0), "curve": (1.0, 3.0), "limit": (0.0, 180.0)}
+_RANGES = {"gain": (0.1, 12.0), "curve": (1.0, 3.0), "limit": (0.0, 180.0)}
 
 
 def _clamp(v, lo, hi, default):

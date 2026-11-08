@@ -30,7 +30,9 @@ class ProfileTests(unittest.TestCase):
                                   "neck": {"strength": 7}, "junk": 1})
         self.assertEqual(q["smoothing"], 1.0)
         self.assertEqual((q["axes"]["yaw"]["gain"], q["axes"]["yaw"]["curve"], q["axes"]["yaw"]["limit"]),
-                         (6.0, 1.0, 0.0))
+                         (12.0, 1.0, 0.0))
+        # small monitor: a short glance at the edge has to turn the camera far (found in LS22)
+        self.assertEqual(gp.normalize_profile({"axes": {"yaw": {"gain": 10}}})["axes"]["yaw"]["gain"], 10.0)
         self.assertEqual(q["axes"]["pitch"], gp.DEFAULT_PROFILE["axes"]["pitch"])
         self.assertEqual(q["neck"]["strength"], 2.0)
         self.assertNotIn("junk", q)

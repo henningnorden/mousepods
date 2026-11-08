@@ -919,7 +919,7 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
   const ax=GAXES.map(n=>{const a=p.axes[n];return `<div class="axis" data-axis="${n}"><b>${axisLabel(n)}</b>
     <label><input type="checkbox" data-f="enabled" ${a.enabled?"checked":""}> ${t("js.games.on_short")}</label>
     <label><input type="checkbox" data-f="invert" ${a.invert?"checked":""}> ${t("js.games.invert")}</label>
-    <label>${t("js.games.gain")} <input type="range" data-f="gain" min="0.1" max="6" step="0.1" value="${a.gain}"></label>
+    <label>${t("js.games.gain")} <input type="range" data-f="gain" min="0.1" max="12" step="0.1" value="${a.gain}"></label>
     <label>${t("js.games.curve")} <input type="range" data-f="curve" min="1" max="3" step="0.05" value="${a.curve}"></label>
     <label>${t("js.games.limit")} <input type="range" data-f="limit" min="0" max="180" step="5" value="${a.limit}"></label></div>`}).join("");
   return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
