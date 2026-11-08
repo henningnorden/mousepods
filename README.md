@@ -57,7 +57,8 @@ Contributed by [@henningnorden](https://github.com/henningnorden) for sim racing
 
 Install: download `MousePods-flatpak` from the latest successful
 [build](https://github.com/starman-tech/mousepods/actions/workflows/build.yml) and run
-`flatpak install --user MousePods.flatpak`. Steam installed as a Flatpak is not supported yet.
+`flatpak install --user MousePods.flatpak`. Steam installed as a Flatpak works too (tested with ETS2
+under Proton Experimental); a game installed in both Steams lets you pick which one on its card.
 
 ## What's new here
 
