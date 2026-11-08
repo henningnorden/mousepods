@@ -38,6 +38,8 @@ import sys
 import threading
 import time
 
+import bluez_dbus
+import l2cap
 import i18n
 from i18n import tr
 
@@ -204,6 +206,8 @@ def bt_info(addr):
 
 
 def apple_audio_devices():
+    if bluez_dbus.available():
+        return bluez_dbus.list_apple_devices()
     out = []
     try:
         lines = subprocess.run(["bluetoothctl", "devices", "Paired"], capture_output=True,
@@ -223,7 +227,25 @@ def apple_audio_devices():
     return out
 
 
+def bt_connected(addr):
+    if bluez_dbus.available():
+        got = bluez_dbus.info(addr)
+        return bool(got and got["connected"])
+    return "Connected: yes" in bt_info(addr)
+
+
+def bt_connect(addr, timeout):
+    """Ask BlueZ to connect `addr` (D-Bus if available, else bluetoothctl)."""
+    if bluez_dbus.available():
+        return bluez_dbus.connect(addr, timeout)
+    subprocess.run(["bluetoothctl", "connect", addr], capture_output=True, text=True, timeout=timeout)
+    return bt_connected(addr)
+
+
 def product_id(addr):
+    if bluez_dbus.available():
+        got = bluez_dbus.info(addr)
+        return got["pid"] if got else "0000"
     try:
         info = bt_info(addr)
     except BluetoothToolMissing:
@@ -399,10 +421,10 @@ class AAPClient:
     def _pick(self):
         if self.want != "auto":
             return self.want
-        if not have_bluetoothctl():
-            # without it we cannot list paired devices: say so instead of "no AirPods connected"
-            raise OSError(112, BLUETOOTHCTL_MISSING)
-        if self.addr and "Connected: yes" in bt_info(self.addr):   # reconnexion : déjà connu
+        if not bluez_dbus.available() and not have_bluetoothctl():
+            # without either we cannot list paired devices: say so instead of "no AirPods connected"
+            raise BluetoothToolMissing()
+        if self.addr and bt_connected(self.addr):   # reconnexion : déjà connu
             return self.addr
         devs = apple_audio_devices()
         con = [d for d in devs if d[3]]
@@ -412,34 +434,21 @@ class AAPClient:
             for d in devs:
                 log.info("Tentative de connexion : %s (%s)", d[1], d[0])
                 try:
-                    subprocess.run(["bluetoothctl", "connect", d[0]], capture_output=True,
-                                   text=True, timeout=12)
+                    if bt_connect(d[0], 12):
+                        return d[0]
                 except subprocess.TimeoutExpired:
                     continue
-                if "Connected: yes" in bt_info(d[0]):
-                    return d[0]
         raise NoAirPodsConnected()
 
     def connect(self):
         self.addr = self._pick()
-        if self.auto_connect and have_bluetoothctl() and "Connected: yes" not in bt_info(self.addr):
-            subprocess.run(["bluetoothctl", "connect", self.addr], capture_output=True, text=True,
-                           timeout=20)
+        if self.auto_connect and (bluez_dbus.available() or have_bluetoothctl()) and not bt_connected(self.addr):
+            try:
+                bt_connect(self.addr, 20)
+            except subprocess.TimeoutExpired:
+                pass
         self.pid = product_id(self.addr)
-        s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
-        try:
-            s.setsockopt(SOL_BLUETOOTH, BT_SECURITY, struct.pack("BB", BT_SECURITY_MEDIUM, 0))
-            opts = bytearray(s.getsockopt(SOL_L2CAP, L2CAP_OPTIONS, 12))
-            struct.pack_into("<H", opts, 2, IOS_MTU)
-            s.setsockopt(SOL_L2CAP, L2CAP_OPTIONS, bytes(opts))
-        except OSError as e:
-            log.debug("options socket : %s", e)
-        s.settimeout(8)
-        try:
-            s.connect((self.addr, 0x1001))
-        except OSError:
-            s.close()
-            raise
+        s = l2cap.open_seqpacket(self.addr, 0x1001, IOS_MTU, 8)   # ctypes path if Python lacks AF_BLUETOOTH
         s.settimeout(None)
         self.sock = s
         for p, d in ((PKT_HANDSHAKE, 0.3), (PKT_FEATURES, 0.15), (PKT_NOTIFICATIONS, 0.15)):
