@@ -243,13 +243,22 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_missing_or_empty_entry(self):
         self.assertIsNone(self.rn.entry(self.path, "v2.0.0"))
         self.assertIsNone(self.rn.entry(self.path, "v1.0.0"))          # no description: not enough
-        self.assertEqual(self.rn.check(self.path, "v2.0.0"), 1)
-        self.assertEqual(self.rn.check(self.path, "v1.1.0"), 0)
+        self.assertIn('no <release version="2.0.0">', self.rn.problem(self.path, "v2.0.0"))
+        self.assertIsNone(self.rn.problem(self.path, "v1.1.0"))
 
     def test_prerelease_tags_need_no_entry(self):
         self.assertTrue(self.rn.is_prerelease("v1.1.0-rc1"))
         self.assertFalse(self.rn.is_prerelease("v1.1.0"))
-        self.assertEqual(self.rn.check(self.path, "v1.1.0-rc1"), 0)
+        self.assertIsNone(self.rn.problem(self.path, "v1.1.0-rc1"))
+
+    def test_problem_is_not_printed(self):
+        """Only the CLI prints the ::error line; a printed one in the tests job became a real CI annotation."""
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.rn.problem(self.path, "v2.0.0")
+        self.assertEqual(buf.getvalue(), "")
 
     def test_real_metainfo_has_releases(self):
         self.assertIsNotNone(self.rn.entry(os.path.join(PKG, f"{APP_ID}.metainfo.xml"), "v1.0.0", require_text=False))

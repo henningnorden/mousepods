@@ -39,18 +39,21 @@ def markdown(e):
     return out
 
 
-def check(path, tag):
+def problem(path, tag):
+    """Why this tag cannot be released yet, or None. Prints nothing: only main() reports to the CI."""
     if is_prerelease(tag) or entry(path, tag) is not None:
-        return 0
-    print(f"::error title=release notes::{os.path.basename(path)} has no <release version=\"{version_of(tag)}\"> "
-          "with a description. Add one (Discover shows it as what's new), then tag again.")
-    return 1
+        return None
+    return (f"{os.path.basename(path)} has no <release version=\"{version_of(tag)}\"> with a description. "
+            "Add one (Discover shows it as what's new), then tag again.")
 
 
 def main(argv):
     cmd, tag = argv[0], argv[1]
     if cmd == "check":
-        return check(METAINFO, tag)
+        msg = problem(METAINFO, tag)
+        if msg:
+            print(f"::error title=release notes::{msg}")
+        return 1 if msg else 0
     if cmd == "markdown":
         e = entry(METAINFO, tag)
         sys.stdout.write(markdown(e) if e else "")
