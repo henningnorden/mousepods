@@ -49,6 +49,10 @@ Et aussi :
 
 **→ Toutes les découvertes, avec preuves et la liste honnête de ce qui n'est pas encore isolé : [docs/DISCOVERIES.md](docs/DISCOVERIES.md).**
 
+### Extension pour navigateur
+
+Regarde autour de toi dans les vidéos 360° de YouTube (et d'autres sites 360°, expérimental) en tournant la tête, directement dans Chrome : voir [browser-extension/](browser-extension/README.md).
+
 ## Modes
 
 | Mode | Geste | Ressemble à |

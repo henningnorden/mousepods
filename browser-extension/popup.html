@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 280px; margin: 0; padding: 14px; font: 13px/1.4 -apple-system, "Inter", "Segoe UI", sans-serif;
+         background: #1c1c1e; color: #f5f5f7; }
+  h1 { font-size: 15px; margin: 0 0 2px; display: flex; gap: 8px; align-items: center; }
+  h1 img { width: 20px; height: 20px; }
+  .st { font-size: 12px; color: #ffd60a; margin-bottom: 10px; min-height: 1em; }
+  .st.ok { color: #30d158; }
+  label { display: flex; justify-content: space-between; align-items: center; padding: 6px 0;
+          border-top: 1px solid rgba(255,255,255,.07); gap: 10px; }
+  small { display: block; color: rgba(245,245,247,.6); font-size: 11px; }
+  input[type=range] { width: 110px; accent-color: #0a84ff; }
+  input[type=checkbox] { accent-color: #0a84ff; width: 16px; height: 16px; }
+  button { width: 100%; margin-top: 10px; padding: 7px; border: 0; border-radius: 8px; background: #0a84ff;
+           color: #fff; font: inherit; cursor: pointer; }
+  a { color: rgba(245,245,247,.6); font-size: 11px; }
+</style>
+</head>
+<body>
+  <h1><img src="icon48.png" alt="">MousePods</h1>
+  <div class="st" id="st">…</div>
+  <label><span>On</span><input type="checkbox" id="enabled"></label>
+  <label><span>YouTube 360°<small>the view follows your head</small></span><input type="checkbox" id="youtube"></label>
+  <label><span>Gyroscope on other sites<small>experimental: Street View, panoramas…</small></span><input type="checkbox" id="gyro"></label>
+  <label><span>Amplification <b id="gainv">×1.0</b></span><input type="range" id="gain" min="1" max="3" step="0.1"></label>
+  <label><span>Invert left/right</span><input type="checkbox" id="yawInv"></label>
+  <label><span>Invert up/down</span><input type="checkbox" id="pitchInv"></label>
+  <button id="recenter">Recenter (head straight)</button>
+  <p><a href="https://github.com/starman-tech/mousepods" target="_blank">github.com/starman-tech/mousepods</a></p>
+  <script src="popup.js"></script>
+</body>
+</html>

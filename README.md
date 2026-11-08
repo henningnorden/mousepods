@@ -60,6 +60,10 @@ Install: download `MousePods-flatpak` from the latest successful
 `flatpak install --user MousePods.flatpak`. Steam installed as a Flatpak works too (tested with ETS2
 under Proton Experimental); a game installed in both Steams lets you pick which one on its card.
 
+### Browser extension
+
+Look around 360° videos on YouTube (and other 360° sites, experimental) by turning your head, right in Chrome: see [browser-extension/](browser-extension/README.md).
+
 ## What's new here
 
 Before this project, **no public tool could get head-tracking data out of AirPods 3**. LibrePods, librepods-rs, pods-head-tracker,
