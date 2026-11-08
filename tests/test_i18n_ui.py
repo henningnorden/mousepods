@@ -169,7 +169,7 @@ class UiStaticTests(unittest.TestCase):
         s.handle_starttag = grab
         s.feed(read_ui())
         bad = []
-        for lang in ("en", "fr"):
+        for lang in ("en", "de", "fr"):
             with open(os.path.join(ROOT, "ui", "i18n", f"{lang}.json"), encoding="utf-8") as f:
                 table = json.load(f)
             bad += [(lang, k) for k in s.text_keys if re.search(r"&#?\w+;", table.get(k, ""))]

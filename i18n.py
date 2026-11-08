@@ -9,7 +9,7 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STRINGS_DIR = os.path.join(HERE, "ui", "i18n")
-SUPPORTED = ("en", "fr")
+SUPPORTED = ("en", "de", "fr")
 SETTINGS = ("auto",) + SUPPORTED
 DEFAULT = "en"
 
