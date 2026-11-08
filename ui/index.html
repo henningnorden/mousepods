@@ -908,7 +908,10 @@ function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">$
 window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
 // ---------- Games: per-game bridge (TrackIR DLL in the Proton prefix) and profiles (/api/games)
 // mirror of game_profiles.map_axis (tests/test_games_ui.py checks they agree)
-function mapAxis(d,a){if(!a.enabled||d===0)return 0;let o=a.gain*40*Math.pow(Math.abs(d)/40,a.curve);o=Math.min(o,a.limit);o=d<0?-o:o;return a.invert?-o:o}
+function mapAxis(d,a){if(!a.enabled||d===0)return 0;const e=d>0?a.edge_pos:a.edge_neg;let o=a.target*Math.pow(Math.min(Math.abs(d)/e,1),a.curve);o=d<0?-o:o;return a.invert?-o:o}
+// mirror of game_profiles.sensitivity_to_curve / curve_to_sensitivity
+function sensToCurve(s){return 3-2*Math.min(Math.max(+s,0),1)}
+function curveToSens(c){return Math.min(Math.max((3-c)/2,0),1)}
 let gamesData=null,gamesTimer=null;
 const GAXES=["yaw","pitch","roll"];
 function axisLabel(n){return n==="yaw"?t("js.games.axis_yaw"):n==="pitch"?t("js.games.axis_pitch"):t("js.games.axis_roll")}

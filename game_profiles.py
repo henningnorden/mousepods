@@ -11,21 +11,45 @@ import copy
 import math
 
 AXES = ("yaw", "pitch", "roll")
-CURVE_PIVOT_DEG = 40.0          # at this head angle the output equals gain * angle, whatever the curve
+CURVE_PIVOT_DEG = 40.0          # old model: the output was gain * angle at this head angle
 NECK_EYES_CM = (0.0, 8.0, 9.0)  # eyes relative to the neck pivot: right, up, forward
 GAME_X = -1.0                   # neck x (right +) -> game X (left +)
+
+# Before calibration an axis was gain/curve/limit around a fixed 40 degree pivot. Saved profiles in
+# that form are converted on load so they behave the same (legacy_edge).
+LEGACY_DEFAULTS = {"yaw": (2.0, 1.4, 180.0), "pitch": (1.5, 1.4, 90.0), "roll": (1.0, 1.0, 90.0)}
+_LEGACY_RANGES = {"gain": (0.1, 12.0), "curve": (1.0, 3.0), "limit": (0.0, 180.0)}
+_RANGES = {"edge_neg": (2.0, 180.0), "edge_pos": (2.0, 180.0), "target": (0.0, 180.0), "curve": (1.0, 3.0)}
+MAX_MONITORS = 8
+
+
+def legacy_edge(gain, curve, limit):
+    """Head angle at which the old model reached its limit."""
+    return CURVE_PIVOT_DEG * (limit / (gain * CURVE_PIVOT_DEG)) ** (1.0 / curve)
+
+
+def _axis_from_legacy(gain, curve, limit, enabled=True, invert=False):
+    lo, hi = _RANGES["edge_pos"]
+    edge = round(min(max(legacy_edge(gain, curve, limit), lo), hi), 1) if limit > 0 else 40.0
+    return {"enabled": bool(enabled and limit > 0), "invert": bool(invert),
+            "edge_neg": edge, "edge_pos": edge, "target": float(limit), "curve": float(curve)}
+
 
 DEFAULT_PROFILE = {
     "smoothing": 0.3,
     "neck": {"enabled": False, "strength": 1.0, "lean_forward": False},
-    "axes": {
-        "yaw": {"enabled": True, "invert": False, "gain": 2.0, "curve": 1.4, "limit": 180},
-        "pitch": {"enabled": True, "invert": False, "gain": 1.5, "curve": 1.4, "limit": 90},
-        "roll": {"enabled": True, "invert": False, "gain": 1.0, "curve": 1.0, "limit": 90},
-    },
+    "axes": {name: _axis_from_legacy(*vals) for name, vals in LEGACY_DEFAULTS.items()},
+    "monitors": [],                 # calibration: chosen monitors, left to right, one marked main
 }
 
-_RANGES = {"gain": (0.1, 12.0), "curve": (1.0, 3.0), "limit": (0.0, 180.0)}
+
+def sensitivity_to_curve(s):
+    """Sensitivity 0..1 (0 = very calm centre, 1 = even all the way) -> curve exponent 3..1."""
+    return 3.0 - 2.0 * min(max(float(s), 0.0), 1.0)
+
+
+def curve_to_sensitivity(c):
+    return min(max((3.0 - float(c)) / 2.0, 0.0), 1.0)
 
 
 def _clamp(v, lo, hi, default):
@@ -50,21 +74,41 @@ def normalize_profile(raw):
     axes = raw.get("axes") if isinstance(raw.get("axes"), dict) else {}
     for name in AXES:
         src = axes.get(name) if isinstance(axes.get(name), dict) else {}
+        if "edge_neg" not in src and "edge_pos" not in src and ("gain" in src or "limit" in src):
+            old = {k: _clamp(src.get(k, d), *_LEGACY_RANGES[k], d)
+                   for k, d in zip(("gain", "curve", "limit"), LEGACY_DEFAULTS[name])}
+            src = _axis_from_legacy(old["gain"], old["curve"], old["limit"],
+                                    src.get("enabled", True), src.get("invert", False))
         dst = p["axes"][name]
         dst["enabled"] = bool(src.get("enabled", dst["enabled"]))
         dst["invert"] = bool(src.get("invert", dst["invert"]))
         for key, (lo, hi) in _RANGES.items():
             dst[key] = _clamp(src.get(key, dst[key]), lo, hi, dst[key])
+    p["monitors"] = _monitors(raw.get("monitors"))
     return p
 
 
+def _monitors(raw):
+    out = []
+    for m in raw if isinstance(raw, list) else []:
+        if isinstance(m, dict) and isinstance(m.get("connector"), str) and m["connector"]:
+            out.append({"connector": m["connector"][:64], "main": bool(m.get("main"))})
+        if len(out) == MAX_MONITORS:
+            break
+    if out:
+        main = next((i for i, m in enumerate(out) if m["main"]), 0)
+        for i, m in enumerate(out):
+            m["main"] = i == main
+    return out
+
+
 def map_axis(deg, axis):
-    """Head angle -> in-game angle. curve > 1 keeps small movements around the centre calm."""
+    """Head angle -> in-game angle: at the edge (head angle per side) the camera is at target.
+    curve > 1 keeps small movements around the centre calm."""
     if not axis["enabled"] or deg == 0:
         return 0.0
-    mag = abs(deg)
-    out = axis["gain"] * CURVE_PIVOT_DEG * (mag / CURVE_PIVOT_DEG) ** axis["curve"]
-    out = min(out, axis["limit"])
+    edge = axis["edge_pos"] if deg > 0 else axis["edge_neg"]
+    out = axis["target"] * min(abs(deg) / edge, 1.0) ** axis["curve"]
     out = math.copysign(out, deg)
     return -out if axis["invert"] else out
 

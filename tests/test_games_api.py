@@ -78,7 +78,7 @@ class GamesApiTests(unittest.TestCase):
         self.assertTrue(ac["launch_option_hint"])
         self.assertEqual(ac["foreign_tracker"], "opentrack")
         self.assertEqual(d["missing_libraries"], [])
-        self.assertEqual(ac["profile"]["axes"]["yaw"]["gain"], 2.0)
+        self.assertEqual(ac["profile"]["axes"]["yaw"]["target"], 180.0)
         self.assertFalse(d["games"][1]["has_prefix"])
 
     def test_enable_installs_and_saves(self):

@@ -11,7 +11,13 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import game_profiles as gp  # noqa: E402
 
-LINEAR = {"enabled": True, "invert": False, "gain": 1.0, "curve": 1.0, "limit": 180}
+LINEAR = {"enabled": True, "invert": False, "edge_neg": 90.0, "edge_pos": 90.0, "target": 90.0, "curve": 1.0}
+
+
+def old_map(d, gain, curve, limit):
+    """The model before calibration: gain at a fixed 40 degree pivot, capped at limit."""
+    o = min(gain * 40 * (abs(d) / 40) ** curve, limit)
+    return o if d >= 0 else -o
 
 
 def flat_profile(smoothing):
@@ -26,32 +32,73 @@ class ProfileTests(unittest.TestCase):
         p = gp.normalize_profile(None)
         self.assertEqual(p, gp.DEFAULT_PROFILE)
         self.assertIsNot(p, gp.DEFAULT_PROFILE)
-        q = gp.normalize_profile({"smoothing": 5, "axes": {"yaw": {"gain": 99, "curve": 0.2, "limit": -3}},
+        q = gp.normalize_profile({"smoothing": 5, "axes": {"yaw": {"edge_neg": 500, "edge_pos": 0, "target": 999,
+                                                                   "curve": 0.2}},
                                   "neck": {"strength": 7}, "junk": 1})
         self.assertEqual(q["smoothing"], 1.0)
-        self.assertEqual((q["axes"]["yaw"]["gain"], q["axes"]["yaw"]["curve"], q["axes"]["yaw"]["limit"]),
-                         (12.0, 1.0, 0.0))
-        # small monitor: a short glance at the edge has to turn the camera far (found in LS22)
-        self.assertEqual(gp.normalize_profile({"axes": {"yaw": {"gain": 10}}})["axes"]["yaw"]["gain"], 10.0)
+        y = q["axes"]["yaw"]
+        self.assertEqual((y["edge_neg"], y["edge_pos"], y["target"], y["curve"]), (180.0, 2.0, 180.0, 1.0))
         self.assertEqual(q["axes"]["pitch"], gp.DEFAULT_PROFILE["axes"]["pitch"])
         self.assertEqual(q["neck"]["strength"], 2.0)
         self.assertNotIn("junk", q)
+        self.assertNotIn("gain", y)
 
-    def test_map_axis_center_is_flat_with_curve(self):
-        axis = {"enabled": True, "invert": False, "gain": 2.0, "curve": 1.4, "limit": 180}
-        self.assertLess(abs(gp.map_axis(1.0, axis)), 2.0 * 1.0)
+    def test_defaults_behave_like_the_old_defaults(self):
+        old = {"yaw": (2.0, 1.4, 180), "pitch": (1.5, 1.4, 90), "roll": (1.0, 1.0, 90)}
+        for name, (gain, curve, limit) in old.items():
+            for d in (-60.0, -20.0, 5.0, 30.0, 45.0):
+                self.assertAlmostEqual(gp.map_axis(d, gp.DEFAULT_PROFILE["axes"][name]), old_map(d, gain, curve, limit),
+                                       delta=1.0, msg=(name, d))
+
+    def test_legacy_profile_behaves_the_same(self):
+        axis = gp.normalize_profile({"axes": {"yaw": {"gain": 2, "curve": 1.4, "limit": 180}}})["axes"]["yaw"]
+        for d in (5.0, 20.0, 40.0, 60.0, 100.0, -33.0):
+            self.assertAlmostEqual(gp.map_axis(d, axis), old_map(d, 2, 1.4, 180), places=1, msg=d)
+
+    def test_edge_reaches_target(self):
+        axis = {"enabled": True, "invert": False, "edge_neg": 10.0, "edge_pos": 25.0, "target": 180.0, "curve": 1.0}
+        self.assertAlmostEqual(gp.map_axis(25.0, axis), 180.0)
+        self.assertAlmostEqual(gp.map_axis(-10.0, axis), -180.0)
+        self.assertAlmostEqual(gp.map_axis(-5.0, axis), -90.0)
+        self.assertAlmostEqual(gp.map_axis(50.0, axis), 180.0)
         self.assertEqual(gp.map_axis(0.0, axis), 0.0)
 
-    def test_map_axis_reaches_gain_at_40_deg(self):
-        axis = {"enabled": True, "invert": False, "gain": 2.0, "curve": 1.4, "limit": 180}
-        self.assertAlmostEqual(gp.map_axis(40.0, axis), 80.0)
-        self.assertAlmostEqual(gp.map_axis(-40.0, axis), -80.0)
-
-    def test_map_axis_limit_and_invert_and_disabled(self):
-        axis = {"enabled": True, "invert": True, "gain": 3.0, "curve": 1.0, "limit": 90}
-        self.assertEqual(gp.map_axis(60.0, axis), -90.0)
+    def test_center_is_calm_with_curve_and_invert_and_disabled(self):
+        axis = {"enabled": True, "invert": True, "edge_neg": 40.0, "edge_pos": 40.0, "target": 90.0, "curve": 2.0}
+        self.assertAlmostEqual(gp.map_axis(20.0, axis), -22.5)
+        self.assertAlmostEqual(gp.map_axis(60.0, axis), -90.0)
         axis["enabled"] = False
         self.assertEqual(gp.map_axis(60.0, axis), 0.0)
+
+    def test_legacy_limit_zero_disables_axis(self):
+        axis = gp.normalize_profile({"axes": {"pitch": {"gain": 2, "curve": 1, "limit": 0}}})["axes"]["pitch"]
+        self.assertIs(axis["enabled"], False)
+
+    def test_legacy_extremes_clamped(self):
+        axis = gp.normalize_profile({"axes": {"yaw": {"gain": 0.1, "curve": 1, "limit": 180}}})["axes"]["yaw"]
+        self.assertEqual((axis["edge_neg"], axis["edge_pos"]), (180.0, 180.0))
+        linear = gp.normalize_profile({"axes": {"yaw": {"gain": 1, "curve": 1, "limit": 180}}})["axes"]["yaw"]
+        self.assertAlmostEqual(gp.map_axis(10.0, linear), 10.0)      # old gain 1 stays 1:1
+        broken = gp.normalize_profile({"axes": {"yaw": {"gain": "x", "limit": None}}})["axes"]["yaw"]
+        self.assertEqual(broken, gp.DEFAULT_PROFILE["axes"]["yaw"])
+
+    def test_monitors_normalized(self):
+        raw = [{"connector": "DP-1", "main": True}, "junk", {"connector": "x" * 100, "main": True}]
+        raw += [{"connector": f"HDMI-{i}"} for i in range(8)]
+        m = gp.normalize_profile({"monitors": raw})["monitors"]
+        self.assertEqual(len(m), 8)
+        self.assertEqual(m[0], {"connector": "DP-1", "main": True})
+        self.assertEqual(len(m[1]["connector"]), 64)
+        self.assertEqual([x["main"] for x in m].count(True), 1)
+        self.assertEqual(gp.normalize_profile({"monitors": [{"connector": "A"}, {"connector": "B"}]})["monitors"],
+                         [{"connector": "A", "main": True}, {"connector": "B", "main": False}])
+        self.assertEqual(gp.normalize_profile({})["monitors"], [])
+
+    def test_sensitivity_curve_roundtrip(self):
+        self.assertEqual(gp.sensitivity_to_curve(0), 3.0)
+        self.assertEqual(gp.sensitivity_to_curve(1), 1.0)
+        self.assertAlmostEqual(gp.curve_to_sensitivity(gp.sensitivity_to_curve(0.3)), 0.3)
+        self.assertEqual(gp.curve_to_sensitivity(5), 0.0)
 
     def test_neck_zero_at_center_and_moves_sideways_on_yaw(self):
         self.assertEqual(gp.neck_offset(0, 0, 0, 1.0), (0.0, 0.0, 0.0))
