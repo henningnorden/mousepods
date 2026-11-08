@@ -58,6 +58,8 @@
  "calib.the_cursor_is_paused_during_calibration": "Le curseur est mis en pause pendant la calibration.",
  "calib_overlay.cancel": "Annuler (Échap)",
  "calib_overlay.done": "Terminé",
+ "calib_overlay.head": "Mouvements de tête",
+ "calib_overlay.head_wait": "Un instant…",
  "calib_overlay.hold": "Regarde le point et ne bouge plus.",
  "calib_overlay.no_signal": "AirPods non connectés.",
  "calib_overlay.other_screen": "Regarde l'autre écran.",
