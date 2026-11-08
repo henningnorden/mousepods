@@ -1,13 +1,13 @@
-# Tests, head-tracking DLLs and the MousePods Flatpak bundle (fork: henningnorden/mousepods).
+# Tests, head-tracking DLLs and the MousePods Flatpak bundle (contributed by henningnorden).
 # Actions are pinned to commits; the tag in the comment is what the commit was when pinned.
 name: build
 
 on:
   push:
-    branches: [flatpak-desktop-app]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: [flatpak-desktop-app]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

@@ -27,7 +27,7 @@ Optional third-party dependency (not included in this distribution):
 Not affiliated with Apple Inc. or Garmin Ltd. AirPods is a trademark of Apple Inc.;
 Garmin, quatix and Connect IQ are trademarks of Garmin Ltd.
 
-Head-tracking bridge for Proton/Wine games (native/, this fork):
+Head-tracking bridge for Proton/Wine games (native/), contributed by Henning Norden:
   Copyright 2026 Henning Norden — https://github.com/henningnorden/mousepods
   native/npclient.c and native/freetrackclient.c are derived from opentrack
   (https://github.com/opentrack/opentrack), Copyright (c) Stanislaw Halik and
