@@ -89,3 +89,15 @@ def is_own_page(uri, port):
                 and not u.username and not u.password)
     except ValueError:                    # e.g. "127.0.0.1:8737.evil.com": not a port
         return False
+
+
+def connector_name(connector, index):
+    """GDK may not know a monitor's connector: give it a stable name from its position."""
+    return connector if connector else f"monitor-{index + 1}"
+
+
+def plan_overlays(requested, present):
+    """[(connector, roles)] for the monitors still there; if none is left, one overlay full screen
+    on the current monitor with every role, so the calibration never runs with nothing on screen."""
+    plan = [(m["connector"], m["roles"]) for m in requested if m["connector"] in present]
+    return plan or [(None, list(ROLES))]

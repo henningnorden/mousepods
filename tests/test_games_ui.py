@@ -115,5 +115,15 @@ class SteamChoiceUiTests(unittest.TestCase):
         self.assertIn('steam:', h[h.index("function renderGames"):h.index("function loadGames")])
 
 
+class BrowserCalibrationEscTests(unittest.TestCase):
+    def test_leaving_full_screen_cancels_the_calibration(self):
+        """In a browser Esc ends full screen before the overlay page sees it: the parent cancels."""
+        h = html()
+        frame = h[h.index("function calibFrame("):h.index("function calibWait(")]
+        self.assertIn("fullscreenchange", frame)
+        self.assertIn('action:"cancel"', frame)
+        self.assertIn(".focus()", frame)
+
+
 if __name__ == "__main__":
     unittest.main()

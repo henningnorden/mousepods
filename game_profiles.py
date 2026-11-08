@@ -75,7 +75,7 @@ def normalize_profile(raw):
     axes = raw.get("axes") if isinstance(raw.get("axes"), dict) else {}
     for name in AXES:
         src = axes.get(name) if isinstance(axes.get(name), dict) else {}
-        if "edge_neg" not in src and "edge_pos" not in src and ("gain" in src or "limit" in src):
+        if "edge_neg" not in src and "edge_pos" not in src and any(k in src for k in ("gain", "limit", "curve")):
             old = {k: _clamp(src.get(k, d), *_LEGACY_RANGES[k], d)
                    for k, d in zip(("gain", "curve", "limit"), LEGACY_DEFAULTS[name])}
             src = _axis_from_legacy(old["gain"], old["curve"], old["limit"],
