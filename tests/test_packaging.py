@@ -184,7 +184,8 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertEqual(w.count("secrets.FLATPAK_GPG_PRIVATE_KEY"), 1)
         i = w.index("secrets.FLATPAK_GPG_PRIVATE_KEY")
         step = w[w.rindex("- name:", 0, i):i]
-        self.assertIn("if: github.event_name == 'push'", step)
+        self.assertIn("if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'", step)
+        self.assertNotIn("pull_request", step)      # pull requests never get the secret
 
     def test_pages_job_only_after_a_publish(self):
         w = self.workflow()
