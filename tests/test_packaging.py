@@ -196,3 +196,11 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("concurrency:", job)
         self.assertIn("actions/deploy-pages@", job)
         self.assertIn("actions/upload-pages-artifact@", w)
+
+
+class RepoKeyTests(unittest.TestCase):
+    def test_committed_key_is_public_only(self):
+        with open(os.path.join(PKG, "mousepods-repo.asc"), encoding="ascii") as f:
+            text = f.read()
+        self.assertIn("BEGIN PGP PUBLIC KEY BLOCK", text)
+        self.assertNotIn("PRIVATE", text)                 # the secret key belongs in the Actions secret only
