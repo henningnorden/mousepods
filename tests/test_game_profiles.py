@@ -77,7 +77,32 @@ class ProfileTests(unittest.TestCase):
         p = flat_profile(0.0)
         p["neck"] = {"enabled": True, "strength": 1.0}
         out = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
-        self.assertGreater(out[0], 1.0)
+        self.assertGreater(abs(out[0]), 1.0)
+
+    def test_filter_neck_in_game_axes(self):
+        """The DLLs negate yaw but pass X through (as opentrack's wine wrapper does), so in the
+        game's frame X + is left: looking right must give a negative X, i.e. eyes to the right.
+        Found in Farming Simulator 22: with X + = right the head slid away from the look direction."""
+        p = flat_profile(0.0)
+        p["neck"] = {"enabled": True, "strength": 1.0}
+        x, _, z, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
+        self.assertLess(x, -1.0)
+        self.assertLess(z, 0.0)                       # unchanged: eyes come back a little
+
+    def test_filter_neck_per_game_inversion(self):
+        p = flat_profile(0.0)
+        p["neck"] = {"enabled": True, "strength": 1.0}
+        x, _, z, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
+        p["neck"].update(invert_x=True, invert_z=True)
+        xi, _, zi, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
+        self.assertAlmostEqual(xi, -x)
+        self.assertAlmostEqual(zi, -z)
+
+    def test_neck_inversion_flags_normalized(self):
+        q = gp.normalize_profile({"neck": {"invert_x": 1, "invert_z": "yes"}})
+        self.assertIs(q["neck"]["invert_x"], True)
+        self.assertIs(q["neck"]["invert_z"], True)
+        self.assertFalse(gp.normalize_profile({})["neck"]["invert_x"])
 
     def test_filter_is_deterministic(self):
         seq = [(0, 0, 0, i * 0.7 % 13, (i * 1.3) % 5, 0) for i in range(100)]

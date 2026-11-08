@@ -377,6 +377,8 @@
  "js.games.limit": "max °",
  "js.games.neck": "Modèle du cou",
  "js.games.neck_hint": "Déplace la position des yeux avec la rotation de la tête, comme une vraie tête sur un cou. Calculé, pas mesuré : les AirPods ne détectent pas l'inclinaison du buste.",
+ "js.games.neck_invert_x": "Inverser gauche/droite",
+ "js.games.neck_invert_z": "Inverser avant/arrière",
  "js.games.no_games": "Aucun jeu Steam installé.",
  "js.games.no_steam": "Steam est introuvable.",
  "js.games.off": "désactivé",

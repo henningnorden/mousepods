@@ -4,6 +4,8 @@
 Pure and deterministic: time comes in as `dt`, nothing reads a clock.
 Angles in degrees (opentrack convention: yaw + = look right, pitch + = look up,
 roll + = right ear towards the right shoulder); translation in cm (x right, y up, z forward).
+The game sees X + = left: the DLLs negate yaw but pass X through, like opentrack's wine
+wrapper, so ProfileFilter turns the neck offset round before it leaves (GAME_X).
 """
 import copy
 import math
@@ -11,10 +13,11 @@ import math
 AXES = ("yaw", "pitch", "roll")
 CURVE_PIVOT_DEG = 40.0          # at this head angle the output equals gain * angle, whatever the curve
 NECK_EYES_CM = (0.0, 8.0, 9.0)  # eyes relative to the neck pivot: right, up, forward
+GAME_X = -1.0                   # neck x (right +) -> game X (left +)
 
 DEFAULT_PROFILE = {
     "smoothing": 0.3,
-    "neck": {"enabled": False, "strength": 1.0},
+    "neck": {"enabled": False, "strength": 1.0, "invert_x": False, "invert_z": False},
     "axes": {
         "yaw": {"enabled": True, "invert": False, "gain": 2.0, "curve": 1.4, "limit": 180},
         "pitch": {"enabled": True, "invert": False, "gain": 1.5, "curve": 1.4, "limit": 90},
@@ -43,6 +46,8 @@ def normalize_profile(raw):
     neck = raw.get("neck") if isinstance(raw.get("neck"), dict) else {}
     p["neck"]["enabled"] = bool(neck.get("enabled", p["neck"]["enabled"]))
     p["neck"]["strength"] = _clamp(neck.get("strength", p["neck"]["strength"]), 0.0, 2.0, p["neck"]["strength"])
+    for k in ("invert_x", "invert_z"):           # games that read the axis the other way round
+        p["neck"][k] = bool(neck.get(k, p["neck"][k]))
     axes = raw.get("axes") if isinstance(raw.get("axes"), dict) else {}
     for name in AXES:
         src = axes.get(name) if isinstance(axes.get(name), dict) else {}
@@ -128,5 +133,7 @@ class ProfileFilter:
         neck = self.profile["neck"]
         if neck["enabled"]:
             dx, dy, dz = neck_offset(yaw, pitch, roll, neck["strength"])
-            x, y, z = x + dx, y + dy, z + dz
+            sx = -GAME_X if neck["invert_x"] else GAME_X
+            sz = -1.0 if neck["invert_z"] else 1.0
+            x, y, z = x + sx * dx, y + dy, z + sz * dz
         return (x, y, z, out[0], out[1], out[2])
