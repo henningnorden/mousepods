@@ -6,6 +6,8 @@ on:
   push:
     branches: [flatpak-desktop-app]
     tags: ["v*"]
+  pull_request:
+    branches: [flatpak-desktop-app]
   workflow_dispatch:
 
 permissions:
