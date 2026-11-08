@@ -51,6 +51,7 @@ from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = os.path.join(HERE, "ui", "index.html")
+CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
 
 MODELS = ["2013", "2014", "200e", "200f", "2002", "200a", "2019", "201b", "2024", "2027", "202d"]  # -> model.<pid>
 INFO_LABEL_KEYS = ["info.name", "info.model", "info.manufacturer", "info.serial", "info.firmware", "info.firmware2",
@@ -768,8 +769,9 @@ class WebUI:
                     return self._json({"error": tr("srv.error.forbidden")}, 403)
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
-                if self.path in ("/", "/index.html"):
-                    data = open(UI_FILE, "rb").read()
+                if self.path in ("/", "/index.html", "/calibrate"):
+                    with open(CALIBRATE_FILE if self.path == "/calibrate" else UI_FILE, "rb") as f:
+                        data = f.read()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Cache-Control", "no-store")
