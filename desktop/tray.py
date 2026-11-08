@@ -12,7 +12,7 @@ from gi.repository import Gio, GLib  # noqa: E402
 from desktop import menu  # noqa: E402
 from i18n import tr  # noqa: E402
 
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 log = logging.getLogger(__name__)
 
 SNI_XML = """<node><interface name="org.kde.StatusNotifierItem">

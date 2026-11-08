@@ -19,7 +19,7 @@ import bridge_install  # noqa: E402
 import paths  # noqa: E402
 
 PKG = os.path.join(ROOT, "packaging", "flatpak")
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 
 
 class ManifestTests(unittest.TestCase):
@@ -123,27 +123,27 @@ class RepoFilesTests(unittest.TestCase):
     def test_flatpakref_per_channel(self):
         import base64
         for channel in ("stable", "test"):
-            r = self.parse(self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key, channel))["Flatpak Ref"]
+            r = self.parse(self.mr.flatpakref("https://starman-tech.github.io/mousepods", self.key, channel))["Flatpak Ref"]
             self.assertEqual(r["Name"], APP_ID)
             self.assertEqual(r["Branch"], channel)
-            self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
+            self.assertEqual(r["Url"], "https://starman-tech.github.io/mousepods/repo/")
             self.assertEqual(r["RuntimeRepo"], "https://dl.flathub.org/repo/flathub.flatpakrepo")
             self.assertEqual(r["IsRuntime"], "false")
             self.assertEqual(base64.b64decode(r["GPGKey"]), self.key)
         self.assertEqual(self.mr.REF_FILES, {"stable": "MousePods.flatpakref", "test": "MousePods-test.flatpakref"})
 
     def test_flatpakrepo(self):
-        r = self.parse(self.mr.flatpakrepo("https://henningnorden.github.io/mousepods/", self.key))["Flatpak Repo"]
-        self.assertEqual(r["Url"], "https://henningnorden.github.io/mousepods/repo/")
+        r = self.parse(self.mr.flatpakrepo("https://starman-tech.github.io/mousepods/", self.key))["Flatpak Repo"]
+        self.assertEqual(r["Url"], "https://starman-tech.github.io/mousepods/repo/")
         self.assertIn("GPGKey", r)
 
     def test_needs_a_key_https_and_a_known_channel(self):
         with self.assertRaises(ValueError):
-            self.mr.flatpakref("https://henningnorden.github.io/mousepods", b"", "stable")
+            self.mr.flatpakref("https://starman-tech.github.io/mousepods", b"", "stable")
         with self.assertRaises(ValueError):
-            self.mr.flatpakref("http://henningnorden.github.io/mousepods", self.key, "stable")
+            self.mr.flatpakref("http://starman-tech.github.io/mousepods", self.key, "stable")
         with self.assertRaises(ValueError):
-            self.mr.flatpakref("https://henningnorden.github.io/mousepods", self.key, "master")
+            self.mr.flatpakref("https://starman-tech.github.io/mousepods", self.key, "master")
 
     def test_channel_for_ref(self):
         self.assertEqual(self.mr.channel_for("refs/tags/v0.1.0"), "stable")
@@ -180,7 +180,7 @@ class PublishWorkflowTests(unittest.TestCase):
     def test_build_uses_the_channel_as_branch(self):
         w = self.workflow()
         self.assertIn("--default-branch=", w)
-        self.assertRegex(w, r"build-bundle repo MousePods\.flatpak io\.github\.henningnorden\.MousePods \"\$CHANNEL\"")
+        self.assertRegex(w, r"build-bundle repo MousePods\.flatpak io\.github\.starman_tech\.MousePods \"\$CHANNEL\"")
 
     def test_secret_only_in_the_publish_step_never_for_pull_requests(self):
         w = self.workflow()
@@ -203,7 +203,10 @@ class PublishWorkflowTests(unittest.TestCase):
 
 class RepoKeyTests(unittest.TestCase):
     def test_committed_key_is_public_only(self):
-        with open(os.path.join(PKG, "mousepods-repo.asc"), encoding="ascii") as f:
+        path = os.path.join(PKG, "mousepods-repo.asc")
+        if not os.path.exists(path):
+            self.skipTest("no signing key committed yet: nothing is published until there is one")
+        with open(path, encoding="ascii") as f:
             text = f.read()
         self.assertIn("BEGIN PGP PUBLIC KEY BLOCK", text)
         self.assertNotIn("PRIVATE", text)                 # the secret key belongs in the Actions secret only

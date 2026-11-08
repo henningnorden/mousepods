@@ -8,7 +8,7 @@ import logging
 import os
 import shutil
 
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 log = logging.getLogger(__name__)
 
 

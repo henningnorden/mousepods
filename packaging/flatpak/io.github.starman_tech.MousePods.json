@@ -1,5 +1,5 @@
 {
-  "app-id": "io.github.henningnorden.MousePods",
+  "app-id": "io.github.starman_tech.MousePods",
   "runtime": "org.gnome.Platform",
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
@@ -40,11 +40,11 @@
         "if [ -f build-info.json ]; then cp build-info.json /app/share/mousepods/; fi",
         "install -d /app/share/mousepods/native",
         "cp native/out/*.dll /app/share/mousepods/native/",
-        "install -Dm644 LICENSE NOTICE -t /app/share/licenses/io.github.henningnorden.MousePods/",
+        "install -Dm644 LICENSE NOTICE -t /app/share/licenses/io.github.starman_tech.MousePods/",
         "install -Dm755 packaging/flatpak/mousepods-app.sh /app/bin/mousepods-app",
-        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.desktop -t /app/share/applications/",
-        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.metainfo.xml -t /app/share/metainfo/",
-        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.svg -t /app/share/icons/hicolor/scalable/apps/"
+        "install -Dm644 packaging/flatpak/io.github.starman_tech.MousePods.desktop -t /app/share/applications/",
+        "install -Dm644 packaging/flatpak/io.github.starman_tech.MousePods.metainfo.xml -t /app/share/metainfo/",
+        "install -Dm644 packaging/flatpak/io.github.starman_tech.MousePods.svg -t /app/share/icons/hicolor/scalable/apps/"
       ],
       "sources": [
         {

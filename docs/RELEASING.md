@@ -3,7 +3,7 @@
 ## What's new
 
 Release notes live in the AppStream metainfo,
-`packaging/flatpak/io.github.henningnorden.MousePods.metainfo.xml`, newest entry first.
+`packaging/flatpak/io.github.starman_tech.MousePods.metainfo.xml`, newest entry first.
 Discover and GNOME Software show that entry as "what's new" when the update arrives, and the
 GitHub release page starts with the same text.
 
@@ -44,3 +44,18 @@ Pre-release tags (`v1.1.0-rc1`) need no entry and become pre-releases on GitHub.
 
 Both are signed with the key in `packaging/flatpak/mousepods-repo.asc` (secret
 `FLATPAK_GPG_PRIVATE_KEY`). Without the secret nothing is published and the build stays green.
+
+## One-time setup of the repo
+
+1. A signing key, without a passphrase (the CI cannot type one):
+   `gpg --batch --passphrase '' --quick-gen-key "MousePods Flatpak repo" rsa4096 sign never`
+2. Commit the public part as `packaging/flatpak/mousepods-repo.asc`:
+   `gpg --armor --export "MousePods Flatpak repo" > packaging/flatpak/mousepods-repo.asc`
+3. Store the secret part as the Actions secret `FLATPAK_GPG_PRIVATE_KEY`
+   (`gpg --armor --export-secret-keys "MousePods Flatpak repo"`), and keep a backup of it: users
+   installed with the public key, a new key means they have to install again.
+4. Settings → Pages → Source: **GitHub Actions**. Settings → Environments → github-pages → deployment
+   branches and tags: allow `main` and tags `v*`.
+
+From then on every push to main updates the test channel and every `v*` tag the stable channel. The
+website from `docs/` is deployed with them unchanged, the install page is `install.html`.

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from releases import load  # noqa: E402  (one parser for the app and this check)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-METAINFO = os.path.join(HERE, "io.github.henningnorden.MousePods.metainfo.xml")
+METAINFO = os.path.join(HERE, "io.github.starman_tech.MousePods.metainfo.xml")
 
 
 def version_of(tag):

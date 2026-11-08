@@ -34,7 +34,7 @@ META = """<?xml version="1.0" encoding="UTF-8"?>
 </component>"""
 
 FLATPAK_INFO = """[Application]
-name=io.github.henningnorden.MousePods
+name=io.github.starman_tech.MousePods
 
 [Instance]
 branch=test
@@ -88,7 +88,7 @@ class ReleasesTests(unittest.TestCase):
     def test_ci_writes_build_info_and_the_manifest_ships_it(self):
         with open(os.path.join(ROOT, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
             self.assertIn("build-info.json", f.read())
-        with open(os.path.join(ROOT, "packaging", "flatpak", "io.github.henningnorden.MousePods.json"),
+        with open(os.path.join(ROOT, "packaging", "flatpak", "io.github.starman_tech.MousePods.json"),
                   encoding="utf-8") as f:
             self.assertIn("build-info.json", f.read())
 

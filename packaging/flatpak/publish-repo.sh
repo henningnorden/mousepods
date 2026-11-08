@@ -18,7 +18,7 @@ CHANNEL=${2:?usage: publish-repo.sh <base-url> <channel>}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 PUB="$HERE/mousepods-repo.asc"
-APP_ID=io.github.henningnorden.MousePods
+APP_ID=io.github.starman_tech.MousePods
 OUT=${GITHUB_OUTPUT:-/dev/null}
 
 fail() { echo "::error title=flatpak repo::$*"; exit 1; }

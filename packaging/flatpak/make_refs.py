@@ -10,11 +10,11 @@ import base64
 import os
 import sys
 
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 CHANNELS = ("stable", "test")
 REF_FILES = {"stable": "MousePods.flatpakref", "test": "MousePods-test.flatpakref"}
 TITLE = "MousePods"
-HOMEPAGE = "https://github.com/henningnorden/mousepods"
+HOMEPAGE = "https://github.com/starman-tech/mousepods"
 FLATHUB = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 
 

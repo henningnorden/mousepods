@@ -7,7 +7,7 @@ import os
 import xml.etree.ElementTree as ET   # our own metainfo file only, never input from elsewhere
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 METAINFO_PATHS = (f"/app/share/metainfo/{APP_ID}.metainfo.xml",                      # inside the Flatpak
                   os.path.join(HERE, "packaging", "flatpak", f"{APP_ID}.metainfo.xml"))  # from the source tree
 

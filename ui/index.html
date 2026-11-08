@@ -974,7 +974,7 @@ function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appi
 function renderGames(){const box=$("#games-list");if(!gamesData)return;
   if(!gamesData.steam_found){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_steam"))}</div>`;return}
   if(!gamesData.games.length){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_games"))}</div>`;return}
-  const miss=(gamesData.missing_libraries||[]).map(p=>`<div class="card hint">${esc(t("js.games.hint_missing_library",{path:p}))}<br><code>flatpak override --user --filesystem=${esc(p)} io.github.henningnorden.MousePods</code></div>`).join("");
+  const miss=(gamesData.missing_libraries||[]).map(p=>`<div class="card hint">${esc(t("js.games.hint_missing_library",{path:p}))}<br><code>flatpak override --user --filesystem=${esc(p)} io.github.starman_tech.MousePods</code></div>`).join("");
   box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+miss+gamesData.games.map(gameCard).join("");
   box.querySelectorAll(".game").forEach(card=>{const appid=card.dataset.appid,g=gamesData.games.find(x=>x.appid===appid);
     card.querySelector("[data-toggle]").onchange=e=>{const on=e.target.checked;e.target.disabled=true;
