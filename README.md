@@ -40,8 +40,10 @@
 >   without opentrack and without launch options. MousePods places a small TrackIR/FreeTrack DLL
 >   (`native/`) in the game's Proton prefix; the game reads the head pose from a file MousePods
 >   writes. Unticking puts back whatever tracker was set up before.
-> - **Per-game profiles:** smoothing, range and response curve per axis, axes on/off, and a neck
->   model (computed from the head rotation, AirPods cannot measure leaning).
+> - **Per-game profiles:** damping, range and response curve per axis, axes on/off, and a neck
+>   model (computed from the head rotation, AirPods cannot measure leaning). **Calibrate** shows
+>   one point at a time full screen on the monitors you play that game on; hold still at each and
+>   MousePods measures how far you turn your head, so a small monitor and three monitors both work.
 > - **Desktop app:** own window, tray icon, autostart at login, first-run wizard; packaged as a
 >   Flatpak (`packaging/flatpak/`, built by GitHub Actions). Bluetooth works without
 >   `bluetoothctl` through BlueZ over D-Bus.
