@@ -181,12 +181,21 @@ def have_bluetoothctl():
     return shutil.which("bluetoothctl") is not None
 
 
+class BluetoothToolMissing(OSError):
+    """bluetoothctl disappeared between the check and the call (errno 112, like _pick)."""
+
+    def __init__(self):
+        super().__init__(112, BLUETOOTHCTL_MISSING)
+
+
 def bt_info(addr):
     try:
         return subprocess.run(["bluetoothctl", "info", addr], capture_output=True, text=True,
                               timeout=5).stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
         return ""
+    except FileNotFoundError:
+        raise BluetoothToolMissing() from None
 
 
 def apple_audio_devices():
@@ -194,8 +203,10 @@ def apple_audio_devices():
     try:
         lines = subprocess.run(["bluetoothctl", "devices", "Paired"], capture_output=True,
                                text=True, timeout=5).stdout.splitlines()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
         return out
+    except FileNotFoundError:
+        raise BluetoothToolMissing() from None
     for ln in lines:
         m = re.match(r"Device ([0-9A-F:]{17}) (.*)", ln.strip())
         if not m:
@@ -208,7 +219,11 @@ def apple_audio_devices():
 
 
 def product_id(addr):
-    m = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", bt_info(addr))
+    try:
+        info = bt_info(addr)
+    except BluetoothToolMissing:
+        return "0000"   # model unknown, but a fixed address can still connect
+    m = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", info)
     return m.group(1).lower() if m else "0000"
 
 
@@ -1362,6 +1377,7 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
     last_recovery = [-1e9]
     warned_case = False
     cfg_addr_hint = [None]
+    tool_missing_logged = [False]
     log.info("Démarrage — mode %s, source %s", "DIAGNOSTIC" if diag else cfg["mode"], cfg["source"])
     aap = None
     try:
@@ -1372,9 +1388,16 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
             try:
                 aap.connect()
             except (OSError, subprocess.TimeoutExpired) as e:
-                log.warning("Connexion impossible (%s) — nouvel essai dans %ss", e, backoff)
-                if web:
-                    web.set_status(f"Recherche des AirPods… ({e})")
+                if isinstance(e, BluetoothToolMissing):
+                    if not tool_missing_logged[0]:
+                        log.error("%s", e)
+                        tool_missing_logged[0] = True
+                    if web:
+                        web.set_status(str(e))
+                else:
+                    log.warning("Connexion impossible (%s) — nouvel essai dans %ss", e, backoff)
+                    if web:
+                        web.set_status(f"Recherche des AirPods… ({e})")
                 t_end = time.monotonic() + backoff
                 while time.monotonic() < t_end:
                     r, _, _ = select.select([ctrl], [], [], min(0.2, max(0.0, t_end - time.monotonic())))
