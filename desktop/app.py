@@ -5,18 +5,21 @@ running in the background (closing the window only hides it).
     mousepods-app               start (or show the running instance)
     mousepods-app --background  start hidden (autostart at login)
 """
+import json
 import logging
 import os
 import sys
+import threading
+import urllib.request
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
-from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, WebKit  # noqa: E402
 
 import i18n  # noqa: E402
-from desktop import controller  # noqa: E402
+from desktop import controller, overlay  # noqa: E402
 
 APP_ID = "io.github.henningnorden.MousePods"
 PORT = 8737
@@ -41,6 +44,9 @@ class App(Gtk.Application):
         self.tray = None
         self.refused = False
         self.error = None                             # (kind, detail) shown instead of the UI
+        self.view = None
+        self.overlays = []                            # calibration overlay windows, one per monitor
+        self._closing_overlays = False
         self.cfg_path, self.log_path = data_dirs()
 
     def do_startup(self):
@@ -76,7 +82,8 @@ class App(Gtk.Application):
         if self.win is None:
             self.win = Gtk.ApplicationWindow(application=self, title="MousePods")
             self.win.set_default_size(1280, 860)
-            view = WebKit.WebView()
+            view = self._web_view()
+            self.view = view
             if self.error:
                 from desktop.errors import error_page
                 view.load_html(error_page(*self.error), None)      # never load a foreign server
@@ -85,6 +92,106 @@ class App(Gtk.Application):
             self.win.set_child(view)
             self.win.connect("close-request", self._close)
         self.win.present()
+
+    # ---- page <-> app messages (calibration overlay, see desktop/overlay.py)
+    def _web_view(self):
+        ucm = WebKit.UserContentManager()
+        ucm.register_script_message_handler("mousepods", None)
+        ucm.connect("script-message-received::mousepods", self._on_message)
+        return WebKit.WebView(user_content_manager=ucm)
+
+    def _on_message(self, _ucm, value):
+        msg = overlay.parse_message(value.to_json(0))
+        if msg is None or self.error:
+            return
+        cmd = msg["cmd"]
+        if cmd == "monitors":
+            mons = self._monitors()
+            present = [m["connector"] for m in mons]
+            self._reply({"cmd": "monitors", "list": mons, "selection": overlay.resolve_monitors(msg["saved"], present)})
+        elif cmd == "flash":
+            self._flash(msg["connector"])
+        elif cmd == "overlay":
+            self._open_overlays(msg["monitors"])
+        elif cmd == "overlay_close":
+            self._close_overlays()
+
+    def _reply(self, obj):
+        if self.view is not None:
+            js = "window.mpDesktop&&mpDesktop.onMessage(" + json.dumps(obj) + ")"
+            self.view.evaluate_javascript(js, -1, None, None, None, None, None)
+
+    @staticmethod
+    def _gdk_monitors():
+        model = Gdk.Display.get_default().get_monitors()
+        return [model.get_item(i) for i in range(model.get_n_items())]
+
+    def _monitors(self):
+        out = []
+        for m in self._gdk_monitors():
+            g = m.get_geometry()
+            out.append({"connector": m.get_connector() or "?", "model": m.get_model() or "",
+                        "width": g.width, "height": g.height})
+        return out
+
+    def _monitor(self, connector):
+        return next((m for m in self._gdk_monitors() if m.get_connector() == connector), None)
+
+    def _flash(self, connector):
+        mon = self._monitor(connector)
+        if mon is None:
+            return
+        win = Gtk.Window(application=self, decorated=False)
+        label = Gtk.Label()
+        label.set_markup(f"<span size='64000' weight='bold'>{GLib.markup_escape_text(connector)}</span>\n"
+                         f"<span size='24000'>{GLib.markup_escape_text(mon.get_model() or '')}</span>")
+        label.set_justify(Gtk.Justification.CENTER)
+        win.set_child(label)
+        win.fullscreen_on_monitor(mon)
+        win.present()
+        GLib.timeout_add(1500, lambda: (win.destroy(), GLib.SOURCE_REMOVE)[1])
+
+    def _open_overlays(self, monitors):
+        self._close_overlays()
+        for m in monitors:
+            mon = self._monitor(m["connector"])
+            if mon is None:
+                continue
+            win = Gtk.Window(application=self, decorated=False, title="MousePods")
+            view = self._web_view()
+            view.load_uri(overlay.overlay_url(PORT, m["roles"]))
+            win.set_child(view)
+            win.connect("close-request", self._overlay_closed)
+            win.fullscreen_on_monitor(mon)
+            win.present()
+            self.overlays.append(win)
+
+    def _overlay_closed(self, _win):
+        # closed some other way than through the page (Alt+F4...): the calibration is over
+        if not self._closing_overlays:
+            threading.Thread(target=self._cancel_calibration, daemon=True).start()
+            GLib.idle_add(lambda: (self._close_overlays(), GLib.SOURCE_REMOVE)[1])
+        return False
+
+    @staticmethod
+    def _cancel_calibration():
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/calibration", method="POST",
+                                     data=b'{"action": "cancel"}', headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=2).read()
+        except OSError as e:
+            log.warning("calibration cancel failed: %s", e)
+
+    def _close_overlays(self):
+        wins, self.overlays = self.overlays, []
+        self._closing_overlays = True
+        try:
+            for w in wins:
+                w.destroy()
+        finally:
+            self._closing_overlays = False
+        if wins and self.win is not None:
+            self.win.present()
 
     def _close(self, win):
         if self.error:                                # nothing runs in the background: really quit
