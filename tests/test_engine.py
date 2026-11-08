@@ -229,6 +229,7 @@ def make_controller(mode, **over):
     cfg = m.load_config("/nonexistent.json")
     cfg["mode"] = mode
     cfg["notifications"] = False
+    cfg["mouse_paused"] = False          # mouse control switched on (it starts paused)
     cfg.update(over)
     ptr = FakePointer()
     ctl = m.Controller(cfg, ptr)

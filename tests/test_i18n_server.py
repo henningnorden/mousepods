@@ -25,7 +25,7 @@ FRENCH = re.compile(r"[éèêàâçùûôîœÉÈÀÊ]|\b(de|la|le|les|des|du|en
 import airpods_mouse_controller as _ctl  # noqa: E402
 
 IDENTIFIERS = {
-    _ctl.BLUETOOTHCTL_MISSING,   # bilingual log/exception text; the UI shows srv.status.bluetoothctl_missing
+    _ctl.BLUETOOTHCTL_MISSING,   # upstream's bilingual log/exception text (dd70e4f); UI shows srv.status.bluetoothctl_missing
 }
 SKIP_CALLS = {"debug", "info", "warning", "error", "exception", "critical", "print", "add_argument",
               "ArgumentParser", "tr", "_"}
@@ -62,6 +62,7 @@ def french_literals(path):
 class ServerStringsTests(unittest.TestCase):
     def test_model_name_translated(self):
         self.assertEqual(i18n.tr("model.2013", "en"), "AirPods (3rd generation)")
+        self.assertEqual(i18n.tr("model.2013", "de"), "AirPods (3. Generation)")
         self.assertEqual(i18n.tr("model.2013", "fr"), "AirPods (3ᵉ génération)")
 
     def test_info_labels_complete(self):
@@ -107,7 +108,7 @@ class ServerStringsTests(unittest.TestCase):
             cfg_path = os.path.join(d, "config.json")
             with open(cfg_path, "w") as f:
                 f.write("{}")
-            ui = web.WebUI(types.SimpleNamespace(cfg={"ui_lang": "fr"}), cfg_path, port=0)
+            ui = web.WebUI(types.SimpleNamespace(cfg={"ui_lang": "de"}), cfg_path, port=0)
             ui.start()
             port = ui.server.server_address[1]
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/config", method="POST",
@@ -121,8 +122,8 @@ class ServerStringsTests(unittest.TestCase):
     def test_tk_language_sets_process_language(self):
         import airpods_mouse_controller as m
         i18n.set_lang("en")
-        self.assertEqual(m.tk_language({"ui_lang": "fr"}), "fr")
-        self.assertEqual(i18n.get_lang(), "fr")   # SensorReader.status etc. follow too
+        self.assertEqual(m.tk_language({"ui_lang": "de"}), "de")
+        self.assertEqual(i18n.get_lang(), "de")   # SensorReader.status etc. follow too
         i18n.set_lang("en")
 
     def test_tk_windows_use_tk_language(self):
@@ -142,7 +143,7 @@ class ServerStringsTests(unittest.TestCase):
             cfg_path = os.path.join(d, "config.json")
             with open(cfg_path, "w") as f:
                 f.write("{}")
-            ui = web.WebUI(types.SimpleNamespace(cfg={"ui_lang": "fr"}), cfg_path, port=0)
+            ui = web.WebUI(types.SimpleNamespace(cfg={"ui_lang": "de"}), cfg_path, port=0)
             ui.start()
             port = ui.server.server_address[1]
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/config", method="POST",
@@ -155,12 +156,12 @@ class ServerStringsTests(unittest.TestCase):
                 saved = json.load(f)
             ui.server.shutdown()
         self.assertEqual(cm.exception.code, 400)
-        self.assertEqual(got["setting"], "fr")
+        self.assertEqual(got["setting"], "de")
         self.assertNotIn("ui_lang", saved)
 
     def test_current_lang_follows_config(self):
-        i18n.set_lang("fr")
-        self.assertEqual(i18n.tr("lang.auto"), "Automatique")
+        i18n.set_lang("de")
+        self.assertEqual(i18n.tr("lang.auto"), "Automatisch")
         i18n.set_lang("en")
         self.assertEqual(i18n.tr("lang.auto"), "Automatic")
 

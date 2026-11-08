@@ -22,6 +22,9 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
   GET  /api/pose        pose de tête en direct pour la page /demo (cockpit 3D) ; garde la pose calculée tant que la page interroge
+  GET  /api/calibration  calibration of a game profile: {"active", "step", "progress", "hint", "result"}
+  POST /api/calibration  {"action": "start" | "cancel"} | {"action": "save_baseline", "yaw", "pitch", ...}
+  GET  /calibrate        full-screen overlay for that calibration (ui/calibrate.html?roles=main,left,right)
   POST /api/opentrack    {"enabled": true, "host": "127.0.0.1", "port": 4242, ..., "joystick": {"enabled": true, ...}}
                          | {"action": "recenter"}       (page Simulateurs ; voir docs/SIMS.md)
   GET  /api/garmin       montre Garmin : module installé ?, connexion, calibration guidée, réglages
@@ -44,10 +47,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import airpods_mouse_controller as m
 import i18n
+import paths
 from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = os.path.join(HERE, "ui", "index.html")
+CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
 DEMO_FILE = os.path.join(HERE, "ui", "cockpit.html")          # /demo : cockpit réaliste (WebGL)
 DEMO_SIMPLE_FILE = os.path.join(HERE, "ui", "demo.html")      # /demo/simple : rendu canvas léger
 VENDOR = {"three.module.min.js": "text/javascript", "Sky.js": "text/javascript",
@@ -372,6 +377,35 @@ class CalibSession:
                 "profile": getattr(self, "profile", None)}
 
 
+def write_instance_token():
+    """Random token proving to the desktop app that this server is our controller
+    (desktop/controller.py). Per-user file, 0600, replaced atomically, never followed as a link."""
+    import secrets
+    from desktop.controller import token_path
+    token = secrets.token_hex(16)
+    path = token_path()
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        os.unlink(tmp)                   # left over by a crashed process with the same pid
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
+    os.replace(tmp, path)
+    return token
+
+
+def saved_config_value(cfg_path, key):
+    """A top-level value from config.json as saved on disk (None if missing/unreadable)."""
+    try:
+        with open(cfg_path) as f:
+            return json.load(f).get(key)
+    except (OSError, ValueError):
+        return None
+
+
 class WebUI:
     def __init__(self, ctl, cfg_path, port=8737):
         self.ctl, self.cfg_path, self.port = ctl, cfg_path, port
@@ -388,7 +422,7 @@ class WebUI:
         self.speech_result = None
         try:
             import silent_speech
-            self.speech = silent_speech.SpeechSession(os.path.join(HERE, "captures", "private", "silent_speech.json"))
+            self.speech = silent_speech.SpeechSession(os.path.join(paths.captures_dir(private=True), "silent_speech.json"))
             ctl.gesture_hooks.append(self.speech.on_sample)
         except Exception as e:  # noqa: BLE001
             m.log.warning("Parole silencieuse indisponible : %s", e)
@@ -500,7 +534,7 @@ class WebUI:
             g.cancel_calib()
         elif a == "rec_start":
             name = re.sub(r"[^\w.-]", "_", str(body.get("name") or f"gestes_{int(time.time())}"))
-            g.start_record(os.path.join(HERE, "captures", "private", name + ".csv"), str(body.get("label", "")))
+            g.start_record(os.path.join(paths.captures_dir(private=True), name + ".csv"), str(body.get("label", "")))
         elif a == "rec_label":
             g.set_label(str(body.get("label", "")))
         elif a == "rec_stop":
@@ -540,7 +574,7 @@ class WebUI:
         if self.labo is not None and not self.labo.done:
             self.labo.cancel()
         name = f"labo_{proto}_{time.strftime('%Y%m%d_%H%M%S')}"
-        path = os.path.join(HERE, "captures", "private", name + ".json")
+        path = os.path.join(paths.captures_dir(private=True), name + ".json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         now = time.monotonic()
         rec = {"t0": now, "until": now + steps[-1]["t1"] + 1.5, "path": path, "rows": [], "phase": ""}
@@ -706,7 +740,7 @@ class WebUI:
             "ear": ear_view(self.dev.ear),
             "controls": [control_view(c) for c in sorted(self.dev.controls.values(), key=lambda c: c["ident"])],
             "services": services, "replies": replies, "log": log, "counts": counts,
-            "config": cfg, "profiles": ctl.cfg.get("profiles", {}),
+            "config": cfg, "profiles": ctl.cfg.get("profiles", {}), "flatpak": paths.in_flatpak(),
             "profile_key": ctl.profile_key(), "calibrated": ctl.profile_key() in ctl.cfg.get("profiles", {}),
             "uptime": round(time.time() - self.t_start),
             "gesture_stats": ctl.gestures.buf.stats() if getattr(ctl, "gestures", None) else None,
@@ -729,20 +763,31 @@ class WebUI:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def _local_host(self):
+                """DNS-rebinding guard: only answer requests addressed to our own host name."""
+                port = self.server.server_address[1]
+                host = (self.headers.get("Host") or "").lower()
+                return host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
+
             def do_GET(self):
+                if not self._local_host():
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
                 if self.path.startswith("/vendor/") and self.path[8:] in VENDOR:
-                    data = open(os.path.join(HERE, "ui", "vendor", self.path[8:]), "rb").read()
+                    with open(os.path.join(HERE, "ui", "vendor", self.path[8:]), "rb") as f:
+                        data = f.read()
                     self.send_response(200)
                     self.send_header("Content-Type", VENDOR[self.path[8:]])
                     self.send_header("Cache-Control", "max-age=86400")
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
-                elif self.path in ("/", "/index.html", "/demo", "/demo/simple"):
-                    page = {"/demo": DEMO_FILE, "/demo/simple": DEMO_SIMPLE_FILE}.get(self.path, UI_FILE)
-                    data = open(page, "rb").read()
+                elif self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo/simple"):
+                    page = {"/calibrate": CALIBRATE_FILE, "/demo": DEMO_FILE,
+                            "/demo/simple": DEMO_SIMPLE_FILE}.get(self.path, UI_FILE)
+                    with open(page, "rb") as f:
+                        data = f.read()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Cache-Control", "no-store")
@@ -759,9 +804,20 @@ class WebUI:
                                 "rec": bool(getattr(ui, "demo_rec", False)),
                                 "video": getattr(ui, "demo_last_video", None)})
                 elif self.path == "/api/ping":
-                    self._json({"ok": True})
+                    self._json({"ok": True, "instance": ui.instance_token})
                 elif self.path == "/api/i18n":
                     self._json(i18n.i18n_payload(ui.ctl.cfg, i18n.env_lang()))
+                elif self.path == "/api/autostart":
+                    from desktop import autostart
+                    saved = saved_config_value(ui.cfg_path, "autostart")
+                    self._json({"enabled": bool(saved if autostart.in_flatpak() else autostart.is_enabled() or saved),
+                                "flatpak": autostart.in_flatpak()})
+                elif self.path == "/api/games":
+                    import games_service
+                    self._json(games_service.list_payload(ui.cfg_path))
+                elif self.path == "/api/calibration":
+                    ui.ctl.calibration_tick(time.monotonic())       # also ends it when the AirPods are gone
+                    self._json(ui.ctl.calibration_state())
                 elif self.path == "/api/state":
                     self._json(ui.state())
                 elif self.path == "/api/gestures":
@@ -800,6 +856,18 @@ class WebUI:
                     self._json({"error": tr("srv.error.not_found")}, 404)
 
             def do_POST(self):
+                if not self._local_host():
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
+                # CSRF guard: any web page can POST to 127.0.0.1. Only JSON bodies (cross-site JSON
+                # needs a CORS preflight we never answer) and, when the browser sends one, our own
+                # Origin are accepted.
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if ctype != "application/json":
+                    return self._json({"error": tr("srv.error.bad_request")}, 415)
+                origin = self.headers.get("Origin")
+                port = self.server.server_address[1]
+                if origin and origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
                 n = int(self.headers.get("Content-Length", 0))
                 if self.path == "/api/demo/upload":            # page /demo : vidéo enregistrée depuis le canvas
                     if not 0 < n <= 400 * 1024 * 1024:
@@ -848,7 +916,7 @@ class WebUI:
                     ui.q.put(("reconnect",))
                 elif self.path == "/api/record":
                     secs = float(body.get("seconds", 10))
-                    path = os.path.join(HERE, "captures", body.get("name", f"record_{int(time.time())}") + ".json")
+                    path = os.path.join(paths.captures_dir(), os.path.basename(str(body.get("name", f"record_{int(time.time())}"))) + ".json")
                     now = time.monotonic()
                     ui.rec = {"t0": now, "until": now + secs, "path": path, "rows": []}
                     return self._json({"ok": True, "path": path})
@@ -908,10 +976,63 @@ class WebUI:
                         return self._json({"error": str(e)}, 400)
                     except RuntimeError as e:
                         return self._json({"error": str(e)}, 503)
+                elif self.path == "/api/wizard":
+                    done = bool(body.get("done"))
+                    m.update_config_file(ui.cfg_path, {"wizard_done": done})
+                    ui.ctl.cfg["wizard_done"] = done
+                    return self._json({"ok": True})
+                elif self.path == "/api/autostart":
+                    from desktop import autostart
+                    on = bool(body.get("enabled"))
+                    try:
+                        autostart.set_enabled(on)
+                    except Exception as e:  # noqa: BLE001  (portal / filesystem error -> report)
+                        return self._json({"error": tr("srv.error.autostart", error=e)}, 500)
+                    m.update_config_file(ui.cfg_path, {"autostart": on})
+                    return self._json({"ok": True, "enabled": on})
+                elif self.path.startswith("/api/games/"):
+                    return self._games_post(self.path[len("/api/games/"):], body)
+                elif self.path == "/api/calibration":
+                    action = body.get("action")
+                    if action == "start":
+                        ui.ctl.start_calibration()
+                    elif action == "cancel":
+                        ui.ctl.cancel_calibration()
+                    elif action == "save_baseline":
+                        pointer = ui.ctl.save_baseline(body)
+                        if pointer is None:
+                            return self._json({"error": tr("srv.error.bad_request")}, 400)
+                        ui.q.put(("cmd", "reload"))                # main loop applies it
+                        return self._json({"ok": True, "pointer": pointer})
+                    else:
+                        return self._json({"error": tr("srv.error.not_found")}, 400)
+                    return self._json(ui.ctl.calibration_state())
                 else:
                     return self._json({"error": tr("srv.error.not_found")}, 404)
                 self._json({"ok": True})
 
+            def _games_post(self, appid, body):
+                import bridge_install
+                import games_service
+                game = games_service.find(appid)
+                if game is None:
+                    return self._json({"error": tr("srv.error.not_found")}, 404)
+                try:
+                    if "enabled" in body:
+                        entry = games_service.set_enabled(ui.cfg_path, game, bool(body["enabled"]))
+                    elif isinstance(body.get("profile"), dict):
+                        entry = games_service.set_profile(ui.cfg_path, game, body["profile"])
+                    else:
+                        return self._json({"error": tr("srv.error.bad_request")}, 400)
+                except bridge_install.BridgeError as e:
+                    return self._json({"error": tr("games.error." + e.code), "code": e.code}, 409)
+                except OSError as e:
+                    return self._json({"error": tr("games.error.io_error", error=e), "code": "io_error"}, 500)
+                m.update_config_file(ui.cfg_path, {"games": {game.appid: entry}})
+                ui.q.put(("cmd", "reload"))          # the controller re-syncs the game bridge
+                return self._json({"ok": True, "game": entry})
+
+        self.instance_token = write_instance_token()
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()

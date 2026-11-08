@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Full-screen overlay for calibrating a game profile: one point at a time, hold still until the ring
+     is full. Opened by the desktop app on each chosen monitor (?roles=main,left,right), or in an
+     iframe by the web UI in a browser. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>MousePods</title>
+<style>
+html,body{margin:0;height:100%;background:#000;color:#f5f5f7;overflow:hidden;cursor:none;
+  font:16px/1.4 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif}
+#pt{position:absolute;width:64px;height:64px;transform:translate(-50%,-50%);display:none}
+#pt svg{width:64px;height:64px;transform:rotate(-90deg)}
+#pt .bg{fill:none;stroke:rgba(255,255,255,.18);stroke-width:4}
+#pt .fg{fill:none;stroke:#0a84ff;stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset .06s linear}
+#pt .dot{fill:#fff}
+#msg{position:absolute;left:50%;top:64%;transform:translateX(-50%);text-align:center;max-width:80vw}
+#step{font-size:13px;color:#98989d;letter-spacing:.04em;text-transform:uppercase}
+#hold{font-size:22px;font-weight:600;margin-top:6px}
+#hint{color:#ff9f0a;margin-top:10px;min-height:1.4em}
+#other{position:absolute;inset:0;display:none;place-items:center;color:#98989d;font-size:18px}
+#bar{position:absolute;left:0;right:0;bottom:28px;text-align:center;cursor:default}
+#bar button{background:rgba(255,255,255,.1);color:#f5f5f7;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="pt"><svg viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="26"/><circle class="fg" id="ring" cx="32" cy="32" r="26"/><circle class="dot" cx="32" cy="32" r="7"/></svg></div>
+<div id="msg"><div id="step"></div><div id="hold" data-i18n="calib_overlay.hold">Look at the point and hold still.</div><div id="hint"></div></div>
+<div id="other" data-i18n="calib_overlay.other_screen">Look at the other screen.</div>
+<div id="bar"><button id="cancel" data-i18n="calib_overlay.cancel">Cancel (Esc)</button></div>
+<script>
+const STEPS=["center","left","right","top","bottom"];
+const ROLE={center:"main",left:"left",right:"right",top:"main",bottom:"main"};
+const ROLES=(new URLSearchParams(location.search).get("roles")||"main,left,right").split(",");
+const EDGE=40,RING=2*Math.PI*26;     // edge points: whole ring on screen
+let I18N={},failSince=null,closed=false;
+const $=s=>document.querySelector(s);
+function t(k){return I18N[k]||k}
+async function loadI18n(){try{I18N=(await (await fetch("/api/i18n")).json()).strings||{}}catch(e){}
+  document.querySelectorAll("[data-i18n]").forEach(e=>{const v=I18N[e.dataset.i18n];if(v)e.textContent=v})}
+function place(step){const w=innerWidth,h=innerHeight,p=$("#pt");
+  const xy={center:[w/2,h/2],left:[EDGE,h/2],right:[w-EDGE,h/2],top:[w/2,EDGE],bottom:[w/2,h-EDGE]}[step];
+  p.style.left=xy[0]+"px";p.style.top=xy[1]+"px"}
+function finish(step){if(closed)return;closed=true;
+  const h=window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.mousepods;
+  setTimeout(()=>{if(h)h.postMessage({cmd:"overlay_close",step});else parent.postMessage({mousepods:"calibration_end",step},location.origin)},
+    step==="done"?500:1800)}
+function show(st){const step=st.step,mine=STEPS.includes(step)&&ROLES.includes(ROLE[step]);
+  $("#pt").style.display=mine?"block":"none";
+  $("#msg").style.display=mine||!STEPS.includes(step)?"block":"none";
+  $("#other").style.display=STEPS.includes(step)&&!mine?"grid":"none";
+  if(STEPS.includes(step)){place(step);
+    $("#step").textContent=`${STEPS.indexOf(step)+1} / ${STEPS.length} · ${t("calib_overlay.step_"+step)}`;
+    $("#ring").style.strokeDasharray=RING;$("#ring").style.strokeDashoffset=RING*(1-(st.progress||0));
+    $("#hold").textContent=t("calib_overlay.hold")}
+  $("#hint").textContent=st.hint==="too_close"?t("calib_overlay.too_close"):st.hint==="wrong_side"?t("calib_overlay.wrong_side"):
+    st.hint==="no_signal"?t("calib_overlay.no_signal"):"";
+  if(step==="done"){$("#step").textContent="";$("#hold").textContent=t("calib_overlay.done")}
+  if(step==="cancelled"||step==="failed"||step===null){$("#step").textContent="";$("#hold").textContent=""}
+  if(!STEPS.includes(step))finish(step)}
+async function poll(){if(closed)return;
+  try{const r=await fetch("/api/calibration");if(!r.ok)throw new Error(r.status);failSince=null;show(await r.json())}
+  catch(e){failSince=failSince||Date.now();if(Date.now()-failSince>3000){show({step:"failed",hint:"no_signal"});return}}
+  setTimeout(poll,50)}
+function cancel(){fetch("/api/calibration",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cancel"})})
+  .catch(()=>{}).finally(()=>finish("cancelled"))}
+addEventListener("keydown",e=>{if(e.key==="Escape")cancel()});
+$("#cancel").onclick=cancel;
+loadI18n().then(poll);
+</script>
+</body>
+</html>

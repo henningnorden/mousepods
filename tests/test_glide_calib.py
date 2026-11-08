@@ -69,7 +69,7 @@ class TestGlide(unittest.TestCase):
 
     def test_controller_glisse_moves_cursor(self):
         cfg = m.load_config("/nonexistent.json")
-        cfg.update(mode="glisse", notifications=False)
+        cfg.update(mode="glisse", notifications=False, mouse_paused=False)
         ptr = FakePointer()
         ctl = m.Controller(cfg, ptr)
         ctl.glide.set_profile({"right": [1, 0, 0], "fwd": [0, 1, 0]})
@@ -95,7 +95,7 @@ class TestPointerCorners(unittest.TestCase):
 
     def test_pointer_hits_corners_exactly(self):
         cfg = m.load_config("/nonexistent.json")
-        cfg.update(mode="pointeur", notifications=False)
+        cfg.update(mode="pointeur", notifications=False, mouse_paused=False)
         ctl = m.Controller(cfg, FakePointer())
         ctl.engine.set_profile({"yaw_sign": 1, "lat": [0, 1, 0], "pitch_sign": 1, "roll_sign": 1,
                                 "range": {"x_neg": 20, "x_pos": 22, "y_pos": 12, "y_neg": 11}})

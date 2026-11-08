@@ -32,6 +32,27 @@
 
 ---
 
+> **This is a fork** of [MousePods](https://github.com/starman-tech/mousepods) by Matteo Gaudioso,
+> built for sim racing on Linux gaming systems (Bazzite, tested with AirPods Pro 2 in Assetto Corsa).
+> Everything MousePods does is unchanged; this fork adds:
+>
+> - **Games page:** tick a Steam game running through Proton and its camera follows your head,
+>   without opentrack and without launch options. MousePods places a small TrackIR/FreeTrack DLL
+>   (`native/`) in the game's Proton prefix; the game reads the head pose from a file MousePods
+>   writes. Unticking puts back whatever tracker was set up before.
+> - **Per-game profiles:** damping, range and response curve per axis, axes on/off, and a neck
+>   model (computed from the head rotation, AirPods cannot measure leaning). **Calibrate** shows
+>   one point at a time full screen on the monitors you play that game on; hold still at each and
+>   MousePods measures how far you turn your head, so a small monitor and three monitors both work.
+> - **Desktop app:** own window, tray icon, autostart at login, first-run wizard; packaged as a
+>   Flatpak (`packaging/flatpak/`, built by GitHub Actions). Bluetooth works without
+>   `bluetoothctl` through BlueZ over D-Bus.
+> - **Languages:** English and German besides French (`ui/i18n/`).
+>
+> Install: download `MousePods-flatpak` from the latest successful
+> [build](https://github.com/henningnorden/mousepods/actions/workflows/build.yml) and run
+> `flatpak install --user MousePods.flatpak`. Steam installed as a Flatpak is not supported yet.
+
 ## What's new here
 
 Before this project, **no public tool could get head-tracking data out of AirPods 3**. LibrePods, librepods-rs, pods-head-tracker,

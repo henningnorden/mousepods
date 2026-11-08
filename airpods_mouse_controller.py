@@ -34,10 +34,13 @@ import shutil
 import socket
 import struct
 import subprocess
+import tempfile
 import sys
 import threading
 import time
 
+import bluez_dbus
+import l2cap
 import i18n
 from i18n import tr
 
@@ -50,6 +53,10 @@ log = logging.getLogger("airpods-mouse")
 DEFAULTS = {
     "device_address": "auto",
     "ui_lang": "auto",             # "auto" (system language) | "en" | "de" | "fr"
+    "wizard_done": False,          # first-run wizard in the web UI completed
+    "mouse_paused": True,          # mouse control starts off; Pause/Resume is remembered
+    "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)
+    "game_baseline": None,         # Calibration page: edges for every game without own values
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"
     "source": "auto",              # "auto" | "head" | "case" | "hand"
@@ -157,22 +164,35 @@ def load_config(path):
     return cfg
 
 
+_CONFIG_LOCK = threading.Lock()     # web request threads and the controller write config.json
+
+
 def update_config_file(path, updates):
-    """Fusionne `updates` dans config.json (préserve les autres clés et l'aide)."""
-    user = {}
-    if os.path.exists(path):
-        with open(path) as f:
-            user = json.load(f)
-    for k, v in updates.items():
-        if isinstance(v, dict) and isinstance(user.get(k), dict):
-            user[k].update(v)
-        else:
-            user[k] = v
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(user, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp, path)
+    """Fusionne `updates` dans config.json (préserve les autres clés et l'aide).
+    Read-merge-write under one lock, through a private temp file, so concurrent writers keep
+    each other's updates and never leave a half-written file."""
+    with _CONFIG_LOCK:
+        user = {}
+        if os.path.exists(path):
+            with open(path) as f:
+                user = json.load(f)
+        for k, v in updates.items():
+            if isinstance(v, dict) and isinstance(user.get(k), dict):
+                user[k].update(v)
+            else:
+                user[k] = v
+        fd, tmp = tempfile.mkstemp(prefix=".config-", suffix=".tmp", dir=os.path.dirname(os.path.abspath(path)))
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(user, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except FileNotFoundError:
+                pass
+            raise
 
 
 # =========================================================================== Bluetooth
@@ -185,21 +205,34 @@ def have_bluetoothctl():
     return shutil.which("bluetoothctl") is not None
 
 
+class BluetoothToolMissing(OSError):
+    """No way to list/connect paired devices: no bluetoothctl and no BlueZ D-Bus (errno 112 as upstream)."""
+
+    def __init__(self):
+        super().__init__(112, BLUETOOTHCTL_MISSING)
+
+
 def bt_info(addr):
     try:
         return subprocess.run(["bluetoothctl", "info", addr], capture_output=True, text=True,
                               timeout=5).stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
         return ""
+    except FileNotFoundError:
+        raise BluetoothToolMissing() from None
 
 
 def apple_audio_devices():
+    if bluez_dbus.available():
+        return bluez_dbus.list_apple_devices()
     out = []
     try:
         lines = subprocess.run(["bluetoothctl", "devices", "Paired"], capture_output=True,
                                text=True, timeout=5).stdout.splitlines()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
         return out
+    except FileNotFoundError:
+        raise BluetoothToolMissing() from None
     for ln in lines:
         m = re.match(r"Device ([0-9A-F:]{17}) (.*)", ln.strip())
         if not m:
@@ -211,8 +244,37 @@ def apple_audio_devices():
     return out
 
 
+def bt_connected(addr):
+    if bluez_dbus.available():
+        got = bluez_dbus.info(addr)
+        return bool(got and got["connected"])
+    return "Connected: yes" in bt_info(addr)
+
+
+def bt_connect(addr, timeout):
+    """Ask BlueZ to connect `addr` (D-Bus if available, else bluetoothctl)."""
+    if bluez_dbus.available():
+        return bluez_dbus.connect(addr, timeout)
+    subprocess.run(["bluetoothctl", "connect", addr], capture_output=True, text=True, timeout=timeout)
+    return bt_connected(addr)
+
+
+def bt_disconnect(addr):
+    if bluez_dbus.available():
+        bluez_dbus.disconnect(addr)
+    else:
+        subprocess.run(["bluetoothctl", "disconnect", addr], capture_output=True, timeout=10)
+
+
 def product_id(addr):
-    m = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", bt_info(addr))
+    if bluez_dbus.available():
+        got = bluez_dbus.info(addr)
+        return got["pid"] if got else "0000"
+    try:
+        info = bt_info(addr)
+    except BluetoothToolMissing:
+        return "0000"   # model unknown, but a fixed address can still connect
+    m = re.search(r"Modalias: bluetooth:v004Cp([0-9A-F]{4})", info)
     return m.group(1).lower() if m else "0000"
 
 
@@ -349,7 +411,7 @@ class NoAirPodsConnected(OSError):
 
 def connect_failure_status(error):
     """Status text for the UI after a failed connection attempt."""
-    if isinstance(error, OSError) and error.errno == 112 and error.strerror == BLUETOOTHCTL_MISSING:
+    if isinstance(error, BluetoothToolMissing):
         return i18n.tr_lazy("srv.status.bluetoothctl_missing")
     if isinstance(error, NoAirPodsConnected):
         return i18n.tr_lazy("srv.status.no_airpods")
@@ -383,10 +445,10 @@ class AAPClient:
     def _pick(self):
         if self.want != "auto":
             return self.want
-        if not have_bluetoothctl():
-            # without it we cannot list paired devices: say so instead of "no AirPods connected"
-            raise OSError(112, BLUETOOTHCTL_MISSING)
-        if self.addr and "Connected: yes" in bt_info(self.addr):   # reconnexion : déjà connu
+        if not bluez_dbus.available() and not have_bluetoothctl():
+            # without either we cannot list paired devices: say so instead of "no AirPods connected"
+            raise BluetoothToolMissing()
+        if self.addr and bt_connected(self.addr):   # reconnexion : déjà connu
             return self.addr
         devs = apple_audio_devices()
         con = [d for d in devs if d[3]]
@@ -396,34 +458,21 @@ class AAPClient:
             for d in devs:
                 log.info("Tentative de connexion : %s (%s)", d[1], d[0])
                 try:
-                    subprocess.run(["bluetoothctl", "connect", d[0]], capture_output=True,
-                                   text=True, timeout=12)
+                    if bt_connect(d[0], 12):
+                        return d[0]
                 except subprocess.TimeoutExpired:
                     continue
-                if "Connected: yes" in bt_info(d[0]):
-                    return d[0]
         raise NoAirPodsConnected()
 
     def connect(self):
         self.addr = self._pick()
-        if self.auto_connect and have_bluetoothctl() and "Connected: yes" not in bt_info(self.addr):
-            subprocess.run(["bluetoothctl", "connect", self.addr], capture_output=True, text=True,
-                           timeout=20)
+        if self.auto_connect and (bluez_dbus.available() or have_bluetoothctl()) and not bt_connected(self.addr):
+            try:
+                bt_connect(self.addr, 20)
+            except subprocess.TimeoutExpired:
+                pass
         self.pid = product_id(self.addr)
-        s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
-        try:
-            s.setsockopt(SOL_BLUETOOTH, BT_SECURITY, struct.pack("BB", BT_SECURITY_MEDIUM, 0))
-            opts = bytearray(s.getsockopt(SOL_L2CAP, L2CAP_OPTIONS, 12))
-            struct.pack_into("<H", opts, 2, IOS_MTU)
-            s.setsockopt(SOL_L2CAP, L2CAP_OPTIONS, bytes(opts))
-        except OSError as e:
-            log.debug("options socket : %s", e)
-        s.settimeout(8)
-        try:
-            s.connect((self.addr, 0x1001))
-        except OSError:
-            s.close()
-            raise
+        s = l2cap.open_seqpacket(self.addr, 0x1001, IOS_MTU, 8)   # ctypes path if Python lacks AF_BLUETOOTH
         s.settimeout(None)
         self.sock = s
         for p, d in ((PKT_HANDSHAKE, 0.3), (PKT_FEATURES, 0.15), (PKT_NOTIFICATIONS, 0.15)):
@@ -895,6 +944,9 @@ def soft_deadzone(v, dz):
 
 
 # =========================================================================== moteur
+_SYNC_LOCK = threading.RLock()       # one sync_opentrack at a time (main loop and web threads)
+
+
 class Controller:
     def __init__(self, cfg, pointer, diag=False, cfg_path=None):
         self.cfg = cfg
@@ -907,7 +959,7 @@ class Controller:
         self.engine = MotionEngine(cfg["bias"])
         self.glide = GlideEngine(cfg["glisse"])
         self._make_filters()
-        self.paused = False
+        self.paused = bool(cfg.get("mouse_paused", True))
         self.scroll_mode = False
         self.ang = [0.0, 0.0]            # angles intégrés (mode pointeur)
         self.vel = (0.0, 0.0)            # vitesse curseur px/s (mode souris)
@@ -936,6 +988,11 @@ class Controller:
         self.raw_imu_hooks = []      # callbacks(kind "a"|"w", payload HID, now) — IMU brute pour gestures.py
         self.sample_times = []
         self.opentrack = None        # OpenTrackOutput actif (voir sync_opentrack)
+        self.game_bridge = None      # game_bridge.GameBridge while at least one game is enabled
+        self.calibration = None      # calibration.Calibration of a game profile while it runs
+        self.last_calibration = None # the finished one, until the next start (its result is read once)
+        self._calib_prev_paused = False
+        self._calib_lock = threading.Lock()
         self.opentrack_forced = False  # --opentrack : activé pour la session
         self.demo_until = 0.0        # page /demo ouverte : pose calculée sans sortie (voir command("demo"))
         self.joystick_forced = False   # --sim-joystick : activé pour la session
@@ -964,6 +1021,13 @@ class Controller:
             old_mode = self.cfg["mode"]
             self.cfg.clear()
             self.cfg.update(new)
+            want_paused = bool(new.get("mouse_paused", True))
+            with self._calib_lock:
+                if self.calibration is not None:
+                    self._calib_prev_paused = want_paused    # applies when the calibration ends
+                elif want_paused != self.paused:
+                    self.paused = want_paused
+                    self.vel = (0.0, 0.0)
             i18n.apply_config(self.cfg)
             self.engine.bcfg = self.cfg["bias"]
             self.glide.c = self.cfg["glisse"]
@@ -1085,9 +1149,10 @@ class Controller:
         self.fy.reset(0.0)
         self.fp.reset(0.0)
         self.target = self.cur = (0.5, 0.5)
-        if self.opentrack:
-            self.opentrack.recenter()
-        if not self.diag and not self.opentrack_pauses_mouse:
+        ot = self.opentrack
+        if ot:
+            ot.recenter()
+        if not self.diag and not self.paused and not self.opentrack_pauses_mouse:
             self.ptr.move_abs(0.5, 0.5)
         if not quiet:
             notify(self.cfg, tr("srv.status.recentered"))
@@ -1095,6 +1160,10 @@ class Controller:
     def set_paused(self, p):
         self.paused = p
         self.vel = (0.0, 0.0)
+        self.cfg["mouse_paused"] = bool(p)
+        if self.cfg_path:
+            update_config_file(self.cfg_path, {"mouse_paused": bool(p)})
+            self._cfg_mtime = self._mtime()
         notify(self.cfg, tr("srv.status.paused") if p else tr("srv.status.control_active"))
 
     @property
@@ -1111,6 +1180,11 @@ class Controller:
         return bool(self.opentrack) and self.cfg.get("opentrack", {}).get("pause_mouse_when_opentrack", True)
 
     def sync_opentrack(self):
+        # called from the main loop (config reload) and from web threads (calibration start/end)
+        with _SYNC_LOCK:
+            Controller._sync_opentrack(self)
+
+    def _sync_opentrack(self):
         """Démarre / arrête / reconfigure les sorties « simulateur » selon la config (ou --opentrack,
         --sim-joystick) : UDP vers OpenTrack et/ou manette virtuelle, alimentées par la même pose."""
         oc = self.cfg.setdefault("opentrack", {})
@@ -1120,27 +1194,57 @@ class Controller:
         if self.joystick_forced:
             jc["enabled"] = True
         want_udp, want_js = bool(oc.get("enabled")), bool(jc.get("enabled"))
-        want_demo = time.monotonic() < self.demo_until
-        if (want_udp or want_js or want_demo) and not self.opentrack:
+        games_cfg = self.cfg.get("games") or {}
+        want_games = any((g or {}).get("enabled") for g in games_cfg.values())
+        want_calib = getattr(self, "calibration", None) is not None   # calibration reads the head angle
+        want_demo = time.monotonic() < getattr(self, "demo_until", 0.0)
+        if (want_udp or want_js or want_games or want_calib or want_demo) and not self.opentrack:
             try:
                 import opentrack_out
-                self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
+                try:
+                    self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
+                except (OSError, ValueError, TypeError) as e:
+                    if want_udp:
+                        raise
+                    # broken UDP settings must not keep the game bridge / joystick from running
+                    log.warning("OpenTrack settings ignored (%s) - output without UDP", e)
+                    self.opentrack = opentrack_out.OpenTrackOutput({}, udp=False).start()
                 if want_udp:
                     log.info("OpenTrack : envoi vers %s:%s à %s Hz", oc.get("host"), oc.get("port"), oc.get("rate_hz"))
                     notify(self.cfg, tr("srv.status.opentrack_on"))
             except (OSError, ValueError) as e:
                 log.warning("OpenTrack indisponible : %s", e)
-        elif want_udp or want_js or want_demo:
+        elif want_udp or want_js or want_games or want_calib or want_demo:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
-            self.opentrack.configure(oc, udp=want_udp)
+            try:
+                self.opentrack.configure(oc, udp=want_udp)
+            except (OSError, ValueError, TypeError) as e:
+                log.warning("OpenTrack settings ignored (%s)", e)
+                self.opentrack.configure({}, udp=False)
         elif self.opentrack:
             self.opentrack.stop()
             self.opentrack = None
+            if self.game_bridge:
+                self.game_bridge.close()
+                self.game_bridge = None
             log.info("Sorties simulateur : arrêtées")
-            notify(self.cfg, tr("srv.status.sim_outputs_off"))
+            if not getattr(self, "_calib_ending", False):
+                notify(self.cfg, tr("srv.status.sim_outputs_off"))
             return
         if self.opentrack:
+            self.opentrack.tracker.suspend_autocenter = want_calib
+            if want_games:
+                if not self.game_bridge:
+                    import game_bridge
+                    self.game_bridge = game_bridge.GameBridge(os.environ.get("MOUSEPODS_SHM_DIR", "/dev/shm"))
+                self.game_bridge.configure(games_cfg, self.cfg.get("game_baseline"))
+                self.opentrack.set_game_bridge(self.game_bridge)
+            else:
+                self.opentrack.set_game_bridge(None)
+                if self.game_bridge:
+                    self.game_bridge.close()
+                    self.game_bridge = None
             had = self.opentrack.joystick is not None
             js = self.opentrack.set_joystick(jc if want_js else None)
             if want_js and not had:
@@ -1150,6 +1254,90 @@ class Controller:
                 else:
                     log.warning("Manette virtuelle impossible : %s", self.opentrack.joystick_error)
     # ---- /OpenTrack ------------------------------------------------------------------------
+
+    # ---- calibration of a game profile (overlay with points, see calibration.py)
+    _calib_ending = False
+
+    def start_calibration(self):
+        """Start (or restart) a calibration: mouse paused for its duration, tracker running."""
+        import calibration
+        with self._calib_lock:
+            if self.calibration is None:
+                self._calib_prev_paused = self.paused
+            self.paused = True                    # not set_paused: nothing is saved
+            self.vel = (0.0, 0.0)
+            self.calibration = calibration.Calibration(on_center=lambda: self.recenter(quiet=True))
+            self.last_calibration = None
+        self.sync_opentrack()
+
+    def calibration_feed(self, now, yaw, pitch):
+        with self._calib_lock:
+            c = self.calibration
+            if c is None:
+                return
+            c.feed(now, yaw, pitch)
+            ended = c.finished
+        if ended:
+            self._end_calibration()
+
+    def calibration_tick(self, now):
+        with self._calib_lock:
+            c = self.calibration
+            if c is None:
+                return
+            c.tick(now)
+            ended = c.finished
+        if ended:
+            self._end_calibration()
+
+    def cancel_calibration(self):
+        with self._calib_lock:
+            if self.calibration is None:
+                return
+            self.calibration.cancel()
+        self._end_calibration()
+
+    def _end_calibration(self):
+        with self._calib_lock:
+            if self.calibration is None:
+                return
+            self.last_calibration, self.calibration = self.calibration, None
+            self.paused = self._calib_prev_paused
+            self.vel = (0.0, 0.0)
+        self._calib_ending = True
+        try:
+            self.sync_opentrack()
+        finally:
+            self._calib_ending = False
+
+    def save_baseline(self, raw):
+        """Baseline calibration: default range for every game, and the pointer's screen edges for
+        the current AirPods profile (if that one is calibrated). Returns whether the pointer got it,
+        None if the values are unusable."""
+        import game_profiles
+        base = game_profiles.normalize_baseline(raw)
+        if base is None or not self.cfg_path:
+            return None
+        updates = {"game_baseline": base}
+        key = self.profile_key()
+        with open(self.cfg_path) as f:
+            prof = (json.load(f).get("profiles") or {}).get(key)
+        pointer = isinstance(prof, dict) and "lat" in prof
+        if pointer:
+            prof = dict(prof)
+            prof["range"] = {"x_neg": base["yaw"]["neg"], "x_pos": base["yaw"]["pos"],
+                             "y_pos": base["pitch"]["pos"], "y_neg": base["pitch"]["neg"]}
+            updates["profiles"] = {key: prof}
+        update_config_file(self.cfg_path, updates)
+        self.cfg["game_baseline"] = base          # the state shows it now; games/pointer follow on reload
+        return pointer
+
+    def calibration_state(self):
+        with self._calib_lock:
+            c = self.calibration or self.last_calibration
+            if c is None:
+                return {"active": False, "step": None}
+            return {**c.state(), "active": self.calibration is not None}
 
     # ---- échantillons
     def on_packet(self, pkt, aap):
@@ -1193,10 +1381,15 @@ class Controller:
         self.last_acc = a
         yaw, pitch, roll = self.engine.step(w, g, dt)
         att = struct.unpack_from("<hhh", blk, 20)
-        if self.opentrack:           # OpenTrack / manette : alimentés même souris en pause
+        ot = self.opentrack          # one reference: a web thread may stop it meanwhile
+        if ot:                       # OpenTrack / manette : alimentés même souris en pause
             p = self.engine.p
-            self.opentrack.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
-                                (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
+            ot.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
+                    (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
+            if self.calibration is not None:
+                head = ot.head()
+                if head is not None:
+                    self.calibration_feed(now, head[0], head[1])
             if self.demo_until and time.monotonic() > self.demo_until:   # page /demo fermée
                 self.demo_until = 0.0
                 self.sync_opentrack()
@@ -1393,6 +1586,7 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
     last_recovery = [-1e9]
     warned_case = False
     cfg_addr_hint = [None]
+    tool_missing_logged = [False]
     log.info("Démarrage — mode %s, source %s", "DIAGNOSTIC" if diag else cfg["mode"], cfg["source"])
     aap = None
     try:
@@ -1403,7 +1597,12 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
             try:
                 aap.connect()
             except (OSError, subprocess.TimeoutExpired) as e:
-                log.warning("Connexion impossible (%s) — nouvel essai dans %ss", e, backoff)
+                if isinstance(e, BluetoothToolMissing):
+                    if not tool_missing_logged[0]:
+                        log.error("%s", e)
+                        tool_missing_logged[0] = True
+                else:
+                    log.warning("Connexion impossible (%s) — nouvel essai dans %ss", e, backoff)
                 if web:
                     web.set_status(connect_failure_status(e))
                 t_end = time.monotonic() + backoff
@@ -1468,7 +1667,7 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
                         last_recovery[0] = now
                         log.warning("Capteurs non annoncés — reconnexion Bluetooth complète")
                         aap.close()
-                        subprocess.run(["bluetoothctl", "disconnect", aap.addr], capture_output=True, timeout=10)
+                        bt_disconnect(aap.addr)
                         time.sleep(2)
                         raise OSError("relance Bluetooth")
                     if aap.place == "case" and aap.pid == "2013" and not aap.rhid_devs and not warned_case:

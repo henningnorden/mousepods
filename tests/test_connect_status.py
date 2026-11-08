@@ -15,7 +15,7 @@ import i18n  # noqa: E402
 
 class ConnectStatusTests(unittest.TestCase):
     def setUp(self):
-        i18n.set_lang("fr")
+        i18n.set_lang("de")
 
     def tearDown(self):
         i18n.set_lang("en")
@@ -31,18 +31,17 @@ class ConnectStatusTests(unittest.TestCase):
 
     def test_no_airpods_status_is_fully_translated(self):
         text = str(m.connect_failure_status(m.NoAirPodsConnected()))
-        self.assertEqual(text, i18n.tr("srv.status.no_airpods", "fr"))
-        i18n.set_lang("en")
-        self.assertNotIn("aucun", str(m.connect_failure_status(m.NoAirPodsConnected())))
+        self.assertEqual(text, i18n.tr("srv.status.no_airpods", "de"))
+        self.assertNotIn("aucun", text)
 
     def test_missing_bluetoothctl_status_is_translated(self):
-        text = str(m.connect_failure_status(OSError(112, m.BLUETOOTHCTL_MISSING)))
-        self.assertEqual(text, i18n.tr("srv.status.bluetoothctl_missing", "fr"))
+        text = str(m.connect_failure_status(m.BluetoothToolMissing()))
+        self.assertEqual(text, i18n.tr("srv.status.bluetoothctl_missing", "de"))
 
     def test_other_errors_keep_their_detail(self):
         text = str(m.connect_failure_status(OSError(111, "Connection refused")))
         self.assertIn("Connection refused", text)
-        self.assertTrue(text.startswith("Recherche des AirPods"))
+        self.assertTrue(text.startswith("Suche AirPods"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,56 @@
+{
+  "app-id": "io.github.henningnorden.MousePods",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "50",
+  "sdk": "org.gnome.Sdk",
+  "command": "mousepods-app",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=all",
+    "--device=shm",
+    "--allow=bluetooth",
+    "--system-talk-name=org.bluez",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--filesystem=~/.local/share/Steam",
+    "--filesystem=~/.steam:ro",
+    "--filesystem=~/.var/app/com.valvesoftware.Steam:ro"
+  ],
+  "modules": [
+    {
+      "name": "python-deps",
+      "buildsystem": "simple",
+      "build-options": {
+        "build-args": [
+          "--share=network"
+        ]
+      },
+      "build-commands": [
+        "pip3 install --no-cache-dir --prefix=/app 'evdev>=1.6' 'numpy>=1.24'"
+      ]
+    },
+    {
+      "name": "mousepods",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -d /app/share/mousepods",
+        "cp -r *.py mousepods-app desktop ui garmin /app/share/mousepods/",
+        "install -d /app/share/mousepods/native",
+        "cp native/out/*.dll /app/share/mousepods/native/",
+        "install -Dm644 LICENSE NOTICE -t /app/share/licenses/io.github.henningnorden.MousePods/",
+        "install -Dm755 packaging/flatpak/mousepods-app.sh /app/bin/mousepods-app",
+        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.desktop -t /app/share/applications/",
+        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.metainfo.xml -t /app/share/metainfo/",
+        "install -Dm644 packaging/flatpak/io.github.henningnorden.MousePods.svg -t /app/share/icons/hicolor/scalable/apps/"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../.."
+        }
+      ]
+    }
+  ]
+}

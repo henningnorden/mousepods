@@ -36,6 +36,7 @@ nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8p
 nav a:hover{background:var(--line)}
 nav a.on{background:var(--accent);color:#fff}
 nav a .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:12px;flex:none}
+nav a .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav a.on .ic{background:rgba(255,255,255,.22)!important}
 .side-foot{margin-top:auto;padding:10px;color:var(--text2);font-size:12px;line-height:1.5}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);margin-right:6px;vertical-align:1px}
@@ -60,6 +61,10 @@ h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;le
 .big{font-size:30px;font-weight:650;letter-spacing:-.02em}
 .kv{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);gap:14px}
 .kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text2)}.kv span:last-child{text-align:right;font-weight:500}
+#p-welcome .card{margin-bottom:12px}#p-welcome .card .btn{margin-top:8px}.game{margin-bottom:12px}.game .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.game .name{font-weight:600;font-size:15px;flex:1}.game details{margin-top:10px}.game summary{cursor:pointer;color:var(--text2);font-size:13px}
+.game .axis{display:grid;grid-template-columns:70px repeat(6,minmax(0,1fr));gap:8px;align-items:center;margin-top:8px;font-size:12.5px}
+.game .axis input[type=range]{width:100%}.game .prev{font-family:var(--mono,monospace);font-size:12px;color:var(--text2)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--card2);font-size:12px;font-weight:600}
 .pill.g{color:var(--green)}.pill.o{color:var(--orange)}.pill.r{color:var(--red)}.pill.b{color:var(--accent)}
 /* boutons */
@@ -155,19 +160,21 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 4a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3h.5v8a1.5 1.5 0 0 0 3 0V7a3 3 0 0 0-3-3H7zM17 4a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-.5v8a1.5 1.5 0 0 1-3 0V7a3 3 0 0 1 3-3h.5z"/></svg></div>
     <div><b data-i18n="side.airpods_mouse">AirPods Mouse</b><small id="side-model">—</small></div>
   </div>
-  <nav id="nav">
-    <a data-p="overview" class="on"><span class="ic" style="background:#0a84ff" data-i18n="side.text">◉</span><span data-i18n="side.overview">Aperçu</span></a>
-    <a data-p="motion"><span class="ic" style="background:#30d158" data-i18n="side.text_2">∿</span><span data-i18n="side.motion">Mouvement</span></a>
-    <a data-p="settings"><span class="ic" style="background:#8e8e93" data-i18n="side.text_3">⚙︎</span><span data-i18n="side.settings">Réglages</span></a>
-    <a data-p="calib"><span class="ic" style="background:#ff9f0a" data-i18n="side.text_4">◎</span><span data-i18n="side.calibration">Calibration</span></a>
-    <a data-p="gestures"><span class="ic" style="background:#ff375f" data-i18n="side.text_5">☺︎</span><span data-i18n="side.gestures">Gestes</span></a>
-    <a data-p="labo"><span class="ic" style="background:#64d2ff" data-i18n="side.text_6">⚗︎</span><span data-i18n="side.lab">Labo</span></a>
-    <a data-p="sims"><span class="ic" style="background:#ff9500" data-i18n="side.text_7">✈︎</span><span data-i18n="side.simulators">Simulateurs</span></a>
-    <a data-p="garmin"><span class="ic" style="background:#007aff" data-i18n="side.text_8">⌚︎</span>Garmin</a>
-    <a data-p="sensors"><span class="ic" style="background:#af52de" data-i18n="side.text_9">⌬</span><span data-i18n="side.sensors">Capteurs</span></a>
-    <a data-p="device"><span class="ic" style="background:#ff375f" data-i18n="side.i">ⓘ</span>AirPods</a>
-    <a data-p="log"><span class="ic" style="background:#5e5ce6" data-i18n="side.text_10">≡</span><span data-i18n="side.log">Journal</span></a>
-    <a data-p="about"><span class="ic" style="background:#30b0c7" data-i18n="side.text_11">★</span><span data-i18n="side.findings">Découvertes</span></a>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-overview" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol><symbol id="i-motion" viewBox="0 0 24 24"><path d="M3 12c3-6 6-6 9 0s6 6 9 0"/></symbol><symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol><symbol id="i-calib" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol><symbol id="i-gestures" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4.5a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7c-2.5 0-4-1.5-5.5-3.5L3 14.5a1.5 1.5 0 0 1 2.5-1.7L8 15"/></symbol><symbol id="i-labo" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9"/></symbol><symbol id="i-sims" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="13" r="2"/><path d="M3.5 10.5c5 1 12 1 17 0M12 15v6"/></symbol><symbol id="i-games" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M8 10.5v4M6 12.5h4"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor"/></symbol><symbol id="i-garmin" viewBox="0 0 24 24"><rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2l1.5 1"/></symbol><symbol id="i-sensors" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol><symbol id="i-device" viewBox="0 0 24 24"><path d="M9 4a4 4 0 0 0-4 4v1a4 4 0 0 0 4 4v7M15 4a4 4 0 0 1 4 4v1a4 4 0 0 1-4 4v7"/></symbol><symbol id="i-log" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></symbol><symbol id="i-about" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/></symbol></svg>
+<nav id="nav">
+    <a data-p="overview" class="on"><span class="ic" style="background:#0a84ff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-overview"/></svg></span><span data-i18n="side.overview">Aperçu</span></a>
+    <a data-p="motion"><span class="ic" style="background:#30d158"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-motion"/></svg></span><span data-i18n="side.motion">Mouvement</span></a>
+    <a data-p="settings"><span class="ic" style="background:#8e8e93"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"/></svg></span><span data-i18n="side.settings">Réglages</span></a>
+    <a data-p="calib"><span class="ic" style="background:#ff9f0a"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-calib"/></svg></span><span data-i18n="side.calibration">Calibration</span></a>
+    <a data-p="gestures"><span class="ic" style="background:#ff375f"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gestures"/></svg></span><span data-i18n="side.gestures">Gestes</span></a>
+    <a data-p="labo"><span class="ic" style="background:#64d2ff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-labo"/></svg></span><span data-i18n="side.lab">Labo</span></a>
+    <a data-p="sims"><span class="ic" style="background:#ff9500"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sims"/></svg></span><span data-i18n="side.simulators">Simulateurs</span></a>
+    <a data-p="games"><span class="ic" style="background:#34c759"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-games"/></svg></span><span data-i18n="side.games">Games</span></a>
+    <a data-p="garmin"><span class="ic" style="background:#007aff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-garmin"/></svg></span>Garmin</a>
+    <a data-p="sensors"><span class="ic" style="background:#af52de"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sensors"/></svg></span><span data-i18n="side.sensors">Capteurs</span></a>
+    <a data-p="device"><span class="ic" style="background:#ff375f"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-device"/></svg></span>AirPods</a>
+    <a data-p="log"><span class="ic" style="background:#5e5ce6"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-log"/></svg></span><span data-i18n="side.log">Journal</span></a>
+    <a data-p="about"><span class="ic" style="background:#30b0c7"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-about"/></svg></span><span data-i18n="side.findings">Découvertes</span></a>
   </nav>
   <div class="side-foot"><div><span class="dot" id="side-dot"></span><span id="side-status">—</span></div>
     <div id="side-rate" class="mono" style="margin-top:4px"></div></div>
@@ -292,7 +299,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
   <h1 data-i18n="calib.calibration">Calibration</h1><div class="sub" data-i18n="calib.one_profile_per_model_and_per_source_hea">Un profil par modèle et par source (tête, boîtier, en main). Environ 15 secondes.</div>
   <div class="card calib-hero">
     <div class="row" style="justify-content:center;gap:14px">
-      <div class="seg" id="cal-flow"><button data-v="souris" data-i18n="calib.rotation_mouse">Rotation (souris)</button><button data-v="pointeur" data-i18n="calib.pointer_corners">Pointeur + coins</button><button data-v="glisse" data-i18n="calib.glide_on_table">Glisse sur table</button></div>
+      <div class="seg" id="cal-flow"><button data-v="souris" data-i18n="calib.rotation_mouse">Rotation (souris)</button><button data-v="pointeur" data-i18n="calib.pointer_corners">Pointeur + coins</button><button data-v="points" data-i18n="calib_ui.flow_points">Games + pointer (points)</button><button data-v="glisse" data-i18n="calib.glide_on_table">Glisse sur table</button></div>
       <div class="seg" id="cal-src"><button data-v="auto" class="on" data-i18n="calib.auto">Auto</button><button data-v="head" data-i18n="calib.head">Tête</button><button data-v="case" data-i18n="calib.case">Boîtier</button><button data-v="hand" data-i18n="calib.in_hand">En main</button></div>
     </div>
     <div class="instr" id="cal-instr" data-i18n="calib.ready_to_calibrate">Prêt à calibrer</div>
@@ -301,6 +308,9 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <svg class="pring" viewBox="0 0 120 120" style="margin-top:18px"><circle class="bg" cx="60" cy="60" r="50"/><circle class="fg" id="cal-ring" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>
     <div class="steps" id="cal-steps"></div>
     <div class="row" style="justify-content:center;margin-top:22px"><button class="btn p" id="cal-start" data-i18n="calib.start">Commencer</button><button class="btn" id="cal-cancel" data-i18n="calib.cancel">Annuler</button></div>
+    <div id="cal-base" style="display:none;margin-top:14px;text-align:left"><div class="hint" data-i18n="calib_ui.baseline_hint">Look at five points on the monitors you play on. This sets the range for every game without own values and the pointer's screen edges.</div>
+      <div class="kv"><span data-i18n="calib_ui.baseline_now">Now</span><span id="cal-base-now">—</span></div>
+      <div id="cal-base-panel"></div></div>
   </div>
   <h2 data-i18n="calib.saved_profiles">Profils enregistrés</h2>
   <div class="card"><table><thead><tr><th data-i18n="calib.profile">Profil</th><th data-i18n="calib.content">Contenu</th></tr></thead><tbody id="cal-prof"></tbody></table></div>
@@ -461,6 +471,32 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 </section>
 
 <!-- =============================== GARMIN -->
+<section class="page" id="p-welcome">
+  <h1 data-i18n="welcome.title">Welcome to MousePods</h1><div class="sub" data-i18n="welcome.intro">Five short steps, then MousePods follows your head.</div>
+  <div class="card" id="wz-lang"><h3 data-i18n="welcome.step_lang">1 · Language</h3>
+    <div class="seg" data-key="ui_lang"><button data-v="auto" data-i18n="lang.auto">Automatic</button><button data-v="en" data-i18n="lang.en">English</button><button data-v="de" data-i18n="lang.de">Deutsch</button><button data-v="fr" data-i18n="lang.fr">Français</button></div></div>
+  <div class="card" id="wz-airpods"><h3 data-i18n="welcome.step_airpods">2 · AirPods</h3>
+    <div class="hint" data-i18n="welcome.airpods_hint">Pair your AirPods in the system Bluetooth settings and put them in. MousePods connects by itself.</div>
+    <div class="kv"><span data-i18n="welcome.status">Status</span><span id="wz-status">—</span></div>
+    <button class="btn sm" id="wz-reconnect" data-i18n="welcome.reconnect">Connect again</button></div>
+  <div class="card" id="wz-calib"><h3 data-i18n="welcome.step_calib">3 · Head calibration</h3>
+    <div class="hint" data-i18n="welcome.calib_hint">Once per AirPods model: MousePods learns how the earbuds sit on your head. Takes about 15 seconds.</div>
+    <button class="btn sm" id="wz-calib-go" data-i18n="welcome.calib_go">Calibrate head</button></div>
+  <div class="card" id="wz-recenter"><h3 data-i18n="welcome.step_recenter">4 · Centre</h3>
+    <div class="hint" data-i18n="welcome.recenter_hint">Look straight at the screen and set the centre. You can do this any time from the tray icon.</div>
+    <button class="btn sm" data-cmd="recenter" data-i18n="welcome.recenter_go">Set centre</button></div>
+  <div class="card" id="wz-autostart"><h3 data-i18n="welcome.step_autostart">5 · Start with the computer</h3>
+    <div class="set toggle"><label data-i18n="welcome.autostart_label">Start MousePods hidden at login (recommended)</label><label class="sw"><input type="checkbox" id="wz-autostart-on"><span></span></label></div></div>
+  <div class="row" style="margin-top:14px"><button class="btn p" id="wz-done" data-i18n="welcome.done">Done</button></div>
+</section>
+
+<section class="page" id="p-games">
+  <h1 data-i18n="games.title">Games</h1><div class="sub" data-i18n="games.intro">Tick a Steam game and its in-game camera follows your head, without opentrack. The game must be closed while you switch it on or off.</div>
+  <div class="card" style="margin-bottom:14px"><h3 data-i18n="games.live">Live head pose</h3><div class="vec" id="games-live"></div>
+    <div class="hint" data-i18n="games.live_hint">Open a game's profile to see what that game receives.</div></div>
+  <div id="games-list"><div class="card empty" data-i18n="games.loading">Looking for Steam games…</div></div>
+</section>
+
 <section class="page" id="p-garmin">
   <h1 data-i18n="garmin.garmin_watch">Montre Garmin</h1><div class="sub" data-i18n="garmin.tilting_the_wrist_moves_the_cursor_a_dou">Incliner le poignet déplace le curseur, une double tape sur la montre clique. Accéléromètre seul, 25 Hz (service BLE 16).</div>
   <div class="card" id="gm-missing" style="display:none"><h3 data-i18n="garmin.garmin_module_not_installed">Module Garmin non installé</h3>
@@ -579,7 +615,7 @@ const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/js
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),1600)}
 const SRC=k=>({head:t("js.src.head"),case:t("js.src.case"),hand:t("js.src.hand"),auto:t("js.src.auto")})[k];
 // ---------- navigation
-function go(p){page=p;$$("#nav a").forEach(x=>x.classList.toggle("on",x.dataset.p===p));
+function go(p){page=p;if(p==="games")setTimeout(showGames,0);$$("#nav a").forEach(x=>x.classList.toggle("on",x.dataset.p===p));
   $$(".page").forEach(e=>e.classList.toggle("on",e.id==="p-"+p));if(location.hash!=="#"+p)history.replaceState(null,"","#"+p);refreshState()}
 $$("#nav a").forEach(a=>a.onclick=()=>go(a.dataset.p));
 window.addEventListener("load",()=>{const h=location.hash.slice(1);if(h&&document.getElementById("p-"+h))go(h)});
@@ -608,10 +644,12 @@ function fillSettings(cfg){$$("#p-settings input[data-k], #p-sims input[data-k]"
   else inp.checked=!!v})}
 // ---------- calibration
 let calSrc="auto",calFlow=null;
-$$("#cal-flow button").forEach(b=>b.onclick=()=>{calFlow=b.dataset.v;$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x===b))});
+$$("#cal-flow button").forEach(b=>b.onclick=()=>{calFlow=b.dataset.v;$$("#cal-flow button").forEach(x=>x.classList.toggle("on",x===b));
+  $("#cal-base").style.display=calFlow==="points"?"block":"none";$("#cal-ring").parentNode.style.display=calFlow==="points"?"none":""});
 $$("#cal-src button").forEach(b=>b.onclick=()=>{calSrc=b.dataset.v;$$("#cal-src button").forEach(x=>x.classList.toggle("on",x===b))});
-$("#cal-start").onclick=()=>{post("/api/calib",{action:"start",source:calSrc,flow:calFlow||T.mode});toast(t("js.toast.calib_started"))};
-$("#cal-cancel").onclick=()=>{post("/api/calib",{action:"cancel"});toast(t("js.toast.calib_cancelled"))};
+$("#cal-start").onclick=()=>{if(calFlow==="points")return startBaseline();post("/api/calib",{action:"start",source:calSrc,flow:calFlow||T.mode});toast(t("js.toast.calib_started"))};
+$("#cal-cancel").onclick=()=>{if(calFlow==="points"){post("/api/calibration",{action:"cancel"});$("#cal-base-panel").innerHTML="";calib=null}
+  else post("/api/calib",{action:"cancel"});toast(t("js.toast.calib_cancelled"))};
 // ---------- appareil
 $("#ctl-send").onclick=()=>{const id=parseInt($("#ctl-id").value);const vals=$("#ctl-val").value.trim().split(/\s+/).filter(Boolean).map(x=>parseInt(x));
   if(isNaN(id))return toast(t("js.toast.invalid_id"));post("/api/control",{ident:id,values:vals});toast(t("js.toast.command_sent"))};
@@ -645,6 +683,7 @@ function renderTelemetry(){
   const tm=T;const ok=tm.connected&&tm.live;
   $("#side-dot").className="dot "+(ok?"ok":tm.connected?"warn":"");
   $("#side-status").textContent=ok?t("js.status.live"):(tm.status||"—");
+  renderWizard();
   $("#side-rate").textContent=tm.connected?`${tm.rate} Hz · ${SRC(tm.source)||""}`:"";
   if(page==="overview"){
     $("#ov-state").textContent=tm.paused?t("js.ov.paused"):(tm.calib&&tm.calib.active?t("js.ov.calibration"):t("js.ov.active"));
@@ -750,9 +789,22 @@ function anonymize(s){const c=JSON.parse(JSON.stringify(s));if(c.addr)c.addr="XX
   c.info=(c.info||[]).map(i=>({key:i.key,label:i.label,value:i.key==="info.name"?"AirPods":/^info\.serial/.test(i.key)?"••••••••••":i.value}));
   c.log=(c.log||[]).filter(l=>l.op===0x17||l.op===-1);return c}
 // ---------- rendu état (1 Hz)
-function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"})[c])}
+function esc(s){return String(s).replace(/[&<>\x22\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\x22":"&quot;","\x27":"&#39;"})[c])}
 const ANON=location.search.includes("anon");if(ANON)document.documentElement.classList.add("shot");
-function renderState(){
+// ---------- first-run wizard
+let wizardChecked=false;
+function checkWizard(){if(wizardChecked||!S.config)return;wizardChecked=true;
+  // autostart pre-ticked only for the Flatpak app; a source checkout may lack PyGObject for the desktop shell
+  $("#wz-autostart-on").checked=!!S.flatpak;if(S.config.wizard_done===false)go("welcome")}
+function renderWizard(){if(page!=="welcome")return;const tm=T||{};
+  $("#wz-status").textContent=tm.connected&&tm.live?t("js.status.live"):(tm.status||(S&&S.status)||"—")}
+$("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconnecting"))};
+$("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
+$("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").checked})
+  .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("overview")});
+// features that need things the Flatpak does not ship (Garmin's AGPL dependency)
+function hideInFlatpak(){if(!S.flatpak)return;$$('#nav a[data-p="garmin"]').forEach(a=>a.style.display="none")}
+function renderState(){checkWizard();renderWizard();renderBaseline();hideInFlatpak();
   const s=ANON?anonymize(S):S;
   $("#side-model").textContent=s.model||"—";
   const name=(s.info||[]).find(i=>i.key==="info.name");
@@ -862,6 +914,162 @@ function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">$
       `<div class="kv"><span>${t("js.lb.loo")}</span><span><b>${pct(v.loo_accuracy)}</b> (${t("js.lb.chance",{v:pct(v.chance)})}) · p = ${pv(v.p_value)} · <b>${esc(v.verdict)}</b></span></div><div class="kv"><span>${t("js.lb.too_short")}</span><span>${v.too_short||0}</span></div>`}
   return h}
 window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
+// ---------- Games: per-game bridge (TrackIR DLL in the Proton prefix) and profiles (/api/games)
+// mirror of game_profiles.map_axis (tests/test_games_ui.py checks they agree)
+function mapAxis(d,a){if(!a.enabled||d===0)return 0;const e=d>0?a.edge_pos:a.edge_neg;let o=a.target*Math.pow(Math.min(Math.abs(d)/e,1),a.curve);o=d<0?-o:o;return a.invert?-o:o}
+// mirror of game_profiles.sensitivity_to_curve / curve_to_sensitivity
+function sensToCurve(s){return 3-2*Math.min(Math.max(+s,0),1)}
+function curveToSens(c){return Math.min(Math.max((3-c)/2,0),1)}
+let gamesData=null,gamesTimer=null;
+const GAXES=["yaw","pitch","roll"];
+function axisLabel(n){return n==="yaw"?t("js.games.axis_yaw"):n==="pitch"?t("js.games.axis_pitch"):t("js.games.axis_roll")}
+function gameHint(g){if(g.flatpak)return t("js.games.hint_flatpak");if(!g.has_prefix)return t("js.games.hint_no_prefix");
+  if(g.running)return t("js.games.hint_running");if(g.status==="foreign"&&!g.enabled)return t("js.games.hint_foreign",{name:g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.other_tracker")});return ""}
+function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
+  const pill=g.status==="on"?`<span class="pill g">${t("js.games.on")}</span>`:g.status==="foreign"?`<span class="pill o">${esc(g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.foreign"))}</span>`:`<span class="pill">${t("js.games.off")}</span>`;
+  const EDGES={yaw:["js.games.edge_left","js.games.edge_right"],pitch:["js.games.edge_down","js.games.edge_up"]};
+  const rng=(f,min,max,step,v,label)=>`<label>${label} <input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
+  const ax=GAXES.map(n=>{const a=p.axes[n];const e=EDGES[n];return `<div class="axis" data-axis="${n}"><b>${axisLabel(n)}</b>
+    <label><input type="checkbox" data-f="enabled" ${a.enabled?"checked":""}> ${t("js.games.on_short")}</label>
+    <label><input type="checkbox" data-f="invert" ${a.invert?"checked":""}> ${t("js.games.invert")}</label>
+    ${e?rng("edge_neg",2,180,1,a.edge_neg,t(e[0]))+rng("edge_pos",2,180,1,a.edge_pos,t(e[1])):rng("edge_pos",2,180,1,a.edge_pos,t("js.games.edge_both"))}
+    ${rng("target",0,180,5,a.target,t("js.games.target"))}
+    ${rng("sens",0,1,0.05,curveToSens(a.curve),t("js.games.sensitivity"))}</div>`}).join("");
+  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
+    <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
+    ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
+    ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
+    <details><summary>${t("js.games.profile")}${g.proton?" · "+esc(g.proton.split("/").pop()):""}</summary>
+      <div class="row" style="margin:8px 0"><button class="btn sm p" data-calibrate>${t("js.games.calibrate")}</button>
+        <span class="hint">${t("js.games.calibrate_hint")}</span></div>
+      <div data-calpanel></div>
+      ${gamesData.baseline?`<div class="kv"><span>${g.profile.own?t("js.games.own_values"):t("js.games.uses_baseline")}</span><span>${g.profile.own?`<button class="btn sm" data-to-baseline>${t("js.games.to_baseline")}</button>`:""}</span></div>`:""}
+      <div class="kv"><span>${t("js.games.receives")}</span><span class="prev mono" data-prev>—</span></div>
+      <div class="hint">${t("js.games.sens_hint")}</div>
+      <div class="kv"><span>${t("js.games.smoothing")}</span><span><input type="range" data-f="smoothing" min="0" max="1" step="0.05" value="${p.smoothing}"></span></div>
+      ${ax}
+      <div class="kv"><span>${t("js.games.neck")}</span><span><label><input type="checkbox" data-f="neck.enabled" ${p.neck.enabled?"checked":""}> ${t("js.games.on_short")}</label>
+        <input type="range" data-f="neck.strength" min="0" max="2" step="0.1" value="${p.neck.strength}"></span></div>
+      <div class="kv"><span></span><span><label><input type="checkbox" data-f="neck.lean_forward" ${p.neck.lean_forward?"checked":""}> ${t("js.games.neck_lean_forward")}</label></span></div>
+      <div class="hint">${t("js.games.neck_hint")}</div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-reset>${t("js.games.reset")}</button></div>
+    </details></div>`}
+function readProfile(card,prev){const v=f=>card.querySelector(`[data-f="${f}"]`);const num=e=>+e.value;
+  const axes={};GAXES.forEach(n=>{const r=card.querySelector(`[data-axis="${n}"]`),q=f=>r.querySelector(`[data-f="${f}"]`);
+    const pos=num(q("edge_pos")),neg=r.querySelector('[data-f="edge_neg"]')?num(q("edge_neg")):pos;
+    axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,edge_neg:neg,edge_pos:pos,target:num(q("target")),curve:sensToCurve(num(q("sens")))}});
+  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes,monitors:(prev&&prev.monitors)||[],own:true}}
+function gameError(r){return r.json().then(j=>{throw new Error(j.error||r.status)})}
+function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appid),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+  .then(r=>r.ok?r.json():gameError(r))}
+function renderGames(){const box=$("#games-list");if(!gamesData)return;
+  if(!gamesData.steam_found){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_steam"))}</div>`;return}
+  if(!gamesData.games.length){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_games"))}</div>`;return}
+  const miss=(gamesData.missing_libraries||[]).map(p=>`<div class="card hint">${esc(t("js.games.hint_missing_library",{path:p}))}<br><code>flatpak override --user --filesystem=${esc(p)} io.github.henningnorden.MousePods</code></div>`).join("");
+  box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+miss+gamesData.games.map(gameCard).join("");
+  box.querySelectorAll(".game").forEach(card=>{const appid=card.dataset.appid,g=gamesData.games.find(x=>x.appid===appid);
+    card.querySelector("[data-toggle]").onchange=e=>{const on=e.target.checked;e.target.disabled=true;
+      postGame(appid,{enabled:on}).then(()=>{toast(on?t("js.games.toast_on",{name:g.name}):t("js.games.toast_off",{name:g.name}));loadGames()})
+        .catch(err=>{toast(err.message);loadGames()})};
+    card.querySelectorAll('details input[type=range]').forEach(inp=>{const o=document.createElement("output");o.className="prev";
+      const show=()=>o.textContent=" "+(+inp.value).toFixed(inp.step<1?(inp.step<0.1?2:1):0);show();inp.after(o);inp.addEventListener("input",show)});
+    card.querySelectorAll("details input").forEach(inp=>inp.onchange=()=>{const prof=readProfile(card,g.profile);g.profile=prof;
+      postGame(appid,{profile:prof}).then(()=>toast(t("js.games.toast_profile"))).catch(err=>toast(err.message))});
+    card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()});
+    card.querySelector("[data-calibrate]").onclick=()=>calibStart(card,g);
+    const tb=card.querySelector("[data-to-baseline]");
+    if(tb)tb.onclick=()=>postGame(appid,{profile:{...g.profile,own:false}}).then(()=>{toast(t("js.games.toast_baseline"));loadGames()})})}
+function loadGames(){return fetch("/api/games").then(r=>r.json()).then(d=>{gamesData=d;renderGames()}).catch(()=>{})}
+function refreshGamesLive(){if(page!=="games"){clearInterval(gamesTimer);gamesTimer=null;return}
+  fetch("/api/opentrack").then(r=>r.json()).then(o=>{const p=o.pose||[0,0,0,0,0,0];
+    $("#games-live").textContent=GAXES.map((n,i)=>`${axisLabel(n)} ${p[3+i]>=0?"+":""}${p[3+i].toFixed(1)}°`).join(" · ");
+    if(gamesData)$$("#games-list .game").forEach(card=>{const g=gamesData.games.find(x=>x.appid===card.dataset.appid);if(!g||!g.enabled)return;
+      card.querySelector("[data-prev]").textContent="→ "+GAXES.map((n,i)=>`${mapAxis(p[3+i],g.profile.axes[n]).toFixed(0)}°`).join(" / ")})}).catch(()=>{})}
+// ---------- calibration of a game profile: monitors, overlay with points, result (/api/calibration)
+// mirror of desktop/overlay.roles_for (tests/test_games_ui.py checks they agree)
+function rolesFor(sel){if(!sel.length)return {};const r={};sel.forEach(m=>r[m.connector]=[]);const main=(sel.find(m=>m.main)||sel[0]).connector;r[main].push("main");r[sel[0].connector].push("left");r[sel[sel.length-1].connector].push("right");return r}
+const desktopBridge=()=>window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.mousepods;
+let calib=null;          // {box, saved, sel, list, targets:{side,vert}, save(result, targets, sel)}
+window.mpDesktop={onMessage(msg){if(msg.cmd==="monitors"&&calib)calibMonitors(msg.list,msg.selection)}};
+function calibBegin(c){calib={sel:[],list:[],...c};
+  if(desktopBridge())desktopBridge().postMessage({cmd:"monitors",saved:calib.saved||[]});
+  else calibRun()}
+function calibStart(card,g){const A=g.profile.axes;
+  calibBegin({box:card.querySelector("[data-calpanel]"),saved:g.profile.monitors,targets:{side:A.yaw.target,vert:A.pitch.target},
+    save:(r,tg,sel)=>{const p=JSON.parse(JSON.stringify(g.profile));
+      Object.assign(p.axes.yaw,{edge_neg:r.yaw.neg,edge_pos:r.yaw.pos,target:tg.side});
+      Object.assign(p.axes.pitch,{edge_neg:r.pitch.neg,edge_pos:r.pitch.pos,target:tg.vert});
+      if(sel.length)p.monitors=sel;p.own=true;
+      return postGame(g.appid,{profile:p}).then(()=>{toast(t("js.games.toast_calibrated"));loadGames()})}})}
+function calibMonitors(list,sel){calib.list=list;calib.sel=sel;if(list.length<=1)return calibRun();calibDialog()}
+function calibDialog(){const c=calib,box=c.box;
+  const order=[...c.sel.map(s=>s.connector),...c.list.map(m=>m.connector).filter(x=>!c.sel.some(s=>s.connector===x))];
+  const info=x=>c.list.find(m=>m.connector===x)||{connector:x,model:"",width:"?",height:"?"};
+  box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.mon_title")}</b><div class="hint">${t("js.games.mon_hint")}</div>
+    ${order.map((x,i)=>{const m=info(x),s=c.sel.find(v=>v.connector===x);return `<div class="kv" data-mon="${esc(x)}"><span>
+      <label><input type="checkbox" data-mon-on ${s?"checked":""}> <b>${esc(x)}</b> ${esc(m.model)} · ${m.width}×${m.height}</label></span><span>
+      <label><input type="radio" name="mon-main" data-mon-main ${s&&s.main?"checked":""}> ${t("js.games.mon_main")}</label>
+      <button class="btn sm" data-mon-up ${i?"":"disabled"}>↑</button><button class="btn sm" data-mon-down ${i<order.length-1?"":"disabled"}>↓</button>
+      <button class="btn sm" data-mon-flash>${t("js.games.mon_flash")}</button></span></div>`}).join("")}
+    <div class="row" style="margin-top:10px"><button class="btn sm p" data-mon-start>${t("js.games.start")}</button><button class="btn sm" data-cal-close>${t("js.games.discard")}</button></div></div>`;
+  const read=()=>{const rows=[...box.querySelectorAll("[data-mon]")];
+    c.sel=rows.filter(r=>r.querySelector("[data-mon-on]").checked).map(r=>({connector:r.dataset.mon,main:r.querySelector("[data-mon-main]").checked}));
+    if(c.sel.length&&!c.sel.some(s=>s.main))c.sel[0].main=true;
+    return rows.map(r=>r.dataset.mon)};
+  box.querySelectorAll("[data-mon]").forEach(r=>{const x=r.dataset.mon;
+    r.querySelector("[data-mon-flash]").onclick=()=>desktopBridge().postMessage({cmd:"flash",connector:x});
+    const move=d=>{const o=read(),i=o.indexOf(x),j=i+d;[o[i],o[j]]=[o[j],o[i]];
+      c.sel=o.filter(y=>c.sel.some(s=>s.connector===y)).map(y=>c.sel.find(s=>s.connector===y));calibDialog()};
+    r.querySelector("[data-mon-up]").onclick=()=>move(-1);r.querySelector("[data-mon-down]").onclick=()=>move(1)});
+  box.querySelector("[data-cal-close]").onclick=()=>{box.innerHTML="";calib=null};
+  box.querySelector("[data-mon-start]").onclick=()=>{read();if(!c.sel.length)return toast(t("js.games.mon_none"));calibRun()}}
+function calibRun(){const c=calib,box=c.box;
+  box.innerHTML=`<div class="hint" style="margin:8px 0">${t("js.games.calib_running")}</div>`;
+  post("/api/calibration",{action:"start"}).then(()=>{
+    if(desktopBridge()){const roles=rolesFor(c.sel);
+      desktopBridge().postMessage({cmd:"overlay",monitors:c.sel.map(m=>({connector:m.connector,roles:roles[m.connector]}))})}
+    else calibFrame();
+    calibWait()}).catch(e=>{toast(e.message);box.innerHTML=""})}
+function calibFrame(){const f=document.createElement("iframe");f.src="/calibrate?roles=main,left,right";
+  f.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:9999;background:#000";
+  document.body.appendChild(f);(f.requestFullscreen?f.requestFullscreen():Promise.resolve()).catch(()=>{});
+  const end=e=>{if(e.origin!==location.origin||!e.data||e.data.mousepods!=="calibration_end")return;
+    removeEventListener("message",end);if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});f.remove()};
+  addEventListener("message",end)}
+function calibWait(){if(!calib)return;
+  fetch("/api/calibration").then(r=>r.json()).then(st=>{if(!calib)return;
+    if(st.active||st.step===null)return setTimeout(calibWait,300);
+    if(st.step==="done")return calibResult(st.result);
+    calib.box.innerHTML=st.hint==="no_signal"?`<div class="hint">${t("js.games.calib_no_signal")}</div>`:"";
+    calib=null}).catch(()=>setTimeout(calibWait,1000))}
+function calibResult(r){const c=calib,box=c.box,f=v=>Math.round(v*10)/10;
+  const L={left:t("js.games.res_left"),right:t("js.games.res_right"),up:t("js.games.res_up"),down:t("js.games.res_down")};
+  const num=(k,v)=>`<label>${L[k]} <input type="number" data-ang="${k}" min="2" max="180" step="0.5" value="${f(v)}" style="width:5.5em"> °</label>`;
+  box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.res_title")}</b>
+    <div class="hint">${t("js.games.res_edit_hint")}</div>
+    <div class="row" style="gap:14px;flex-wrap:wrap;margin:8px 0">${num("left",r.yaw.neg)}${num("right",r.yaw.pos)}${num("up",r.pitch.pos)}${num("down",r.pitch.neg)}</div>
+    <div class="kv"><span>${t("js.games.target_side")}</span><span><input type="range" data-res="side" min="0" max="180" step="5" value="${c.targets.side}"> <output></output></span></div>
+    <div class="kv"><span>${t("js.games.target_vert")}</span><span><input type="range" data-res="vert" min="0" max="180" step="5" value="${c.targets.vert}"> <output></output></span></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm p" data-res-save>${t("js.games.save")}</button>
+      <button class="btn sm" data-res-again>${t("js.games.repeat")}</button><button class="btn sm" data-res-discard>${t("js.games.discard")}</button></div></div>`;
+  box.querySelectorAll("[data-res]").forEach(i=>{const o=i.nextElementSibling,s=()=>o.textContent=i.value+"°";s();i.oninput=s});
+  box.querySelector("[data-res-discard]").onclick=()=>{box.innerHTML="";calib=null};
+  box.querySelector("[data-res-again]").onclick=()=>calibRun();
+  box.querySelector("[data-res-save]").onclick=()=>{
+    const a=k=>Math.min(Math.max(+box.querySelector(`[data-ang="${k}"]`).value||2,2),180);
+    const res={yaw:{neg:a("left"),pos:a("right")},pitch:{neg:a("down"),pos:a("up")}};
+    const tg={side:+box.querySelector('[data-res="side"]').value,vert:+box.querySelector('[data-res="vert"]').value};
+    c.save(res,tg,c.sel).then(()=>{box.innerHTML="";calib=null}).catch(e=>toast(e.message))}}
+// baseline calibration on the Calibration page: default for every game without own values + pointer edges
+function renderBaseline(){const b=S&&S.config&&S.config.game_baseline,el=$("#cal-base-now");if(!el)return;
+  el.textContent=b&&b.yaw?t("js.games.res_values",{l:Math.round(b.yaw.neg),r:Math.round(b.yaw.pos),u:Math.round(b.pitch.pos),d:Math.round(b.pitch.neg)}):t("js.calib_ui.no_baseline")}
+function startBaseline(){const b=(S&&S.config&&S.config.game_baseline)||{};
+  calibBegin({box:$("#cal-base-panel"),saved:b.monitors||[],targets:{side:b.target_side??180,vert:b.target_vert??90},
+    save:(r,tg,sel)=>post("/api/calibration",{action:"save_baseline",...r,target_side:tg.side,target_vert:tg.vert,monitors:sel})
+      .then(x=>x.json()).then(j=>{if(j.error)throw new Error(j.error);
+        toast(j.pointer?t("js.calib_ui.saved_all"):t("js.calib_ui.saved_games_only"));
+        S.config.game_baseline={...r,target_side:tg.side,target_vert:tg.vert,monitors:sel};renderBaseline()})})}
+function showGames(){loadGames();if(!gamesTimer)gamesTimer=setInterval(refreshGamesLive,250)}
 // ---------- Simulateurs : OpenTrack + manette virtuelle (passent par /api/opentrack)
 $("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?t("js.toast.ot_on"):t("js.toast.ot_off")));
 $("#js-en").onchange=()=>post("/api/opentrack",{joystick:{enabled:$("#js-en").checked}}).then(()=>toast($("#js-en").checked?t("js.toast.joy_on"):t("js.toast.joy_off")));

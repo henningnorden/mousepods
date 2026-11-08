@@ -261,8 +261,8 @@ class TestWebRecording(unittest.TestCase):
         ctl = pytypes.SimpleNamespace(gesture_hooks=[], gestures=pytypes.SimpleNamespace(sample_taps=[]),
                                       cfg={"gestures": {}})
         with tempfile.TemporaryDirectory() as d:
-            old = mw.HERE
-            mw.HERE = d
+            old = os.environ.get("MOUSEPODS_DATA_DIR")
+            os.environ["MOUSEPODS_DATA_DIR"] = d                 # where recordings go (paths.data_dir)
             try:
                 ui = mw.WebUI(ctl, os.path.join(d, "config.json"), port=0)
                 self.assertTrue(ctl.gestures.sample_taps)              # LiveTap branché
@@ -283,7 +283,10 @@ class TestWebRecording(unittest.TestCase):
                 self.assertTrue(st["session"]["cancelled"])
                 i18n.encode_json(st)
             finally:
-                mw.HERE = old
+                if old is None:
+                    os.environ.pop("MOUSEPODS_DATA_DIR", None)
+                else:
+                    os.environ["MOUSEPODS_DATA_DIR"] = old
 
 
 if __name__ == "__main__":

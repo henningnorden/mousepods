@@ -1,0 +1,106 @@
+# Tests, head-tracking DLLs and the MousePods Flatpak bundle (fork: henningnorden/mousepods).
+# Actions are pinned to commits; the tag in the comment is what the commit was when pinned.
+name: build
+
+on:
+  push:
+    branches: [flatpak-desktop-app]
+    tags: ["v*"]
+  pull_request:
+    branches: [flatpak-desktop-app]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Tests
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! python -m unittest discover -s tests 2>&1 | tee tests.log; then
+            # job logs need a login; the failing tests go into a public annotation
+            echo "::error title=tests::$(grep -E '^(FAIL|ERROR):' tests.log | head -n 20 | sed -e ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
+            exit 1
+          fi
+
+  dlls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: native/build.sh
+      - run: python3 -m unittest tests.test_native_dlls -v
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: native-dlls
+          path: native/out/*.dll
+
+  flatpak:
+    needs: [tests, dlls]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: native-dlls
+          path: native/out
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id    # the CI container has none
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo build \
+              packaging/flatpak/io.github.henningnorden.MousePods.json 2>&1 | tee build.log; then
+            # job logs need a login; an annotation is public, so the tail of the log goes there
+            echo "::error title=flatpak-builder::$(tail -n 60 build.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1
+          fi
+      - name: Check imports inside the sandbox
+        shell: bash
+        run: |
+          set -o pipefail
+          dbus-run-session -- flatpak build build python3 -c "
+          import socket, sys
+          print('python', sys.version.split()[0], 'AF_BLUETOOTH', hasattr(socket, 'AF_BLUETOOTH'))
+          import gi
+          gi.require_version('Gtk', '4.0'); gi.require_version('WebKit', '6.0')
+          from gi.repository import Gtk, WebKit
+          sys.path.insert(0, '/app/share/mousepods')
+          import airpods_mouse_controller, mousepods_web, bluez_dbus, l2cap, game_bridge
+          import desktop.app, desktop.tray
+          print('imports ok')" 2>&1 | tee check.log || { echo "::error title=imports::$(tail -n 40 check.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"; exit 1; }
+      - name: Bundle
+        run: |
+          flatpak build-bundle repo MousePods.flatpak io.github.henningnorden.MousePods \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: MousePods-flatpak
+          path: MousePods.flatpak
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [flatpak, dlls]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --generate-notes

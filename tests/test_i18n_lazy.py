@@ -20,20 +20,20 @@ class LazyTextTests(unittest.TestCase):
 
     def test_lazy_text_follows_current_language(self):
         msg = i18n.tr_lazy("lang.auto")
-        i18n.set_lang("fr")
-        self.assertEqual(str(msg), "Automatique")
-        self.assertEqual(f"[{msg}]", "[Automatique]")
+        i18n.set_lang("de")
+        self.assertEqual(str(msg), "Automatisch")
+        self.assertEqual(f"[{msg}]", "[Automatisch]")
         i18n.set_lang("en")
         self.assertEqual(str(msg), "Automatic")
 
     def test_lazy_variables_are_rendered_late_too(self):
         msg = i18n.tr_lazy("srv.status.searching", error=i18n.tr_lazy("lang.auto"))
-        i18n.set_lang("fr")
-        self.assertIn("Automatique", str(msg))
+        i18n.set_lang("de")
+        self.assertIn("Automatisch", str(msg))
 
     def test_lazy_compares_like_its_text(self):
-        i18n.set_lang("fr")
-        self.assertEqual(i18n.tr_lazy("lang.auto"), "Automatique")
+        i18n.set_lang("de")
+        self.assertEqual(i18n.tr_lazy("lang.auto"), "Automatisch")
         self.assertEqual(i18n.tr_lazy("lang.auto"), i18n.tr("lang.auto"))
 
     def test_encode_json_renders_lazy_in_current_language(self):
@@ -53,19 +53,19 @@ class LazyTextTests(unittest.TestCase):
     def test_lab_steps_follow_language(self):
         import labo
         steps = labo.build_protocol("mouvements", reps=1, seed=1)
-        i18n.set_lang("fr")
+        i18n.set_lang("de")
         de = str(steps[0]["title"])
         i18n.set_lang("en")
         en = str(steps[0]["title"])
         self.assertNotEqual(de, en)
-        i18n.set_lang("fr")
+        i18n.set_lang("de")
         self.assertTrue(all(isinstance(str(s["title"]), str) for s in steps))
 
     def test_web_status_follows_language(self):
         import types
         import mousepods_web as web
         ui = web.WebUI(types.SimpleNamespace(cfg={"ui_lang": "auto"}), "/tmp/unused.json", port=0)
-        i18n.set_lang("fr")
+        i18n.set_lang("de")
         de = json.loads(i18n.encode_json({"s": ui.status}))["s"]
         i18n.set_lang("en")
         en = json.loads(i18n.encode_json({"s": ui.status}))["s"]
