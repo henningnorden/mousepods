@@ -937,6 +937,7 @@ class Controller:
         self.sample_times = []
         self.opentrack = None        # OpenTrackOutput actif (voir sync_opentrack)
         self.opentrack_forced = False  # --opentrack : activé pour la session
+        self.demo_until = 0.0        # page /demo ouverte : pose calculée sans sortie (voir command("demo"))
         self.joystick_forced = False   # --sim-joystick : activé pour la session
 
     def _make_filters(self):
@@ -1010,6 +1011,10 @@ class Controller:
         cmd = cmd.strip().lower()
         if cmd == "recenter":
             self.recenter()
+        elif cmd == "demo":                # la page /demo est ouverte : garder la pose de tête calculée
+            self.demo_until = time.monotonic() + 3.0
+            if not self.opentrack:
+                self.sync_opentrack()
         elif cmd in ("toggle", "toggle_pause"):
             self.set_paused(not self.paused)
         elif cmd == "pause":
@@ -1115,7 +1120,8 @@ class Controller:
         if self.joystick_forced:
             jc["enabled"] = True
         want_udp, want_js = bool(oc.get("enabled")), bool(jc.get("enabled"))
-        if (want_udp or want_js) and not self.opentrack:
+        want_demo = time.monotonic() < self.demo_until
+        if (want_udp or want_js or want_demo) and not self.opentrack:
             try:
                 import opentrack_out
                 self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
@@ -1124,7 +1130,7 @@ class Controller:
                     notify(self.cfg, tr("srv.status.opentrack_on"))
             except (OSError, ValueError) as e:
                 log.warning("OpenTrack indisponible : %s", e)
-        elif want_udp or want_js:
+        elif want_udp or want_js or want_demo:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
             self.opentrack.configure(oc, udp=want_udp)
@@ -1191,6 +1197,9 @@ class Controller:
             p = self.engine.p
             self.opentrack.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
                                 (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
+            if self.demo_until and time.monotonic() > self.demo_until:   # page /demo fermée
+                self.demo_until = 0.0
+                self.sync_opentrack()
         for hook in list(self.sample_hooks):
             hook(w, g, dt, a)
         for hook in list(self.gesture_hooks):

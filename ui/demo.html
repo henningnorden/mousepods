@@ -1,0 +1,280 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MousePods · cockpit</title>
+<style>
+  :root { --fg:#f5f5f7; --dim:rgba(245,245,247,.7); --glass:rgba(20,22,28,.55); --accent:#0a84ff; }
+  html,body { margin:0; height:100%; background:#0b0d12 !important; color:var(--fg);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif; overflow:hidden; }
+  canvas { display:block; width:100vw; height:100vh; }
+  .hud { position:fixed; left:16px; top:16px; right:16px; display:flex; gap:12px; align-items:flex-start;
+    justify-content:space-between; pointer-events:none; flex-wrap:wrap; }
+  .card { background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 14px; pointer-events:auto; }
+  h1 { font-size:15px; margin:0 0 2px; font-weight:650; letter-spacing:-.01em; }
+  .sub { color:var(--dim); font-size:12.5px; max-width:360px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { font:inherit; color:var(--fg); background:rgba(255,255,255,.12); border:0; border-radius:9px;
+    padding:6px 12px; cursor:pointer; }
+  button.p { background:var(--accent); }
+  a { color:var(--dim); font-size:12.5px; }
+  .mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12.5px; color:var(--dim); }
+  input[type=range] { width:110px; accent-color:var(--accent); }
+  #status { font-size:12.5px; color:#ffd60a; min-height:1em; }
+  body.clean .hud { display:none; }
+  body.clean { cursor:none; }
+  .keys { color:var(--dim); font-size:12px; margin-top:4px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="card">
+    <h1 data-i18n="demo.title">Head tracking demo</h1>
+    <div class="sub" data-i18n="demo.hint">Turn your head: the cockpit view follows the AirPods.</div>
+    <div class="keys" data-i18n="demo.keys">F: full screen · H: hide the controls</div>
+    <div id="status"></div>
+  </div>
+  <div class="card row">
+    <span class="mono" id="angles">yaw 0° · pitch 0° · roll 0°</span>
+    <label class="row"><span data-i18n="demo.gain">Amplification</span>
+      <input type="range" id="gain" min="1" max="3" step="0.1" value="1.8"><span class="mono" id="gainv">×1.8</span></label>
+    <button class="p" id="recenter" data-i18n="demo.recenter">Recenter</button>
+    <button id="fs" data-i18n="demo.fullscreen">Full screen</button>
+    <button id="hide" data-i18n="demo.hide">Hide controls</button>
+    <a href="/" data-i18n="demo.back">Back to the app</a>
+  </div>
+</div>
+<script>
+"use strict";
+// ---------- i18n (same tables as the app)
+let I18N = {};
+const t = k => I18N[k] || null;
+fetch("/api/i18n").then(r => r.json()).then(j => {
+  I18N = j.strings || {}; document.documentElement.lang = j.lang || "en";
+  document.querySelectorAll("[data-i18n]").forEach(e => { const s = t(e.dataset.i18n); if (s) e.textContent = s; });
+}).catch(() => {});
+
+// ---------- live pose: [x, y, z, yaw, pitch, roll] in degrees, +yaw = look right, +pitch = look up
+const q = new URLSearchParams(location.search);
+const ROLL_SIGN = q.get("roll") === "-1" ? -1 : 1;
+let target = [0, 0, 0], live = false, connected = false, serverUp = true;
+async function poll() {
+  try {
+    const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
+    serverUp = true; connected = j.connected;
+    live = j.age != null && j.age < 0.5;
+    if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+  } catch (e) { serverUp = false; }
+  setTimeout(poll, 16);
+}
+poll();
+const gainEl = document.getElementById("gain");
+gainEl.oninput = () => document.getElementById("gainv").textContent = "×" + (+gainEl.value).toFixed(1);
+document.getElementById("recenter").onclick = () =>
+  fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd: "recenter" }) });
+
+// ---------- full screen (F) and clean view without controls (H, or Esc to bring them back)
+const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
+const toggleClean = force => document.body.classList.toggle("clean", force);
+document.getElementById("fs").onclick = toggleFs;
+document.getElementById("hide").onclick = () => toggleClean(true);
+addEventListener("keydown", e => {
+  if (e.key === "f" || e.key === "F") toggleFs();
+  else if (e.key === "h" || e.key === "H") toggleClean();
+  else if (e.key === "Escape") toggleClean(false);
+});
+if (q.get("clean") === "1") toggleClean(true);
+
+// ---------- tiny 3D renderer (canvas 2D, near-plane clipping, painter's order)
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+let W = 0, H = 0, F = 1;
+function resize() {
+  const d = Math.min(devicePixelRatio || 1, 2);
+  W = cv.width = innerWidth * d; H = cv.height = innerHeight * d;
+  F = (H / 2) / Math.tan((68 * Math.PI / 180) / 2);       // 68° vertical field of view
+}
+addEventListener("resize", resize); resize();
+
+const D2R = Math.PI / 180;
+let cam = { r: [1, 0, 0], u: [0, 1, 0], f: [0, 0, 1] };
+function setView(yaw, pitch, roll) {
+  const y = yaw * D2R, p = pitch * D2R, r = roll * D2R * ROLL_SIGN;
+  const f0 = [Math.sin(y), 0, Math.cos(y)], r0 = [Math.cos(y), 0, -Math.sin(y)], u0 = [0, 1, 0];
+  const f1 = f0.map((v, i) => v * Math.cos(p) + u0[i] * Math.sin(p));
+  const u1 = u0.map((v, i) => v * Math.cos(p) - f0[i] * Math.sin(p));
+  const r2 = r0.map((v, i) => v * Math.cos(r) - u1[i] * Math.sin(r));
+  const u2 = u1.map((v, i) => v * Math.cos(r) + r0[i] * Math.sin(r));
+  cam = { r: r2, u: u2, f: f1 };
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const toCam = p => [dot(p, cam.r), dot(p, cam.u), dot(p, cam.f)];
+const NEAR = 0.05;
+function clip(poly) {                                     // Sutherland–Hodgman against z = NEAR
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const ai = a[2] >= NEAR, bi = b[2] >= NEAR;
+    if (ai) out.push(a);
+    if (ai !== bi) { const k = (NEAR - a[2]) / (b[2] - a[2]); out.push(a.map((v, j) => v + (b[j] - v) * k)); }
+  }
+  return out;
+}
+function poly(ptsWorld, fill, stroke, origin) {
+  const o = origin || [0, 0, 0];
+  const c = clip(ptsWorld.map(p => toCam([p[0] - o[0], p[1] - o[1], p[2] - o[2]])));
+  if (c.length < 3) return;
+  ctx.beginPath();
+  c.forEach((p, i) => { const x = W / 2 + F * p[0] / p[2], y = H / 2 - F * p[1] / p[2]; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(1, W / 900); ctx.stroke(); }
+}
+function proj(p, o) {
+  const c = toCam([p[0] - o[0], p[1] - o[1], p[2] - o[2]]);
+  return c[2] > NEAR ? [W / 2 + F * c[0] / c[2], H / 2 - F * c[1] / c[2], c[2]] : null;
+}
+
+// ---------- world: fields, river, runway, mountains, clouds (camera flies forward at 300 m)
+const ALT = 300, SPEED = 55, TILE = 500, NF = 18, NS = 14;
+const HAZE = [205, 220, 233], FOG_END = 16000;
+const FIELD = [[86, 124, 58], [104, 140, 64], [133, 141, 74], [74, 110, 52], [150, 133, 82], [98, 134, 60], [118, 128, 66]];
+const RIVER = [64, 112, 160], ROAD = [150, 146, 132];
+const hash = (i, j) => { const h = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return h - Math.floor(h); };
+const fog = (c, d) => { const k = Math.min(1, Math.pow(Math.max(0, d) / FOG_END, 1.25));
+  return `rgb(${c.map((v, i) => Math.round(v + (HAZE[i] - v) * k)).join(",")})`; };
+const MOUNTAINS = Array.from({ length: 34 }, (_, k) => {
+  const a = k / 34 * 2 * Math.PI + hash(k, 3) * 0.15, d = 10500 + hash(k, 7) * 3500;
+  return { x: Math.sin(a) * d, z: Math.cos(a) * d, h: 700 + hash(k, 9) * 1500, w: 1500 + hash(k, 5) * 1700 };
+});
+const CLOUDS = Array.from({ length: 26 }, (_, k) => ({
+  x: (hash(k, 1) - 0.5) * 12000, z: hash(k, 2) * 12000, y: 800 + hash(k, 4) * 600, s: 260 + hash(k, 6) * 420 }));
+
+// ---------- cockpit, in the aircraft frame (eye at the origin, metres)
+function cockpit() {
+  const o = [0, 0, 0];
+  const frame = "#15171c", edge = "rgba(255,255,255,.06)";
+  // side walls and roof first (furthest), then pillars, then the dashboard on top
+  for (const s of [-1, 1]) {
+    poly([[s * 0.95, -0.34, 0.7], [s * 0.95, -0.34, -1.4], [s * 0.95, -1.4, -1.4], [s * 0.95, -1.4, 0.55]], "#1b1e24", null, o);
+    poly([[s * 0.93, -0.34, 0.7], [s * 0.93, -0.34, -1.4], [s * 0.93, -0.38, -1.4], [s * 0.93, -0.38, 0.7]], "#2b2f38", null, o);
+  }
+  poly([[-0.95, 0.6, 0.42], [0.95, 0.6, 0.42], [0.95, 0.74, -1.4], [-0.95, 0.74, -1.4]], frame, null, o);
+  for (const s of [-1, 1])
+    poly([[s * 0.64, -0.33, 0.75], [s * 0.69, -0.33, 0.75], [s * 0.47, 0.6, 0.43], [s * 0.42, 0.6, 0.43]], frame, edge, o);
+  // dashboard with a soft vertical gradient
+  const top = proj([0, -0.33, 0.75], o), bot = proj([0, -1.2, 0.55], o);
+  let dash = "#22252c";
+  if (top && bot) { dash = ctx.createLinearGradient(0, top[1], 0, bot[1]); dash.addColorStop(0, "#2c3039"); dash.addColorStop(1, "#14161b"); }
+  poly([[-0.93, -0.33, 0.75], [0.93, -0.33, 0.75], [0.93, -1.2, 0.55], [-0.93, -1.2, 0.55]], dash, null, o);
+  poly([[-0.93, -0.33, 0.75], [0.93, -0.33, 0.75], [0.93, -0.355, 0.66], [-0.93, -0.355, 0.66]], "#3a3f4a", null, o);
+  // six round gauges with ticks and a needle
+  for (let k = 0; k < 6; k++) {
+    const cx = -0.72 + k * 0.288, p = proj([cx, -0.47, 0.7], o), q2 = proj([cx + 0.09, -0.47, 0.7], o);
+    if (!p || !q2) continue;
+    const r = Math.hypot(q2[0] - p[0], q2[1] - p[1]);
+    const face = ctx.createRadialGradient(p[0], p[1] - r * 0.3, r * 0.1, p[0], p[1], r);
+    face.addColorStop(0, "#1d2027"); face.addColorStop(1, "#08090c");
+    ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 2 * Math.PI); ctx.fillStyle = face; ctx.fill();
+    ctx.strokeStyle = "#454b57"; ctx.lineWidth = r * 0.1; ctx.stroke();
+    ctx.strokeStyle = "rgba(245,245,247,.55)"; ctx.lineWidth = Math.max(1, r * 0.035);
+    for (let m = 0; m < 12; m++) {
+      const a = m / 12 * 2 * Math.PI;
+      ctx.beginPath(); ctx.moveTo(p[0] + Math.cos(a) * r * 0.72, p[1] + Math.sin(a) * r * 0.72);
+      ctx.lineTo(p[0] + Math.cos(a) * r * 0.86, p[1] + Math.sin(a) * r * 0.86); ctx.stroke();
+    }
+    const a = performance.now() / (1400 + k * 170) + k * 1.3;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + Math.cos(a) * r * 0.68, p[1] + Math.sin(a) * r * 0.68);
+    ctx.strokeStyle = k % 3 === 1 ? "#ff9f0a" : "#f5f5f7"; ctx.lineWidth = r * 0.07; ctx.lineCap = "round"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(p[0], p[1], r * 0.08, 0, 2 * Math.PI); ctx.fillStyle = "#c7cad1"; ctx.fill();
+  }
+}
+
+// ---------- frame
+let cur = [0, 0, 0], last = performance.now(), dist = 0;
+const projDir = d => { const c = toCam(d); return c[2] > 1e-3 ? [W / 2 + F * c[0] / c[2], H / 2 - F * c[1] / c[2]] : null; };
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.035);
+  const want = [target[0] * g, target[1] * g * 0.85, target[2]];
+  cur = cur.map((v, i) => v + (want[i] - v) * k);
+  setView(cur[0], cur[1], cur[2]);
+  dist += SPEED * dt;
+  const eye = [0, ALT, dist];
+
+  // sky gradient anchored on the horizon and the camera's up direction
+  const fh = Math.hypot(cam.f[0], cam.f[2]) > 1e-3 ? [cam.f[0], 0, cam.f[2]] : [cam.u[0], 0, cam.u[2]];
+  const h0 = projDir(fh), h1 = projDir([fh[0], 0.9 * Math.hypot(fh[0], fh[2]), fh[2]]);
+  let sky = "#6fa3db";
+  if (h0 && h1) {
+    sky = ctx.createLinearGradient(h0[0], h0[1], h1[0], h1[1]);
+    sky.addColorStop(0, "rgb(" + HAZE + ")"); sky.addColorStop(0.35, "#9cc4ea"); sky.addColorStop(1, "#2f63ad");
+  } else if (cam.f[1] > 0) sky = "#2f63ad";
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  const sun = proj([5000, 3200, dist + 11000], eye);
+  if (sun) {
+    const R = H * 0.22, glow = ctx.createRadialGradient(sun[0], sun[1], 0, sun[0], sun[1], R);
+    glow.addColorStop(0, "rgba(255,248,225,1)"); glow.addColorStop(0.12, "rgba(255,244,214,.95)");
+    glow.addColorStop(0.2, "rgba(255,236,200,.35)"); glow.addColorStop(1, "rgba(255,236,200,0)");
+    ctx.fillStyle = glow; ctx.fillRect(sun[0] - R, sun[1] - R, 2 * R, 2 * R);
+  }
+
+  // ground plane in the haze colour, then mountains, then fields (far to near) with distance fog
+  const G = 60000;
+  poly([[-G, 0, dist - G], [G, 0, dist - G], [G, 0, dist + G], [-G, 0, dist + G]], "rgb(" + HAZE + ")", null, eye);
+  MOUNTAINS.map(m => ({ m, d: Math.hypot(m.x, m.z) })).sort((a, b) => b.d - a.d).forEach(({ m, d }) => {
+    const nx = m.z / d, nz = -m.x / d, z = m.z + dist, peak = [m.x, m.h, z];
+    const L = [m.x - nx * m.w, 0, z - nz * m.w], R = [m.x + nx * m.w, 0, z + nz * m.w], mid = [m.x, 0, z];
+    poly([L, peak, mid], fog([92, 104, 122], d * 0.8), null, eye);
+    poly([mid, peak, R], fog([70, 80, 98], d * 0.8), null, eye);
+    const sL = [m.x - nx * m.w * 0.28, m.h * 0.72, z - nz * m.w * 0.28], sR = [m.x + nx * m.w * 0.28, m.h * 0.72, z + nz * m.w * 0.28];
+    poly([sL, peak, sR], fog([238, 242, 247], d * 0.75), null, eye);
+  });
+  const i0 = Math.floor(dist / TILE), tiles = [];
+  for (let i = i0 - 2; i < i0 + NF; i++) for (let j = -NS; j <= NS; j++) tiles.push([i, j]);
+  tiles.sort((a, b) => Math.hypot(b[1], b[0] - i0) - Math.hypot(a[1], a[0] - i0));
+  for (const [i, j] of tiles) {
+    const x = j * TILE, z = i * TILE, pad = 0, d = Math.hypot(x + TILE / 2, z + TILE / 2 - dist);
+    const river = Math.abs(x + TILE / 2 - Math.sin(i * 0.3) * 1300) < TILE * 0.45;
+    const c = river ? RIVER : FIELD[Math.floor(hash(i, j) * FIELD.length)];
+    poly([[x + pad, 0, z + pad], [x + TILE - pad, 0, z + pad], [x + TILE - pad, 0, z + TILE - pad], [x + pad, 0, z + TILE - pad]],
+         fog(c, d), null, eye);
+  }
+  // a road and a runway (repeats every 12 km)
+  poly([[1180, 0.3, dist - 2000], [1200, 0.3, dist - 2000], [1200, 0.3, dist + 9000], [1180, 0.3, dist + 9000]], fog(ROAD, 3000), null, eye);
+  const rz = Math.ceil(dist / 12000) * 12000 + 2500, rd = rz - dist;
+  poly([[-660, 0.5, rz], [-600, 0.5, rz], [-600, 0.5, rz + 2400], [-660, 0.5, rz + 2400]], fog([58, 61, 68], rd), null, eye);
+  for (let s = 0; s < 12; s++)
+    poly([[-631.5, 0.6, rz + 100 + s * 190], [-628.5, 0.6, rz + 100 + s * 190], [-628.5, 0.6, rz + 190 + s * 190], [-631.5, 0.6, rz + 190 + s * 190]],
+         fog([230, 230, 230], rd), null, eye);
+  // soft clouds (repeat every 12 km)
+  CLOUDS.map(c => ({ ...c, z: c.z + Math.floor((dist - c.z + 2000) / 12000) * 12000 + 12000 }))
+    .sort((a, b) => b.z - a.z).forEach(c => {
+      const p = proj([c.x, c.y, c.z], eye);
+      if (!p) return;
+      const r = F * c.s / p[2], a = 0.9 * (1 - Math.min(1, (c.z - dist) / 14000));
+      for (const [dx, dy, s] of [[0, 0, 1], [0.85, 0.18, 0.72], [-0.85, 0.22, 0.78], [0.3, -0.32, 0.7], [-0.35, -0.2, 0.6]]) {
+        const cx = p[0] + dx * r, cy = p[1] + dy * r, rr = r * s;
+        const gr = ctx.createRadialGradient(cx, cy - rr * 0.3, rr * 0.1, cx, cy, rr);
+        gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(0.7, `rgba(248,250,253,${a * 0.85})`); gr.addColorStop(1, "rgba(240,245,250,0)");
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.ellipse(cx, cy, rr, rr * 0.58, 0, 0, 2 * Math.PI); ctx.fill();
+      }
+    });
+
+  cockpit();
+
+  // HUD text
+  const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
+           : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";
+  document.getElementById("status").textContent = st;
+  document.getElementById("angles").textContent =
+    `yaw ${target[0].toFixed(0)}° · pitch ${target[1].toFixed(0)}° · roll ${target[2].toFixed(0)}°`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
