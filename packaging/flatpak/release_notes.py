@@ -9,7 +9,9 @@ Pre-release tags (v1.2.0-rc1) need no entry.
 """
 import os
 import sys
-import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from releases import load  # noqa: E402  (one parser for the app and this check)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 METAINFO = os.path.join(HERE, "io.github.henningnorden.MousePods.metainfo.xml")
@@ -25,16 +27,10 @@ def is_prerelease(tag):
 
 def entry(path, tag, require_text=True):
     """{"version", "date", "paragraphs", "items"} for the tag, or None if there is no usable entry."""
-    root = ET.parse(path).getroot()
-    rel = root.find(f"./releases/release[@version='{version_of(tag)}']")
-    if rel is None:
+    e = next((r for r in load(path) if r["version"] == version_of(tag)), None)
+    if e is None or (require_text and not (e["paragraphs"] or e["items"])):
         return None
-    desc = rel.find("description")
-    paragraphs = [" ".join(p.text.split()) for p in desc.findall("p") if p.text] if desc is not None else []
-    items = [" ".join(li.text.split()) for li in desc.findall("./ul/li") if li.text] if desc is not None else []
-    if require_text and not (paragraphs or items):
-        return None
-    return {"version": rel.get("version"), "date": rel.get("date"), "paragraphs": paragraphs, "items": items}
+    return e
 
 
 def markdown(e):

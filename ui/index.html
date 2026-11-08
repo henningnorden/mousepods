@@ -39,6 +39,8 @@ nav a .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:cent
 nav a .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav a.on .ic{background:rgba(255,255,255,.22)!important}
 .side-foot{margin-top:auto;padding:10px;color:var(--text2);font-size:12px;line-height:1.5}
+#side-version{display:inline-block;margin-top:6px;color:var(--text2);font-size:11px;text-decoration:none}#side-version:hover{color:var(--accent);text-decoration:underline}
+.news-rel{margin-bottom:14px}.news-rel h3{margin:0 0 4px}.news-rel ul,#ov-news ul{margin:6px 0 0;padding-left:20px}#ov-news h3{margin:0 0 6px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);margin-right:6px;vertical-align:1px}
 .dot.ok{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 25%,transparent)}
 .dot.warn{background:var(--orange)}
@@ -177,12 +179,14 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <a data-p="about"><span class="ic" style="background:#30b0c7"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-about"/></svg></span><span data-i18n="side.findings">Découvertes</span></a>
   </nav>
   <div class="side-foot"><div><span class="dot" id="side-dot"></span><span id="side-status">—</span></div>
-    <div id="side-rate" class="mono" style="margin-top:4px"></div></div>
+    <div id="side-rate" class="mono" style="margin-top:4px"></div>
+    <a href="#news" id="side-version" class="mono"></a></div>
 </aside>
 
 <main>
 <!-- =============================== APERÇU -->
 <section class="page on" id="p-overview">
+  <div class="card" id="ov-news" style="display:none;margin-bottom:14px"></div>
   <h1 id="ov-name">AirPods</h1>
   <div class="sub" id="ov-sub" data-i18n="overview.connecting">Connexion…</div>
   <div class="grid g4" id="ov-bat"></div>
@@ -581,6 +585,10 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 </section>
 
 <!-- =============================== DÉCOUVERTES -->
+<section class="page" id="p-news">
+  <h1 data-i18n="news.title">What's new</h1><div class="sub" id="news-sub"></div>
+  <div id="news-list"></div>
+</section>
 <section class="page" id="p-about">
   <h1 data-i18n="about.findings">Découvertes</h1><div class="sub" data-i18n="about.what_we_learned_from_reverse_engineering">Ce qu'on a appris en rétro-ingénierie — détails dans REVERSE_ENGINEERING.md.</div>
   <div class="card"><ul class="disc">
@@ -624,7 +632,7 @@ $$("[data-cmd]").forEach(b=>b.onclick=()=>{post("/api/cmd",{cmd:b.dataset.cmd});
 $("#ov-toggle").onclick=()=>post("/api/cmd",{cmd:"toggle"});
 function setCfg(obj,msg){post("/api/config",obj).then(()=>msg&&toast(msg))}
 $$(".seg[data-key]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
-  if(seg.dataset.key==="ui_lang"){post("/api/config",{ui_lang:b.dataset.v}).then(()=>loadI18n()).then(()=>{refreshState();toast(t("js.toast.language"))});return}
+  if(seg.dataset.key==="ui_lang"){post("/api/config",{ui_lang:b.dataset.v}).then(()=>loadI18n()).then(()=>{refreshState();renderVersion();toast(t("js.toast.language"))});return}
   setCfg({[seg.dataset.key]:b.dataset.v},seg.dataset.key==="mode"?t("js.toast.mode",{name:b.textContent}):t("js.toast.source",{name:b.textContent}));
   seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b))}));
 // ---------- réglages
@@ -1163,7 +1171,27 @@ function renderGarmin(d){const miss=!d.available;$("#gm-missing").style.display=
 function refreshState(){fetch("/api/state").then(r=>r.json()).then(j=>{S=j;renderState();if(page==="gestures")fillGestures()}).catch(()=>{})}
 function connect(){const es=new EventSource("/api/stream");es.onmessage=e=>{T=JSON.parse(e.data);renderTelemetry()};
   es.onerror=()=>{es.close();$("#side-dot").className="dot";$("#side-status").textContent=t("js.status.stopped");setTimeout(connect,1500)}}
-loadI18n().finally(()=>{$("#lb-proto-desc").textContent=LB_DESC(lbProto);setInterval(refreshState,1000);refreshState();connect()});
+// ---------- version and release notes (/api/version, from the metainfo: the same text as in Discover)
+let VER=null;
+function relHtml(r){return `<div class="card news-rel"><h3>${esc(r.version)}</h3><div class="hint">${esc(r.date||"")}</div>
+  ${(r.paragraphs||[]).map(p=>`<p>${esc(p)}</p>`).join("")}${(r.items||[]).length?`<ul>${r.items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""}</div>`}
+function renderVersion(){const v=VER;if(!v||!v.version)return;
+  $("#side-version").textContent="v"+v.version+(v.channel==="test"?` · ${t("js.news.test")}${v.commit?" "+v.commit:""}`:"");
+  $("#side-version").title=t("js.news.open");
+  $("#news-sub").textContent=v.channel?t("js.news.channel",{channel:v.channel==="test"?t("js.news.test"):t("js.news.stable")}):"";
+  $("#news-list").innerHTML=(v.releases||[]).map(relHtml).join("")||`<div class="card empty">${t("js.news.none")}</div>`;
+  const n=v.whats_new,c=$("#ov-news");
+  if(!n){c.style.display="none";return}
+  c.innerHTML=`<h3>${esc(t("js.news.new_in",{version:n.version}))}</h3>${(n.paragraphs||[]).map(p=>`<p>${esc(p)}</p>`).join("")}
+    ${(n.items||[]).length?`<ul>${n.items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""}
+    <div class="row" style="margin-top:8px"><button class="btn sm p" id="ov-news-ok">${t("js.news.got_it")}</button>
+    <button class="btn sm" id="ov-news-all">${t("js.news.all")}</button></div>`;
+  c.style.display="block";
+  $("#ov-news-ok").onclick=()=>post("/api/version",{seen:n.version}).then(()=>{VER.whats_new=null;renderVersion()});
+  $("#ov-news-all").onclick=()=>go("news")}
+function loadVersion(){return fetch("/api/version").then(r=>r.json()).then(v=>{VER=v;renderVersion()}).catch(()=>{})}
+$("#side-version").onclick=e=>{e.preventDefault();go("news")};
+loadI18n().finally(()=>{loadVersion();$("#lb-proto-desc").textContent=LB_DESC(lbProto);setInterval(refreshState,1000);refreshState();connect()});
 </script>
 </body>
 </html>
