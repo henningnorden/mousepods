@@ -23,7 +23,7 @@ OUR_PATH = r"C:\\mousepods\\"           # as written in user.reg (escaped backsl
 
 
 class BridgeError(Exception):
-    """code: no_prefix | running | flatpak_steam | missing_dll | no_backup"""
+    """code: no_prefix | running | missing_dll | no_backup | switch_off_first"""
 
     def __init__(self, code):
         super().__init__(code)
@@ -91,7 +91,8 @@ def _paths(game):
     return os.path.join(game.prefix, "user.reg"), os.path.join(game.prefix, "drive_c", DIR_NAME)
 
 
-STEAM_REGISTRIES = ("~/.steam/registry.vdf", "~/.local/share/Steam/registry.vdf")
+STEAM_REGISTRIES = ("~/.steam/registry.vdf", "~/.local/share/Steam/registry.vdf",
+                    "~/.var/app/com.valvesoftware.Steam/.steam/registry.vdf")   # Steam as a Flatpak
 
 
 def steam_running_appid():
@@ -147,8 +148,6 @@ def process_running(appid, proc="/proc"):
 
 
 def _check(game, is_running):
-    if game.flatpak:
-        raise BridgeError("flatpak_steam")
     if not game.prefix or not os.path.isfile(os.path.join(game.prefix, "user.reg")):
         raise BridgeError("no_prefix")
     if is_running(game.appid):

@@ -932,9 +932,9 @@ function curveToSens(c){return Math.min(Math.max((3-c)/2,0),1)}
 let gamesData=null,gamesTimer=null;
 const GAXES=["yaw","pitch","roll"];
 function axisLabel(n){return n==="yaw"?t("js.games.axis_yaw"):n==="pitch"?t("js.games.axis_pitch"):t("js.games.axis_roll")}
-function gameHint(g){if(g.flatpak)return t("js.games.hint_flatpak");if(!g.has_prefix)return t("js.games.hint_no_prefix");
+function gameHint(g){if(!g.has_prefix)return t("js.games.hint_no_prefix");
   if(g.running)return t("js.games.hint_running");if(g.status==="foreign"&&!g.enabled)return t("js.games.hint_foreign",{name:g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.other_tracker")});return ""}
-function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
+function gameCard(g){const p=g.profile,dis=!g.has_prefix||g.running;
   const pill=g.status==="on"?`<span class="pill g">${t("js.games.on")}</span>`:g.status==="foreign"?`<span class="pill o">${esc(g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.foreign"))}</span>`:`<span class="pill">${t("js.games.off")}</span>`;
   const EDGES={yaw:["js.games.edge_left","js.games.edge_right"],pitch:["js.games.edge_down","js.games.edge_up"]};
   const rng=(f,min,max,step,v,label)=>`<label>${label} <input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
@@ -944,8 +944,12 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
     ${e?rng("edge_neg",2,180,1,a.edge_neg,t(e[0]))+rng("edge_pos",2,180,1,a.edge_pos,t(e[1])):rng("edge_pos",2,180,1,a.edge_pos,t("js.games.edge_both"))}
     ${rng("target",0,180,5,a.target,t("js.games.target"))}
     ${rng("sens",0,1,0.05,curveToSens(a.curve),t("js.games.sensitivity"))}</div>`}).join("");
-  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
+  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${g.flatpak?`<span class="pill" title="${esc(t("js.games.flatpak_title"))}">Flatpak</span>`:""}${pill}
     <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
+    ${g.both?`<div class="kv"><span>${t("js.games.steam_choice")}</span><span><div class="seg" data-steam>
+      <button data-v="native" class="${g.flatpak?"":"on"}" ${g.enabled?"disabled":""}>${t("js.games.steam_native")}</button>
+      <button data-v="flatpak" class="${g.flatpak?"on":""}" ${g.enabled?"disabled":""}>Flatpak</button></div></span></div>
+      ${g.enabled?`<div class="hint">${t("js.games.steam_switch_off")}</div>`:""}`:""}
     ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
     ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
     <details><summary>${t("js.games.profile")}${g.proton?" · "+esc(g.proton.split("/").pop()):""}</summary>
@@ -986,6 +990,8 @@ function renderGames(){const box=$("#games-list");if(!gamesData)return;
       postGame(appid,{profile:prof}).then(()=>toast(t("js.games.toast_profile"))).catch(err=>toast(err.message))});
     card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()});
     card.querySelector("[data-calibrate]").onclick=()=>calibStart(card,g);
+    card.querySelectorAll("[data-steam] button").forEach(b=>b.onclick=()=>postGame(appid,{steam:b.dataset.v})
+      .then(()=>loadGames()).catch(err=>toast(err.message)));
     const tb=card.querySelector("[data-to-baseline]");
     if(tb)tb.onclick=()=>postGame(appid,{profile:{...g.profile,own:false}}).then(()=>{toast(t("js.games.toast_baseline"));loadGames()})})}
 function loadGames(){return fetch("/api/games").then(r=>r.json()).then(d=>{gamesData=d;renderGames()}).catch(()=>{})}

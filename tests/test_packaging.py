@@ -35,7 +35,9 @@ class ManifestTests(unittest.TestCase):
         need = {"--share=network", "--socket=wayland", "--socket=fallback-x11", "--device=all", "--device=shm",
                 "--allow=bluetooth", "--system-talk-name=org.bluez", "--talk-name=org.kde.StatusNotifierWatcher",
                 "--filesystem=~/.local/share/Steam", "--filesystem=~/.steam:ro",
-                "--filesystem=~/.var/app/com.valvesoftware.Steam:ro"}
+                "--filesystem=~/.var/app/com.valvesoftware.Steam/.local/share/Steam",       # prefixes
+                "--filesystem=~/.var/app/com.valvesoftware.Steam/.steam:ro",                 # registry.vdf
+                "--filesystem=xdg-run/app/com.valvesoftware.Steam:create"}                   # pose files
         self.assertTrue(need <= set(m["finish-args"]), sorted(need - set(m["finish-args"])))
         self.assertNotIn("--talk-name=org.freedesktop.Flatpak", m["finish-args"])   # no sandbox escape
 

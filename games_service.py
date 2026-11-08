@@ -17,13 +17,13 @@ def is_running(appid):
     return bridge_install.process_running(appid)
 
 
-def steam_root():
+def steam_roots():
+    """Every Steam install, native first (a game in both counts as the native one)."""
     forced = os.environ.get("MOUSEPODS_STEAM_ROOT")
     if forced:
-        return steam_games.SteamRoot(os.path.realpath(forced), False)
+        return [steam_games.SteamRoot(os.path.realpath(forced), False)]
     roots = steam_games.find_steam_roots(os.path.expanduser("~"))
-    native = [r for r in roots if not r.flatpak]
-    return (native or roots or [None])[0]
+    return sorted(roots, key=lambda r: r.flatpak)
 
 
 def dll_dir():
@@ -58,22 +58,40 @@ def saved_baseline(cfg_path):
     return normalize_baseline(_saved(cfg_path).get("game_baseline"))
 
 
-def _games():
-    root = steam_root()
-    if root is None:
-        return None, []
-    # all installed games: one never started with Proton has no prefix yet and shows a hint
-    return root, sorted(steam_games.list_games(root), key=lambda g: g.name.lower())
+def _installs():
+    """(roots, {appid: {flatpak: Game}}) from every Steam install. All installed games: one never
+    started with Proton has no prefix yet and shows a hint."""
+    roots, installs = steam_roots(), {}
+    for root in roots:
+        for g in steam_games.list_games(root):
+            installs.setdefault(g.appid, {}).setdefault(g.flatpak, g)
+    return roots, installs
 
 
-def find(appid):
-    _, games = _games()
-    return next((g for g in games if g.appid == str(appid)), None)
+def _pick(copies, entry):
+    """The install the user chose for a game in both Steams (saved "flatpak"), native otherwise."""
+    want = bool((entry or {}).get("flatpak"))
+    return copies.get(want) or copies.get(False) or copies.get(True)
+
+
+def _games(saved=None):
+    roots, installs = _installs()
+    saved = saved or {}
+    games = [_pick(copies, saved.get(appid)) for appid, copies in installs.items()]
+    return roots, sorted(games, key=lambda g: g.name.lower()), installs
+
+
+def find(appid, cfg_path=None):
+    _, installs = _installs()
+    copies = installs.get(str(appid))
+    if not copies:
+        return None
+    return _pick(copies, saved_games(cfg_path).get(str(appid)) if cfg_path else None)
 
 
 def list_payload(cfg_path):
-    root, games = _games()
     saved = saved_games(cfg_path)
+    roots, games, installs = _games(saved)
     baseline = saved_baseline(cfg_path)
     running = bridge_install.running_appids()        # one /proc pass for the whole list
     out = []
@@ -84,9 +102,10 @@ def list_payload(cfg_path):
         if status == "on" and not entry.get("enabled"):
             # our bridge is in the prefix but this config doesn't know (set up by another
             # MousePods, e.g. a distrobox): show it as on and feed it, so the switch tells the truth
-            entry = adopted[g.appid] = {"enabled": True, "profile": normalize_profile(entry.get("profile"))}
+            entry = adopted[g.appid] = {"enabled": True, "flatpak": g.flatpak,
+                                        "profile": normalize_profile(entry.get("profile"))}
         out.append({"appid": g.appid, "name": g.name, "has_prefix": bool(g.prefix), "proton": g.proton,
-                    "flatpak": g.flatpak, "status": status,
+                    "flatpak": g.flatpak, "both": len(installs[g.appid]) > 1, "status": status,
                     "foreign_tracker": bridge_install.foreign_tracker(g),
                     "enabled": bool(entry.get("enabled")), "running": g.appid in running,
                     "launch_option_hint": "opentrack-launcher" in g.launch_options,
@@ -94,8 +113,9 @@ def list_payload(cfg_path):
     if adopted:
         from airpods_mouse_controller import update_config_file
         update_config_file(cfg_path, {"games": adopted})
-    return {"steam_found": root is not None, "baseline": baseline, "steam_flatpak": bool(root and root.flatpak), "games": out,
-            "missing_libraries": steam_games.missing_libraries(root) if root else []}
+    missing = [p for r in roots for p in steam_games.missing_libraries(r)]
+    return {"steam_found": bool(roots), "baseline": baseline, "steam_flatpak": False, "games": out,
+            "missing_libraries": list(dict.fromkeys(missing))}
 
 
 _PREFIX_LOCK = threading.Lock()      # one prefix edit at a time (web requests run in parallel)
@@ -111,11 +131,23 @@ def set_enabled(cfg_path, game, enabled):
 def _set_enabled(cfg_path, game, enabled):
     entry = dict(saved_games(cfg_path).get(game.appid) or {})
     if enabled:
-        pose = game_bridge.pose_path(game.appid, shm_dir())
+        pose = game_bridge.pose_path(game.appid, shm_dir(), game.flatpak)
         bridge_install.install(game, dll_dir(), pose, is_running)
     elif bridge_install.status(game) == "on" or bridge_install.has_our_files(game):
         bridge_install.uninstall(game, is_running)
     entry["enabled"] = bool(enabled)
+    entry["flatpak"] = game.flatpak                 # the bridge writes where that Steam looks
+    entry["profile"] = normalize_profile(entry.get("profile"))
+    return entry
+
+
+def set_steam(cfg_path, game, flatpak):
+    """For a game in both Steams: use the Flatpak one (True) or the native one. Only while it is off,
+    so the bridge never stays behind in the other prefix."""
+    entry = dict(saved_games(cfg_path).get(game.appid) or {})
+    if entry.get("enabled"):
+        raise bridge_install.BridgeError("switch_off_first")
+    entry["flatpak"] = bool(flatpak)
     entry["profile"] = normalize_profile(entry.get("profile"))
     return entry
 

@@ -16,7 +16,9 @@
     "--talk-name=org.kde.StatusNotifierWatcher",
     "--filesystem=~/.local/share/Steam",
     "--filesystem=~/.steam:ro",
-    "--filesystem=~/.var/app/com.valvesoftware.Steam:ro"
+    "--filesystem=~/.var/app/com.valvesoftware.Steam/.local/share/Steam",
+    "--filesystem=~/.var/app/com.valvesoftware.Steam/.steam:ro",
+    "--filesystem=xdg-run/app/com.valvesoftware.Steam:create"
   ],
   "modules": [
     {

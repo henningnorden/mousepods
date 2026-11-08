@@ -25,10 +25,24 @@ MAX_DT = 0.1          # a gap (reconnect, suspend) must not throw the smoothing 
 _APPID = re.compile(r"^[0-9]+$")
 
 
-def private_dir(shm_dir="/dev/shm"):
-    """<shm_dir>/mousepods-<uid>, mode 0700 and owned by us; refuses a directory someone else
-    planted (shared /dev/shm)."""
-    d = os.path.join(shm_dir, f"mousepods-{os.getuid()}")
+FLATPAK_STEAM = "com.valvesoftware.Steam"
+
+
+def _pose_dir(shm_dir, flatpak):
+    """Where a game finds its pose file. Steam as a Flatpak has its own /dev/shm, but its app dir
+    in XDG_RUNTIME_DIR (/run/user/<uid>/app/com.valvesoftware.Steam) is visible inside it."""
+    if flatpak:
+        run = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        return os.path.join(run, "app", FLATPAK_STEAM, "mousepods")
+    return os.path.join(shm_dir, f"mousepods-{os.getuid()}")
+
+
+def private_dir(shm_dir="/dev/shm", flatpak=False):
+    """The pose directory, mode 0700 and owned by us; refuses a directory someone else planted
+    (shared /dev/shm)."""
+    d = _pose_dir(shm_dir, flatpak)
+    if flatpak:
+        os.makedirs(os.path.dirname(d), exist_ok=True)   # Flatpak creates it on Steam's first start
     try:
         os.mkdir(d, 0o700)
     except FileExistsError:
@@ -39,11 +53,11 @@ def private_dir(shm_dir="/dev/shm"):
     return d
 
 
-def pose_path(appid, shm_dir="/dev/shm"):
+def pose_path(appid, shm_dir="/dev/shm", flatpak=False):
     appid = str(appid)
     if not _APPID.match(appid):
         raise ValueError(f"invalid Steam appid {appid!r}")
-    return os.path.join(shm_dir, f"mousepods-{os.getuid()}", f"pose-{appid}")
+    return os.path.join(_pose_dir(shm_dir, flatpak), f"pose-{appid}")
 
 
 class PoseFile:
@@ -95,13 +109,14 @@ class GameBridge:
             self._configure(games_cfg, normalize_baseline(baseline))
 
     def _configure(self, games_cfg, baseline=None):
-        wanted = {str(appid): effective_profile(normalize_profile((g or {}).get("profile")), baseline)
+        wanted = {str(appid): (effective_profile(normalize_profile((g or {}).get("profile")), baseline),
+                               bool((g or {}).get("flatpak")))
                   for appid, g in (games_cfg or {}).items()
                   if (g or {}).get("enabled") and _APPID.match(str(appid))}
         for appid in list(self.games):
-            if appid not in wanted:
-                self.games.pop(appid)[0].close(remove=True)
-        for appid, profile in wanted.items():
+            if appid not in wanted or self.games[appid][3] != wanted[appid][1]:
+                self.games.pop(appid)[0].close(remove=True)      # off, or moved to the other Steam
+        for appid, (profile, flatpak) in wanted.items():
             old = self.games.get(appid)
             if old and old[2] == profile:
                 continue
@@ -109,22 +124,22 @@ class GameBridge:
                 if old:
                     pf = old[0]
                 else:
-                    private_dir(self.shm_dir)
-                    pf = PoseFile(pose_path(appid, self.shm_dir))
+                    private_dir(self.shm_dir, flatpak)
+                    pf = PoseFile(pose_path(appid, self.shm_dir, flatpak))
             except OSError as e:
                 log.error("game %s: cannot create pose file: %s", appid, e)
                 continue
-            self.games[appid] = (pf, ProfileFilter(profile), profile)
+            self.games[appid] = (pf, ProfileFilter(profile), profile, flatpak)
 
     def tick(self, now, pose6):
         with self.lock:
             dt = 0.0 if self.last_now is None else min(max(now - self.last_now, 0.0), MAX_DT)
             self.last_now = now
-            for pf, flt, _ in self.games.values():
+            for pf, flt, *_ in self.games.values():
                 pf.write(flt.apply(pose6, dt), now)
 
     def close(self):
         with self.lock:
-            for pf, _, _ in self.games.values():
+            for pf, *_ in self.games.values():
                 pf.close(remove=True)
             self.games = {}

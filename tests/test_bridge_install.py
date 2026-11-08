@@ -196,10 +196,19 @@ class BridgeInstallTests(unittest.TestCase):
         self.assertNotIn("244210", bi.running_appids(empty, now=1000.0 + bi.GRACE_S + 1))
         bi._LAST_SEEN.clear()
 
-    def test_flatpak_steam_refused(self):
-        with self.assertRaises(bi.BridgeError) as cm:
-            self.install(dataclasses.replace(self.ac, flatpak=True))
-        self.assertEqual(cm.exception.code, "flatpak_steam")
+    def test_flatpak_steam_game_installs(self):
+        """Steam as a Flatpak: same prefix layout; the pose file lives where its sandbox sees it."""
+        game = dataclasses.replace(self.ac, flatpak=True)
+        self.install(game)
+        self.assertEqual(bi.status(game), "on")
+
+    def test_flatpak_steam_registry_is_read(self):
+        reg = os.path.join(self.home, ".var/app/com.valvesoftware.Steam/.steam/registry.vdf")
+        os.makedirs(os.path.dirname(reg))
+        with open(reg, "w") as f:
+            f.write('"Registry"\n{\n"HKCU"\n{\n"Software"\n{\n"Valve"\n{\n"Steam"\n{\n"RunningAppID"\t"227300"\n}\n}\n}\n}\n}\n')
+        with mock.patch.dict(os.environ, {"HOME": self.home}):
+            self.assertEqual(bi.steam_running_appid(), "227300")
 
     def test_process_running_from_proc(self):
         proc = os.path.join(self.home, "proc")
