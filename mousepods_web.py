@@ -48,7 +48,10 @@ from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = os.path.join(HERE, "ui", "index.html")
-DEMO_FILE = os.path.join(HERE, "ui", "demo.html")
+DEMO_FILE = os.path.join(HERE, "ui", "cockpit.html")          # /demo : cockpit réaliste (WebGL)
+DEMO_SIMPLE_FILE = os.path.join(HERE, "ui", "demo.html")      # /demo/simple : rendu canvas léger
+VENDOR = {"three.module.min.js": "text/javascript", "Sky.js": "text/javascript",
+          "LICENSE-three.txt": "text/plain; charset=utf-8"}   # ui/vendor, liste fermée
 
 MODELS = ["2013", "2014", "200e", "200f", "2002", "200a", "2019", "201b", "2024", "2027", "202d"]  # -> model.<pid>
 INFO_LABEL_KEYS = ["info.name", "info.model", "info.manufacturer", "info.serial", "info.firmware", "info.firmware2",
@@ -729,8 +732,17 @@ class WebUI:
             def do_GET(self):
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
-                if self.path in ("/", "/index.html", "/demo", "/demo.html"):
-                    data = open(DEMO_FILE if self.path.startswith("/demo") else UI_FILE, "rb").read()
+                if self.path.startswith("/vendor/") and self.path[8:] in VENDOR:
+                    data = open(os.path.join(HERE, "ui", "vendor", self.path[8:]), "rb").read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", VENDOR[self.path[8:]])
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                elif self.path in ("/", "/index.html", "/demo", "/demo/simple"):
+                    page = {"/demo": DEMO_FILE, "/demo/simple": DEMO_SIMPLE_FILE}.get(self.path, UI_FILE)
+                    data = open(page, "rb").read()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Cache-Control", "no-store")

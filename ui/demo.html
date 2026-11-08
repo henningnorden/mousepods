@@ -197,7 +197,7 @@ function cockpit() {
 let cur = [0, 0, 0], last = performance.now(), dist = 0;
 const projDir = d => { const c = toCam(d); return c[2] > 1e-3 ? [W / 2 + F * c[0] / c[2], H / 2 - F * c[1] / c[2]] : null; };
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05); last = now;   // never negative: the smoothing would diverge
   const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.035);
   const want = [target[0] * g, target[1] * g * 0.85, target[2]];
   cur = cur.map((v, i) => v + (want[i] - v) * k);
