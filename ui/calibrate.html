@@ -46,7 +46,15 @@ function finish(step){if(closed)return;closed=true;
   const h=window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.mousepods;
   setTimeout(()=>{if(h)h.postMessage({cmd:"overlay_close",step});else parent.postMessage({mousepods:"calibration_end",step},location.origin)},
     step==="done"?500:1800)}
-function show(st){const step=st.step,mine=STEPS.includes(step)&&ROLES.includes(ROLE[step]);
+function showHead(st){const h=st.head||{},mine=ROLES.includes("main");
+  // first phase: learn how the AirPods sit (turn, nod, tilt), on the main monitor, ring in the middle
+  $("#pt").style.display=mine?"block":"none";$("#msg").style.display=mine?"block":"none";
+  $("#other").style.display=mine?"none":"grid";
+  if(!mine)return;place("center");
+  $("#step").textContent=t("calib_overlay.head")+(h.total?` · ${(h.index||0)+1} / ${h.total}`:"");
+  $("#ring").style.strokeDasharray=RING;$("#ring").style.strokeDashoffset=RING*(1-(h.progress||0));
+  $("#hold").textContent=h.text||t("calib_overlay.head_wait");$("#hint").textContent=h.message||""}
+function show(st){if(st.phase==="head")return showHead(st);const step=st.step,mine=STEPS.includes(step)&&ROLES.includes(ROLE[step]);
   $("#pt").style.display=mine?"block":"none";
   $("#msg").style.display=mine||!STEPS.includes(step)?"block":"none";
   $("#other").style.display=STEPS.includes(step)&&!mine?"grid":"none";

@@ -39,6 +39,11 @@ class CalibratePageTests(unittest.TestCase):
         for lang in ("en", "de", "fr"):
             self.assertEqual(sorted(k for k in keys if k not in table(lang)), [], lang)
 
+    def test_shows_the_head_movement_phase_first(self):
+        h = page()
+        self.assertIn('st.phase==="head"', h)
+        self.assertIn('t("calib_overlay.head")', h)
+
     def test_talks_to_the_api_and_closes_itself(self):
         h = page()
         for needle in ('"/api/calibration"', "overlay_close", "calibration_end", "Escape", '"/api/i18n"'):

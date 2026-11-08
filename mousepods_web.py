@@ -361,7 +361,10 @@ class CalibSession:
             key = f"{self.ctl.pid}_{self.source}"
         with open(self.cfg_path) as f:
             user = json.load(f)
-        user.setdefault("profiles", {})[key] = prof
+        old = user.setdefault("profiles", {}).get(key) or {}
+        if "range" not in prof and isinstance(old.get("range"), dict) and self.flow == "souris":
+            prof["range"] = old["range"]       # screen edges (baseline / corners) are not measured here
+        user["profiles"][key] = prof
         m.update_config_file(self.cfg_path, {"profiles": user["profiles"]})
         self.key, self.profile = key, prof
         self.done = True
@@ -474,6 +477,48 @@ class WebUI:
                 with open(rec["path"], "w") as f:
                     json.dump(rec["rows"], f)
                 m.log.info("Enregistrement terminé : %s (%d paquets)", rec["path"], len(rec["rows"]))
+
+    # ---- calibration of a game profile: head movement first (CalibSession), then the points
+    HEAD_NO_DATA_S = 3.0
+
+    def start_point_calibration(self):
+        self.ctl.cancel_calibration()
+        self.combo = {"old": self.calib, "t0": time.monotonic()}
+        self.combo_end = None
+        self.q.put(("calib", "start", "head", "souris"))
+
+    def cancel_point_calibration(self):
+        if getattr(self, "combo", None):
+            self.combo = None
+            self.combo_end = {"active": False, "step": "cancelled", "progress": 0.0, "hint": None, "result": None}
+            self.q.put(("calib", "cancel"))
+        else:
+            self.ctl.cancel_calibration()
+
+    def point_calibration_state(self):
+        now = time.monotonic()
+        combo = getattr(self, "combo", None)
+        if combo:
+            head = self.calib if self.calib is not combo["old"] else None
+            seen = getattr(self.ctl, "last_ht", 0.0) or 0.0
+            if now - max(seen, combo["t0"]) > self.HEAD_NO_DATA_S:       # no motion data: AirPods gone
+                self.combo = None
+                self.combo_end = {"active": False, "step": "failed", "progress": 0.0, "hint": "no_signal",
+                                  "result": None}
+                self.q.put(("calib", "cancel"))
+            elif head is not None and head.done:
+                self.combo, self.combo_end = None, None
+                self.ctl.start_calibration()                           # head learned: on to the points
+            else:
+                d = head.as_dict() if head is not None else {}
+                return {"active": True, "phase": "head", "step": "head", "progress": d.get("progress", 0.0),
+                        "hint": None, "result": None,
+                        "head": {k: d.get(k) for k in ("text", "index", "total", "progress", "message")}}
+        if getattr(self, "combo_end", None) and self.ctl.calibration is None:
+            return self.combo_end                                      # cancelled or failed while learning
+        self.ctl.calibration_tick(now)                                 # also ends it when the AirPods are gone
+        st = self.ctl.calibration_state()
+        return {**st, "phase": "points"} if st.get("step") else st
 
     def process_queue(self):
         while True:
@@ -826,8 +871,7 @@ class WebUI:
                         m.update_config_file(ui.cfg_path, {"whats_new_seen": v["version"]})
                     self._json(v)
                 elif self.path == "/api/calibration":
-                    ui.ctl.calibration_tick(time.monotonic())       # also ends it when the AirPods are gone
-                    self._json(ui.ctl.calibration_state())
+                    self._json(ui.point_calibration_state())
                 elif self.path == "/api/state":
                     self._json(ui.state())
                 elif self.path == "/api/gestures":
@@ -1011,9 +1055,9 @@ class WebUI:
                 elif self.path == "/api/calibration":
                     action = body.get("action")
                     if action == "start":
-                        ui.ctl.start_calibration()
+                        ui.start_point_calibration()
                     elif action == "cancel":
-                        ui.ctl.cancel_calibration()
+                        ui.cancel_point_calibration()
                     elif action == "save_baseline":
                         pointer = ui.ctl.save_baseline(body)
                         if pointer is None:
@@ -1022,7 +1066,7 @@ class WebUI:
                         return self._json({"ok": True, "pointer": pointer})
                     else:
                         return self._json({"error": tr("srv.error.not_found")}, 400)
-                    return self._json(ui.ctl.calibration_state())
+                    return self._json(ui.point_calibration_state())
                 else:
                     return self._json({"error": tr("srv.error.not_found")}, 404)
                 self._json({"ok": True})
