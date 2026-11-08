@@ -177,7 +177,12 @@ document.getElementById("ytgo").onclick = () => {
     renderer.domElement.style.display = "none"; document.getElementById("drop").style.display = "none";
     yt = new YT.Player("ytp", { width: "100%", height: "100%", videoId: id,
       playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 },
-      events: { onReady: () => { ytReady = true; yt.getIframe().style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0"; } } });
+      events: { onReady: () => { ytReady = true; yt.getIframe().style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0"; },
+                onError: e => {                       // 101/150: the owner does not allow embedding; 2: bad id; 5: player error
+                  const msg = { 101: "vr.yt_no_embed", 150: "vr.yt_no_embed", 2: "vr.bad_link", 100: "vr.yt_gone" }[e.data] || "vr.yt_error";
+                  document.getElementById("status").textContent = t(msg) || "YouTube error " + e.data;
+                  document.body.classList.remove("clean");
+                } } });
   };
   if (window.YT && YT.Player) return start();
   window.onYouTubeIframeAPIReady = start;
@@ -210,6 +215,7 @@ addEventListener("keydown", e => {
   }
 });
 const qs = new URLSearchParams(location.search);
+if (qs.get("yt")) { document.getElementById("yturl").value = qs.get("yt"); setTimeout(() => document.getElementById("ytgo").click(), 300); }
 if (qs.get("clean") === "1") document.body.classList.add("clean");
 let STEREO = qs.get("sbs") === "1";
 try { if (!qs.has("sbs")) STEREO = localStorage.getItem("mp_stereo") === "1"; } catch (_) {}

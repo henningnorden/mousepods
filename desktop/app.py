@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import threading
+import urllib.parse
 import urllib.request
 
 import gi
@@ -106,7 +107,9 @@ class App(Gtk.Application):
         # links with target="_blank": our own pages (e.g. the /demo cockpit) in an app window,
         # anything else in the system browser
         uri = action.get_request().get_uri() or ""
-        if overlay.is_own_page(uri, PORT):
+        # the 360° player embeds YouTube, which the app's WebKit cannot play: it goes to the browser
+        browser_only = urllib.parse.urlsplit(uri).path.startswith("/vr")
+        if overlay.is_own_page(uri, PORT) and not browser_only:
             win = Gtk.Window(application=self, title="MousePods")
             win.set_default_size(1280, 800)
             new = WebKit.WebView(related_view=view, user_content_manager=view.get_user_content_manager())
