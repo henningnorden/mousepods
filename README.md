@@ -14,8 +14,13 @@
   <img alt="Linux" src="https://img.shields.io/badge/Linux-BlueZ%205.7x-1d1d1f?logo=linux&logoColor=white">
   <img alt="Wayland and X11" src="https://img.shields.io/badge/Wayland%20%7C%20X11-uinput-0a84ff">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-34c759">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-159%20passing-34c759">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-400%20passing-34c759">
   <a href="#license-and-attribution"><img alt="License Apache-2.0 + CC BY 4.0" src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20CC%20BY%204.0-ff9f0a"></a>
+</p>
+
+<p align="center">
+  <img src="docs/media/cockpit-demo.gif" width="600" alt="Head tracking demo: the cockpit view follows the AirPods"><br>
+  <sub>The built-in cockpit demo: the view follows the AirPods (<a href="docs/media/cockpit-demo.mp4">smooth 60 fps video</a>).</sub>
 </p>
 
 <p align="center">

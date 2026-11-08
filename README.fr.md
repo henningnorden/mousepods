@@ -20,6 +20,11 @@
 </p>
 
 <p align="center">
+  <img src="docs/media/cockpit-demo.gif" width="600" alt="Démo du suivi de tête : la vue du cockpit suit les AirPods"><br>
+  <sub>La démo cockpit intégrée : la vue suit les AirPods (<a href="docs/media/cockpit-demo.mp4">vidéo fluide 60 i/s</a>).</sub>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/app-motion.png" width="800" alt="L'application MousePods : mouvement en direct des AirPods 3">
 </p>
 
