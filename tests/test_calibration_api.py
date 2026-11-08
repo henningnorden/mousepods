@@ -100,6 +100,86 @@ class ControllerCalibrationTests(unittest.TestCase):
         self.assertIsNone(ctl.opentrack)                 # nothing else wants it
 
 
+class ReviewFixTests(unittest.TestCase):
+    """From the whole-branch review: web thread vs. main loop, config reload during a calibration."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.cfg_path = os.path.join(self.d, "config.json")
+        with open(self.cfg_path, "w") as f:
+            json.dump({"mouse_paused": False}, f)
+
+    def tearDown(self):
+        shutil.rmtree(self.d)
+
+    def test_config_reload_keeps_mouse_paused_while_calibrating(self):
+        ctl = controller(self.cfg_path)
+        ctl.start_calibration()
+        m.update_config_file(self.cfg_path, {"mouse_paused": False, "mode": "souris"})
+        ctl._cfg_mtime = 0                               # force the reload
+        ctl.maybe_reload()
+        self.assertTrue(ctl.paused)
+        ctl.cancel_calibration()
+        self.assertFalse(ctl.paused)
+
+    def test_sync_from_two_threads_creates_one_output(self):
+        import threading
+        import time as _t
+        import opentrack_out
+        made = []
+
+        class Slow:
+            def __init__(self, cfg, udp=True):
+                _t.sleep(0.05)                           # widen the race window
+                made.append(self)
+                self.udp, self.joystick, self.tracker = udp, None, types_ns(suspend_autocenter=False)
+
+            def start(self):
+                return self
+
+            def stop(self):
+                pass
+
+            def configure(self, cfg, udp=None):
+                pass
+
+            def set_game_bridge(self, b):
+                pass
+
+            def set_joystick(self, j):
+                return None
+
+        ctl = controller(self.cfg_path)
+        ctl.calibration = object()                       # wants the tracker
+        with mock.patch.object(opentrack_out, "OpenTrackOutput", Slow):
+            ts = [threading.Thread(target=ctl.sync_opentrack) for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+        self.assertEqual(len(made), 1)
+
+    def test_feed_survives_output_stopped_by_another_thread(self):
+        ctl = controller(self.cfg_path)
+
+        class Vanishing:
+            def feed(self, *a):
+                ctl.opentrack = None                     # the web thread stopped it just now
+
+            def head(self):
+                return (0.0, 0.0, 0.0)
+
+        import calibration
+        ctl.opentrack = Vanishing()
+        ctl.calibration = calibration.Calibration()      # reads the head right after the feed
+        ctl.on_block(bytes(58), 1.0)                     # must not raise
+
+
+def types_ns(**kw):
+    import types
+    return types.SimpleNamespace(**kw)
+
+
 class CalibrationApiTests(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()

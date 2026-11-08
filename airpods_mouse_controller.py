@@ -943,6 +943,9 @@ def soft_deadzone(v, dz):
 
 
 # =========================================================================== moteur
+_SYNC_LOCK = threading.RLock()       # one sync_opentrack at a time (main loop and web threads)
+
+
 class Controller:
     def __init__(self, cfg, pointer, diag=False, cfg_path=None):
         self.cfg = cfg
@@ -1016,9 +1019,13 @@ class Controller:
             old_mode = self.cfg["mode"]
             self.cfg.clear()
             self.cfg.update(new)
-            if bool(new.get("mouse_paused", True)) != self.paused:
-                self.paused = bool(new.get("mouse_paused", True))
-                self.vel = (0.0, 0.0)
+            want_paused = bool(new.get("mouse_paused", True))
+            with self._calib_lock:
+                if self.calibration is not None:
+                    self._calib_prev_paused = want_paused    # applies when the calibration ends
+                elif want_paused != self.paused:
+                    self.paused = want_paused
+                    self.vel = (0.0, 0.0)
             i18n.apply_config(self.cfg)
             self.engine.bcfg = self.cfg["bias"]
             self.glide.c = self.cfg["glisse"]
@@ -1136,8 +1143,9 @@ class Controller:
         self.fy.reset(0.0)
         self.fp.reset(0.0)
         self.target = self.cur = (0.5, 0.5)
-        if self.opentrack:
-            self.opentrack.recenter()
+        ot = self.opentrack
+        if ot:
+            ot.recenter()
         if not self.diag and not self.paused and not self.opentrack_pauses_mouse:
             self.ptr.move_abs(0.5, 0.5)
         if not quiet:
@@ -1166,6 +1174,11 @@ class Controller:
         return bool(self.opentrack) and self.cfg.get("opentrack", {}).get("pause_mouse_when_opentrack", True)
 
     def sync_opentrack(self):
+        # called from the main loop (config reload) and from web threads (calibration start/end)
+        with _SYNC_LOCK:
+            Controller._sync_opentrack(self)
+
+    def _sync_opentrack(self):
         """Démarre / arrête / reconfigure les sorties « simulateur » selon la config (ou --opentrack,
         --sim-joystick) : UDP vers OpenTrack et/ou manette virtuelle, alimentées par la même pose."""
         oc = self.cfg.setdefault("opentrack", {})
@@ -1339,12 +1352,13 @@ class Controller:
         self.last_acc = a
         yaw, pitch, roll = self.engine.step(w, g, dt)
         att = struct.unpack_from("<hhh", blk, 20)
-        if self.opentrack:           # OpenTrack / manette : alimentés même souris en pause
+        ot = self.opentrack          # one reference: a web thread may stop it meanwhile
+        if ot:                       # OpenTrack / manette : alimentés même souris en pause
             p = self.engine.p
-            self.opentrack.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
-                                (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
+            ot.feed(yaw, pitch, roll, dt, self.engine.g, self.engine.lat,
+                    (p["pitch_sign"], p["roll_sign"], p["yaw_sign"]), att)
             if self.calibration is not None:
-                head = self.opentrack.head()
+                head = ot.head()
                 if head is not None:
                     self.calibration_feed(now, head[0], head[1])
         for hook in list(self.sample_hooks):
