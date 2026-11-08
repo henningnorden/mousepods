@@ -724,7 +724,15 @@ class WebUI:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def _local_host(self):
+                """DNS-rebinding guard: only answer requests addressed to our own host name."""
+                port = self.server.server_address[1]
+                host = (self.headers.get("Host") or "").lower()
+                return host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
+
             def do_GET(self):
+                if not self._local_host():
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
                 qs = parse_qs(self.path.split("?", 1)[1].split("#")[0]) if "?" in self.path else {}
                 self.path = self.path.split("?")[0].split("#")[0]
                 if self.path in ("/", "/index.html"):
@@ -739,6 +747,9 @@ class WebUI:
                     self._json({"ok": True})
                 elif self.path == "/api/i18n":
                     self._json(i18n.i18n_payload(ui.ctl.cfg, i18n.env_lang()))
+                elif self.path == "/api/games":
+                    import games_service
+                    self._json(games_service.list_payload(ui.cfg_path))
                 elif self.path == "/api/state":
                     self._json(ui.state())
                 elif self.path == "/api/gestures":
@@ -777,6 +788,18 @@ class WebUI:
                     self._json({"error": tr("srv.error.not_found")}, 404)
 
             def do_POST(self):
+                if not self._local_host():
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
+                # CSRF guard: any web page can POST to 127.0.0.1. Only JSON bodies (cross-site JSON
+                # needs a CORS preflight we never answer) and, when the browser sends one, our own
+                # Origin are accepted.
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if ctype != "application/json":
+                    return self._json({"error": tr("srv.error.bad_request")}, 415)
+                origin = self.headers.get("Origin")
+                port = self.server.server_address[1]
+                if origin and origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
                 n = int(self.headers.get("Content-Length", 0))
                 try:
                     body = json.loads(self.rfile.read(n) or b"{}")
@@ -865,9 +888,30 @@ class WebUI:
                         return self._json({"error": str(e)}, 400)
                     except RuntimeError as e:
                         return self._json({"error": str(e)}, 503)
+                elif self.path.startswith("/api/games/"):
+                    return self._games_post(self.path[len("/api/games/"):], body)
                 else:
                     return self._json({"error": tr("srv.error.not_found")}, 404)
                 self._json({"ok": True})
+
+            def _games_post(self, appid, body):
+                import bridge_install
+                import games_service
+                game = games_service.find(appid)
+                if game is None:
+                    return self._json({"error": tr("srv.error.not_found")}, 404)
+                try:
+                    if "enabled" in body:
+                        entry = games_service.set_enabled(ui.cfg_path, game, bool(body["enabled"]))
+                    elif isinstance(body.get("profile"), dict):
+                        entry = games_service.set_profile(ui.cfg_path, game, body["profile"])
+                    else:
+                        return self._json({"error": tr("srv.error.bad_request")}, 400)
+                except bridge_install.BridgeError as e:
+                    return self._json({"error": tr("games.error." + e.code), "code": e.code}, 409)
+                m.update_config_file(ui.cfg_path, {"games": {game.appid: entry}})
+                ui.q.put(("cmd", "reload"))          # the controller re-syncs the game bridge
+                return self._json({"ok": True, "game": entry})
 
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.server.daemon_threads = True

@@ -60,6 +60,10 @@ h2{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;le
 .big{font-size:30px;font-weight:650;letter-spacing:-.02em}
 .kv{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);gap:14px}
 .kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text2)}.kv span:last-child{text-align:right;font-weight:500}
+.game{margin-bottom:12px}.game .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.game .name{font-weight:600;font-size:15px;flex:1}.game details{margin-top:10px}.game summary{cursor:pointer;color:var(--text2);font-size:13px}
+.game .axis{display:grid;grid-template-columns:70px repeat(5,minmax(0,1fr));gap:8px;align-items:center;margin-top:8px;font-size:12.5px}
+.game .axis input[type=range]{width:100%}.game .prev{font-family:var(--mono,monospace);font-size:12px;color:var(--text2)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--card2);font-size:12px;font-weight:600}
 .pill.g{color:var(--green)}.pill.o{color:var(--orange)}.pill.r{color:var(--red)}.pill.b{color:var(--accent)}
 /* boutons */
@@ -163,6 +167,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <a data-p="gestures"><span class="ic" style="background:#ff375f" data-i18n="side.text_5">☺︎</span><span data-i18n="side.gestures">Gestes</span></a>
     <a data-p="labo"><span class="ic" style="background:#64d2ff" data-i18n="side.text_6">⚗︎</span><span data-i18n="side.lab">Labo</span></a>
     <a data-p="sims"><span class="ic" style="background:#ff9500" data-i18n="side.text_7">✈︎</span><span data-i18n="side.simulators">Simulateurs</span></a>
+    <a data-p="games"><span class="ic" style="background:#34c759">◫</span><span data-i18n="side.games">Games</span></a>
     <a data-p="garmin"><span class="ic" style="background:#007aff" data-i18n="side.text_8">⌚︎</span>Garmin</a>
     <a data-p="sensors"><span class="ic" style="background:#af52de" data-i18n="side.text_9">⌬</span><span data-i18n="side.sensors">Capteurs</span></a>
     <a data-p="device"><span class="ic" style="background:#ff375f" data-i18n="side.i">ⓘ</span>AirPods</a>
@@ -460,6 +465,13 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 </section>
 
 <!-- =============================== GARMIN -->
+<section class="page" id="p-games">
+  <h1 data-i18n="games.title">Games</h1><div class="sub" data-i18n="games.intro">Tick a Steam game and its in-game camera follows your head, without opentrack. The game must be closed while you switch it on or off.</div>
+  <div class="card" style="margin-bottom:14px"><h3 data-i18n="games.live">Live head pose</h3><div class="vec" id="games-live"></div>
+    <div class="hint" data-i18n="games.live_hint">Values on the right of each game show what that game receives with its profile.</div></div>
+  <div id="games-list"><div class="card empty" data-i18n="games.loading">Looking for Steam games…</div></div>
+</section>
+
 <section class="page" id="p-garmin">
   <h1 data-i18n="garmin.garmin_watch">Montre Garmin</h1><div class="sub" data-i18n="garmin.tilting_the_wrist_moves_the_cursor_a_dou">Incliner le poignet déplace le curseur, une double tape sur la montre clique. Accéléromètre seul, 25 Hz (service BLE 16).</div>
   <div class="card" id="gm-missing" style="display:none"><h3 data-i18n="garmin.garmin_module_not_installed">Module Garmin non installé</h3>
@@ -578,7 +590,7 @@ const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/js
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),1600)}
 const SRC=k=>({head:t("js.src.head"),case:t("js.src.case"),hand:t("js.src.hand"),auto:t("js.src.auto")})[k];
 // ---------- navigation
-function go(p){page=p;$$("#nav a").forEach(x=>x.classList.toggle("on",x.dataset.p===p));
+function go(p){page=p;if(p==="games")setTimeout(showGames,0);$$("#nav a").forEach(x=>x.classList.toggle("on",x.dataset.p===p));
   $$(".page").forEach(e=>e.classList.toggle("on",e.id==="p-"+p));if(location.hash!=="#"+p)history.replaceState(null,"","#"+p);refreshState()}
 $$("#nav a").forEach(a=>a.onclick=()=>go(a.dataset.p));
 window.addEventListener("load",()=>{const h=location.hash.slice(1);if(h&&document.getElementById("p-"+h))go(h)});
@@ -749,7 +761,7 @@ function anonymize(s){const c=JSON.parse(JSON.stringify(s));if(c.addr)c.addr="XX
   c.info=(c.info||[]).map(i=>({key:i.key,label:i.label,value:i.key==="info.name"?"AirPods":/^info\.serial/.test(i.key)?"••••••••••":i.value}));
   c.log=(c.log||[]).filter(l=>l.op===0x17||l.op===-1);return c}
 // ---------- rendu état (1 Hz)
-function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"})[c])}
+function esc(s){return String(s).replace(/[&<>\x22\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\x22":"&quot;","\x27":"&#39;"})[c])}
 const ANON=location.search.includes("anon");if(ANON)document.documentElement.classList.add("shot");
 function renderState(){
   const s=ANON?anonymize(S):S;
@@ -861,6 +873,62 @@ function labResult(r,real){let h=`<div class="hint" style="margin-bottom:10px">$
       `<div class="kv"><span>${t("js.lb.loo")}</span><span><b>${pct(v.loo_accuracy)}</b> (${t("js.lb.chance",{v:pct(v.chance)})}) · p = ${pv(v.p_value)} · <b>${esc(v.verdict)}</b></span></div><div class="kv"><span>${t("js.lb.too_short")}</span><span>${v.too_short||0}</span></div>`}
   return h}
 window.lbApply=v=>post("/api/gestures",{action:"set",values:{click_thresh:v}}).then(()=>toast("click_thresh = "+v))
+// ---------- Games: per-game bridge (TrackIR DLL in the Proton prefix) and profiles (/api/games)
+// mirror of game_profiles.map_axis (tests/test_games_ui.py checks they agree)
+function mapAxis(d,a){if(!a.enabled||d===0)return 0;let o=a.gain*40*Math.pow(Math.abs(d)/40,a.curve);o=Math.min(o,a.limit);o=d<0?-o:o;return a.invert?-o:o}
+let gamesData=null,gamesTimer=null;
+const GAXES=["yaw","pitch","roll"];
+function axisLabel(n){return n==="yaw"?t("js.games.axis_yaw"):n==="pitch"?t("js.games.axis_pitch"):t("js.games.axis_roll")}
+function gameHint(g){if(g.flatpak)return t("js.games.hint_flatpak");if(!g.has_prefix)return t("js.games.hint_no_prefix");
+  if(g.running)return t("js.games.hint_running");if(g.status==="foreign"&&!g.enabled)return t("js.games.hint_foreign",{name:g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.other_tracker")});return ""}
+function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
+  const pill=g.status==="on"?`<span class="pill g">${t("js.games.on")}</span>`:g.status==="foreign"?`<span class="pill o">${esc(g.foreign_tracker&&g.foreign_tracker!=="?"?g.foreign_tracker:t("js.games.foreign"))}</span>`:`<span class="pill">${t("js.games.off")}</span>`;
+  const ax=GAXES.map(n=>{const a=p.axes[n];return `<div class="axis" data-axis="${n}"><b>${axisLabel(n)}</b>
+    <label><input type="checkbox" data-f="enabled" ${a.enabled?"checked":""}> ${t("js.games.on_short")}</label>
+    <label><input type="checkbox" data-f="invert" ${a.invert?"checked":""}> ${t("js.games.invert")}</label>
+    <label>${t("js.games.gain")} <input type="range" data-f="gain" min="0.1" max="6" step="0.1" value="${a.gain}"></label>
+    <label>${t("js.games.curve")} <input type="range" data-f="curve" min="1" max="3" step="0.05" value="${a.curve}"></label>
+    <label>${t("js.games.limit")} <input type="range" data-f="limit" min="0" max="180" step="5" value="${a.limit}"></label></div>`}).join("");
+  return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
+    <span class="prev" data-prev></span>
+    <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
+    ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
+    ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
+    <details><summary>${t("js.games.profile")}${g.proton?" · "+esc(g.proton.split("/").pop()):""}</summary>
+      <div class="kv"><span>${t("js.games.smoothing")}</span><span><input type="range" data-f="smoothing" min="0" max="1" step="0.05" value="${p.smoothing}"></span></div>
+      ${ax}
+      <div class="kv"><span>${t("js.games.neck")}</span><span><label><input type="checkbox" data-f="neck.enabled" ${p.neck.enabled?"checked":""}> ${t("js.games.on_short")}</label>
+        <input type="range" data-f="neck.strength" min="0" max="2" step="0.1" value="${p.neck.strength}"></span></div>
+      <div class="hint">${t("js.games.neck_hint")}</div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-reset>${t("js.games.reset")}</button></div>
+    </details></div>`}
+function readProfile(card){const v=f=>card.querySelector(`[data-f="${f}"]`);const num=e=>+e.value;
+  const axes={};GAXES.forEach(n=>{const r=card.querySelector(`[data-axis="${n}"]`),q=f=>r.querySelector(`[data-f="${f}"]`);
+    axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,gain:num(q("gain")),curve:num(q("curve")),limit:num(q("limit"))}});
+  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength"))},axes}}
+function gameError(r){return r.json().then(j=>{throw new Error(j.error||r.status)})}
+function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appid),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+  .then(r=>r.ok?r.json():gameError(r))}
+function renderGames(){const box=$("#games-list");if(!gamesData)return;
+  if(!gamesData.steam_found){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_steam"))}</div>`;return}
+  if(!gamesData.games.length){box.innerHTML=`<div class="card empty">${esc(t("js.games.no_games"))}</div>`;return}
+  box.innerHTML=(gamesData.steam_flatpak?`<div class="card hint">${esc(t("js.games.hint_flatpak"))}</div>`:"")+gamesData.games.map(gameCard).join("");
+  box.querySelectorAll(".game").forEach(card=>{const appid=card.dataset.appid,g=gamesData.games.find(x=>x.appid===appid);
+    card.querySelector("[data-toggle]").onchange=e=>{const on=e.target.checked;e.target.disabled=true;
+      postGame(appid,{enabled:on}).then(()=>{toast(on?t("js.games.toast_on",{name:g.name}):t("js.games.toast_off",{name:g.name}));loadGames()})
+        .catch(err=>{toast(err.message);loadGames()})};
+    card.querySelectorAll('details input[type=range]').forEach(inp=>{const o=document.createElement("output");o.className="prev";
+      const show=()=>o.textContent=" "+(+inp.value).toFixed(inp.step<1?(inp.step<0.1?2:1):0);show();inp.after(o);inp.addEventListener("input",show)});
+    card.querySelectorAll("details input").forEach(inp=>inp.onchange=()=>{const prof=readProfile(card);g.profile=prof;
+      postGame(appid,{profile:prof}).then(()=>toast(t("js.games.toast_profile"))).catch(err=>toast(err.message))});
+    card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()})})}
+function loadGames(){return fetch("/api/games").then(r=>r.json()).then(d=>{gamesData=d;renderGames()}).catch(()=>{})}
+function refreshGamesLive(){if(page!=="games"){clearInterval(gamesTimer);gamesTimer=null;return}
+  fetch("/api/opentrack").then(r=>r.json()).then(o=>{const p=o.pose||[0,0,0,0,0,0];
+    $("#games-live").textContent=GAXES.map((n,i)=>`${axisLabel(n)} ${p[3+i]>=0?"+":""}${p[3+i].toFixed(1)}°`).join(" · ");
+    if(gamesData)$$("#games-list .game").forEach(card=>{const g=gamesData.games.find(x=>x.appid===card.dataset.appid);if(!g||!g.enabled)return;
+      card.querySelector("[data-prev]").textContent="→ "+GAXES.map((n,i)=>`${mapAxis(p[3+i],g.profile.axes[n]).toFixed(0)}°`).join(" / ")})}).catch(()=>{})}
+function showGames(){loadGames();if(!gamesTimer)gamesTimer=setInterval(refreshGamesLive,250)}
 // ---------- Simulateurs : OpenTrack + manette virtuelle (passent par /api/opentrack)
 $("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?t("js.toast.ot_on"):t("js.toast.ot_off")));
 $("#js-en").onchange=()=>post("/api/opentrack",{joystick:{enabled:$("#js-en").checked}}).then(()=>toast($("#js-en").checked?t("js.toast.joy_on"):t("js.toast.joy_off")));

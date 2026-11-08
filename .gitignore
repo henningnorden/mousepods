@@ -8,3 +8,4 @@ captures/private/
 .claude/
 garmin_mouse.json
 garmin_calib.json
+native/out/

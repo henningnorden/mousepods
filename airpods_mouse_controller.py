@@ -49,7 +49,8 @@ log = logging.getLogger("airpods-mouse")
 # =========================================================================== configuration
 DEFAULTS = {
     "device_address": "auto",
-    "ui_lang": "auto",             # "auto" (system language) | "en" | "de" | "fr"
+    "ui_lang": "auto",
+    "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)             # "auto" (system language) | "en" | "de" | "fr"
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"
     "source": "auto",              # "auto" | "head" | "case" | "hand"
@@ -951,6 +952,7 @@ class Controller:
         self.raw_imu_hooks = []      # callbacks(kind "a"|"w", payload HID, now) — IMU brute pour gestures.py
         self.sample_times = []
         self.opentrack = None        # OpenTrackOutput actif (voir sync_opentrack)
+        self.game_bridge = None      # game_bridge.GameBridge while at least one game is enabled
         self.opentrack_forced = False  # --opentrack : activé pour la session
         self.joystick_forced = False   # --sim-joystick : activé pour la session
 
@@ -1130,7 +1132,9 @@ class Controller:
         if self.joystick_forced:
             jc["enabled"] = True
         want_udp, want_js = bool(oc.get("enabled")), bool(jc.get("enabled"))
-        if (want_udp or want_js) and not self.opentrack:
+        games_cfg = self.cfg.get("games") or {}
+        want_games = any((g or {}).get("enabled") for g in games_cfg.values())
+        if (want_udp or want_js or want_games) and not self.opentrack:
             try:
                 import opentrack_out
                 self.opentrack = opentrack_out.OpenTrackOutput(oc, udp=want_udp).start()
@@ -1139,17 +1143,31 @@ class Controller:
                     notify(self.cfg, tr("srv.status.opentrack_on"))
             except (OSError, ValueError) as e:
                 log.warning("OpenTrack indisponible : %s", e)
-        elif want_udp or want_js:
+        elif want_udp or want_js or want_games:
             if want_udp != self.opentrack.udp:
                 notify(self.cfg, tr("srv.status.opentrack_on") if want_udp else tr("srv.status.opentrack_off"))
             self.opentrack.configure(oc, udp=want_udp)
         elif self.opentrack:
             self.opentrack.stop()
             self.opentrack = None
+            if self.game_bridge:
+                self.game_bridge.close()
+                self.game_bridge = None
             log.info("Sorties simulateur : arrêtées")
             notify(self.cfg, tr("srv.status.sim_outputs_off"))
             return
         if self.opentrack:
+            if want_games:
+                if not self.game_bridge:
+                    import game_bridge
+                    self.game_bridge = game_bridge.GameBridge(os.environ.get("MOUSEPODS_SHM_DIR", "/dev/shm"))
+                self.game_bridge.configure(games_cfg)
+                self.opentrack.set_game_bridge(self.game_bridge)
+            else:
+                self.opentrack.set_game_bridge(None)
+                if self.game_bridge:
+                    self.game_bridge.close()
+                    self.game_bridge = None
             had = self.opentrack.joystick is not None
             js = self.opentrack.set_joystick(jc if want_js else None)
             if want_js and not had:

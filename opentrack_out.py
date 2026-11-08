@@ -427,6 +427,8 @@ class OpenTrackOutput:
         self.udp = udp
         self.joystick = None
         self.joystick_error = None
+        self.game_bridge = None      # game_bridge.GameBridge (per-game pose files), see set_game_bridge
+        self.bridge_error = None
         self.lock = threading.Lock()
         self.pose = (0.0,) * 6
         self.last_feed = 0.0
@@ -464,9 +466,15 @@ class OpenTrackOutput:
             self.joystick, self.joystick_error = js, None
         return js
 
+    def set_game_bridge(self, bridge):
+        """bridge None = no game bridge; else an object with tick(now, pose) and `active`."""
+        with self.lock:
+            self.game_bridge = bridge
+
     @property
     def outputs(self):
-        return [n for n, on in (("udp", self.udp), ("joystick", self.joystick is not None)) if on]
+        return [n for n, on in (("udp", self.udp), ("joystick", self.joystick is not None),
+                                ("games", bool(self.game_bridge and self.game_bridge.active))) if on]
 
     def feed(self, yaw_rate, pitch_rate, roll_rate, dt, up=None, lat=None, signs=(1, 1), att=None):
         with self.lock:
@@ -481,9 +489,14 @@ class OpenTrackOutput:
     def tick(self, now=None):
         now = time.monotonic() if now is None else now
         with self.lock:
-            pose, js, udp = self.pose, self.joystick, self.udp
+            pose, js, udp, bridge = self.pose, self.joystick, self.udp, self.game_bridge
         if not self.sender.due(now):
             return False
+        if bridge is not None:
+            try:
+                bridge.tick(now, pose)
+            except OSError as e:
+                self.bridge_error = str(e)
         if js is not None:
             try:
                 js.write(pose)

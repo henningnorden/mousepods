@@ -136,7 +136,7 @@ class _Scan(HTMLParser):
         if any(t in ("script", "style") for t, _ in self.stack):
             return
         text = data.strip()
-        if not text or NEUTRAL.match(text) or text in ALLOWED_WORDS:
+        if not text or NEUTRAL.match(text) or text in ALLOWED_WORDS or not re.search(r"[^\W\d_]", text):
             return
         if any(tr for _, tr in self.stack):
             return
