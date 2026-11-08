@@ -932,15 +932,14 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
       ${ax}
       <div class="kv"><span>${t("js.games.neck")}</span><span><label><input type="checkbox" data-f="neck.enabled" ${p.neck.enabled?"checked":""}> ${t("js.games.on_short")}</label>
         <input type="range" data-f="neck.strength" min="0" max="2" step="0.1" value="${p.neck.strength}"></span></div>
-      <div class="kv"><span></span><span><label><input type="checkbox" data-f="neck.invert_x" ${p.neck.invert_x?"checked":""}> ${t("js.games.neck_invert_x")}</label>
-        <label><input type="checkbox" data-f="neck.invert_z" ${p.neck.invert_z?"checked":""}> ${t("js.games.neck_invert_z")}</label></span></div>
+      <div class="kv"><span></span><span><label><input type="checkbox" data-f="neck.lean_forward" ${p.neck.lean_forward?"checked":""}> ${t("js.games.neck_lean_forward")}</label></span></div>
       <div class="hint">${t("js.games.neck_hint")}</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" data-reset>${t("js.games.reset")}</button></div>
     </details></div>`}
 function readProfile(card){const v=f=>card.querySelector(`[data-f="${f}"]`);const num=e=>+e.value;
   const axes={};GAXES.forEach(n=>{const r=card.querySelector(`[data-axis="${n}"]`),q=f=>r.querySelector(`[data-f="${f}"]`);
     axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,gain:num(q("gain")),curve:num(q("curve")),limit:num(q("limit"))}});
-  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),invert_x:v("neck.invert_x").checked,invert_z:v("neck.invert_z").checked},axes}}
+  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes}}
 function gameError(r){return r.json().then(j=>{throw new Error(j.error||r.status)})}
 function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appid),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
   .then(r=>r.ok?r.json():gameError(r))}

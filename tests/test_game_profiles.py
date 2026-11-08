@@ -89,20 +89,21 @@ class ProfileTests(unittest.TestCase):
         self.assertLess(x, -1.0)
         self.assertLess(z, 0.0)                       # unchanged: eyes come back a little
 
-    def test_filter_neck_per_game_inversion(self):
+    def test_filter_neck_lean_forward(self):
+        """Per game: when looking sideways the eyes go forward (leaning in past a cab pillar)
+        instead of coming back; sideways and up/down stay the same."""
         p = flat_profile(0.0)
         p["neck"] = {"enabled": True, "strength": 1.0}
-        x, _, z, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
-        p["neck"].update(invert_x=True, invert_z=True)
-        xi, _, zi, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
-        self.assertAlmostEqual(xi, -x)
-        self.assertAlmostEqual(zi, -z)
+        x, y, z, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
+        p["neck"]["lean_forward"] = True
+        xl, yl, zl, *_ = gp.ProfileFilter(p).apply((0, 0, 0, 30, 0, 0), 1 / 120)
+        self.assertGreater(zl, 0.0)
+        self.assertAlmostEqual(zl, -z)
+        self.assertEqual((xl, yl), (x, y))
 
-    def test_neck_inversion_flags_normalized(self):
-        q = gp.normalize_profile({"neck": {"invert_x": 1, "invert_z": "yes"}})
-        self.assertIs(q["neck"]["invert_x"], True)
-        self.assertIs(q["neck"]["invert_z"], True)
-        self.assertFalse(gp.normalize_profile({})["neck"]["invert_x"])
+    def test_neck_lean_forward_normalized(self):
+        self.assertIs(gp.normalize_profile({"neck": {"lean_forward": 1}})["neck"]["lean_forward"], True)
+        self.assertFalse(gp.normalize_profile({})["neck"]["lean_forward"])
 
     def test_filter_is_deterministic(self):
         seq = [(0, 0, 0, i * 0.7 % 13, (i * 1.3) % 5, 0) for i in range(100)]

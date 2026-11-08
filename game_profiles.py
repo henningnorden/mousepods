@@ -17,7 +17,7 @@ GAME_X = -1.0                   # neck x (right +) -> game X (left +)
 
 DEFAULT_PROFILE = {
     "smoothing": 0.3,
-    "neck": {"enabled": False, "strength": 1.0, "invert_x": False, "invert_z": False},
+    "neck": {"enabled": False, "strength": 1.0, "lean_forward": False},
     "axes": {
         "yaw": {"enabled": True, "invert": False, "gain": 2.0, "curve": 1.4, "limit": 180},
         "pitch": {"enabled": True, "invert": False, "gain": 1.5, "curve": 1.4, "limit": 90},
@@ -46,8 +46,7 @@ def normalize_profile(raw):
     neck = raw.get("neck") if isinstance(raw.get("neck"), dict) else {}
     p["neck"]["enabled"] = bool(neck.get("enabled", p["neck"]["enabled"]))
     p["neck"]["strength"] = _clamp(neck.get("strength", p["neck"]["strength"]), 0.0, 2.0, p["neck"]["strength"])
-    for k in ("invert_x", "invert_z"):           # games that read the axis the other way round
-        p["neck"][k] = bool(neck.get(k, p["neck"][k]))
+    p["neck"]["lean_forward"] = bool(neck.get("lean_forward", p["neck"]["lean_forward"]))
     axes = raw.get("axes") if isinstance(raw.get("axes"), dict) else {}
     for name in AXES:
         src = axes.get(name) if isinstance(axes.get(name), dict) else {}
@@ -133,7 +132,8 @@ class ProfileFilter:
         neck = self.profile["neck"]
         if neck["enabled"]:
             dx, dy, dz = neck_offset(yaw, pitch, roll, neck["strength"])
-            sx = -GAME_X if neck["invert_x"] else GAME_X
-            sz = -1.0 if neck["invert_z"] else 1.0
-            x, y, z = x + sx * dx, y + dy, z + sz * dz
+            # a real head comes back a little when it turns; lean_forward goes forward instead,
+            # like leaning in to look past a cab pillar
+            sz = -1.0 if neck["lean_forward"] else 1.0
+            x, y, z = x + GAME_X * dx, y + dy, z + sz * dz
         return (x, y, z, out[0], out[1], out[2])
