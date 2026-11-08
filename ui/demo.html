@@ -7,7 +7,7 @@
 <title>MousePods · cockpit</title>
 <style>
   :root { --fg:#f5f5f7; --dim:rgba(245,245,247,.7); --glass:rgba(20,22,28,.55); --accent:#0a84ff; }
-  html,body { margin:0; height:100%; background:#0b0d12; color:var(--fg);
+  html,body { margin:0; height:100%; background:#0b0d12 !important; color:var(--fg);
     font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif; overflow:hidden; }
   canvas { display:block; width:100vw; height:100vh; }
   .hud { position:fixed; left:16px; top:16px; right:16px; display:flex; gap:12px; align-items:flex-start;
@@ -169,8 +169,8 @@ function cockpit() {
   const top = proj([0, -0.33, 0.75], o), bot = proj([0, -1.2, 0.55], o);
   let dash = "#22252c";
   if (top && bot) { dash = ctx.createLinearGradient(0, top[1], 0, bot[1]); dash.addColorStop(0, "#2c3039"); dash.addColorStop(1, "#14161b"); }
-  poly([[-1.7, -0.33, 0.75], [1.7, -0.33, 0.75], [1.7, -1.2, 0.55], [-1.7, -1.2, 0.55]], dash, null, o);
-  poly([[-1.7, -0.33, 0.75], [1.7, -0.33, 0.75], [1.7, -0.355, 0.66], [-1.7, -0.355, 0.66]], "#3a3f4a", null, o);
+  poly([[-0.93, -0.33, 0.75], [0.93, -0.33, 0.75], [0.93, -1.2, 0.55], [-0.93, -1.2, 0.55]], dash, null, o);
+  poly([[-0.93, -0.33, 0.75], [0.93, -0.33, 0.75], [0.93, -0.355, 0.66], [-0.93, -0.355, 0.66]], "#3a3f4a", null, o);
   // six round gauges with ticks and a needle
   for (let k = 0; k < 6; k++) {
     const cx = -0.72 + k * 0.288, p = proj([cx, -0.47, 0.7], o), q2 = proj([cx + 0.09, -0.47, 0.7], o);
