@@ -153,7 +153,10 @@ class VersionUiTests(unittest.TestCase):
         foot = h[h.index('<div class="side-foot">'):h.index("</aside>")]
         self.assertIn('id="side-version"', foot)                    # small link bottom left
         self.assertRegex(h, r'<section class="page" id="p-news">\s*<h1 data-i18n="news\.title">')
-        self.assertIn('id="ov-news"', h)                            # "what's new" card on the overview
+        self.assertIn('<dialog id="news-dlg"', h)                   # "what's new" as a popup
+        self.assertNotIn('id="ov-news"', h)
+        self.assertIn('showModal()', h)
+        self.assertRegex(h, r'news-dlg"\)\.addEventListener\("close"')   # Esc or a button: marked as seen
         self.assertIn('"/api/version"', h)
         self.assertIn('go("news")', h)
 

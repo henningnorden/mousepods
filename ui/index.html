@@ -40,7 +40,8 @@ nav a .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:
 nav a.on .ic{background:rgba(255,255,255,.22)!important}
 .side-foot{margin-top:auto;padding:10px;color:var(--text2);font-size:12px;line-height:1.5}
 #side-version{display:inline-block;margin-top:6px;color:var(--text2);font-size:11px;text-decoration:none}#side-version:hover{color:var(--accent);text-decoration:underline}
-.news-rel{margin-bottom:14px}.news-rel h3{margin:0 0 4px}.news-rel ul,#ov-news ul{margin:6px 0 0;padding-left:20px}#ov-news h3{margin:0 0 6px}
+.news-rel{margin-bottom:14px}.news-rel h3{margin:0 0 4px}.news-rel ul,#news-dlg ul{margin:6px 0 0;padding-left:20px}
+#news-dlg{border:0;border-radius:16px;padding:22px 24px;max-width:min(560px,90vw);background:var(--card);color:var(--text);box-shadow:0 20px 60px rgba(0,0,0,.35)}#news-dlg::backdrop{background:rgba(0,0,0,.45)}#news-dlg{margin:auto}#news-dlg h2{margin:0 0 10px;padding:0;font-size:20px;font-weight:650;text-transform:none;letter-spacing:0;color:var(--text)}#news-dlg p{margin:0 0 6px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);margin-right:6px;vertical-align:1px}
 .dot.ok{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 25%,transparent)}
 .dot.warn{background:var(--orange)}
@@ -186,7 +187,6 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 <main>
 <!-- =============================== APERÇU -->
 <section class="page on" id="p-overview">
-  <div class="card" id="ov-news" style="display:none;margin-bottom:14px"></div>
   <h1 id="ov-name">AirPods</h1>
   <div class="sub" id="ov-sub" data-i18n="overview.connecting">Connexion…</div>
   <div class="grid g4" id="ov-bat"></div>
@@ -585,6 +585,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 </section>
 
 <!-- =============================== DÉCOUVERTES -->
+<dialog id="news-dlg" aria-labelledby="news-dlg-title"></dialog>
 <section class="page" id="p-news">
   <h1 data-i18n="news.title">What's new</h1><div class="sub" id="news-sub"></div>
   <div id="news-list"></div>
@@ -1180,15 +1181,15 @@ function renderVersion(){const v=VER;if(!v||!v.version)return;
   $("#side-version").title=t("js.news.open");
   $("#news-sub").textContent=v.channel?t("js.news.channel",{channel:v.channel==="test"?t("js.news.test"):t("js.news.stable")}):"";
   $("#news-list").innerHTML=(v.releases||[]).map(relHtml).join("")||`<div class="card empty">${t("js.news.none")}</div>`;
-  const n=v.whats_new,c=$("#ov-news");
-  if(!n){c.style.display="none";return}
-  c.innerHTML=`<h3>${esc(t("js.news.new_in",{version:n.version}))}</h3>${(n.paragraphs||[]).map(p=>`<p>${esc(p)}</p>`).join("")}
+  const n=v.whats_new,dlg=$("#news-dlg");
+  if(!n||dlg.open)return;
+  dlg.innerHTML=`<h2 id="news-dlg-title">${esc(t("js.news.new_in",{version:n.version}))}</h2>${(n.paragraphs||[]).map(p=>`<p>${esc(p)}</p>`).join("")}
     ${(n.items||[]).length?`<ul>${n.items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""}
-    <div class="row" style="margin-top:8px"><button class="btn sm p" id="ov-news-ok">${t("js.news.got_it")}</button>
-    <button class="btn sm" id="ov-news-all">${t("js.news.all")}</button></div>`;
-  c.style.display="block";
-  $("#ov-news-ok").onclick=()=>post("/api/version",{seen:n.version}).then(()=>{VER.whats_new=null;renderVersion()});
-  $("#ov-news-all").onclick=()=>go("news")}
+    <form method="dialog" class="row" style="margin-top:16px;justify-content:flex-end">
+      <button class="btn sm" value="all">${t("js.news.all")}</button><button class="btn sm p" value="ok" autofocus>${t("js.news.got_it")}</button></form>`;
+  dlg.dataset.version=n.version;dlg.showModal()}
+$("#news-dlg").addEventListener("close",()=>{const dlg=$("#news-dlg"),ver=dlg.dataset.version;if(!ver)return;
+  delete dlg.dataset.version;if(VER)VER.whats_new=null;post("/api/version",{seen:ver});if(dlg.returnValue==="all")go("news")});
 function loadVersion(){return fetch("/api/version").then(r=>r.json()).then(v=>{VER=v;renderVersion()}).catch(()=>{})}
 $("#side-version").onclick=e=>{e.preventDefault();go("news")};
 loadI18n().finally(()=>{loadVersion();$("#lb-proto-desc").textContent=LB_DESC(lbProto);setInterval(refreshState,1000);refreshState();connect()});
