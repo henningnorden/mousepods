@@ -79,3 +79,13 @@ def resolve_monitors(saved, present):
 
 def overlay_url(port, roles):
     return f"http://127.0.0.1:{port}/calibrate?" + urllib.parse.urlencode({"roles": ",".join(roles)})
+
+
+def is_own_page(uri, port):
+    """A page of our own local server (opened in an app window, not the system browser)."""
+    try:
+        u = urllib.parse.urlsplit(uri or "")
+        return (u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost") and u.port == port
+                and not u.username and not u.password)
+    except ValueError:                    # e.g. "127.0.0.1:8737.evil.com": not a port
+        return False

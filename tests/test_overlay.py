@@ -54,6 +54,13 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(overlay.resolve_monitors([], ["X"]), [{"connector": "X", "main": True}])
         self.assertEqual(overlay.resolve_monitors(saved, []), [])
 
+    def test_is_own_page(self):
+        self.assertTrue(overlay.is_own_page("http://127.0.0.1:8737/demo", 8737))
+        self.assertTrue(overlay.is_own_page("http://localhost:8737/", 8737))
+        for other in ("http://127.0.0.1:9999/demo", "https://github.com/x", "http://127.0.0.1:8737.evil.com/",
+                      "file:///etc/passwd", "", "http://127.0.0.1:8737@evil.com/"):
+            self.assertFalse(overlay.is_own_page(other, 8737), other)
+
     def test_overlay_url(self):
         self.assertEqual(overlay.overlay_url(8737, ["main", "left"]),
                          "http://127.0.0.1:8737/calibrate?roles=main%2Cleft")

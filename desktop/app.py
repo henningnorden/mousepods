@@ -98,7 +98,24 @@ class App(Gtk.Application):
         ucm = WebKit.UserContentManager()
         ucm.register_script_message_handler("mousepods", None)
         ucm.connect("script-message-received::mousepods", self._on_message)
-        return WebKit.WebView(user_content_manager=ucm)
+        view = WebKit.WebView(user_content_manager=ucm)
+        view.connect("create", self._on_create)
+        return view
+
+    def _on_create(self, view, action):
+        # links with target="_blank": our own pages (e.g. the /demo cockpit) in an app window,
+        # anything else in the system browser
+        uri = action.get_request().get_uri() or ""
+        if overlay.is_own_page(uri, PORT):
+            win = Gtk.Window(application=self, title="MousePods")
+            win.set_default_size(1280, 800)
+            new = WebKit.WebView(related_view=view, user_content_manager=view.get_user_content_manager())
+            win.set_child(new)
+            win.present()
+            return new
+        if uri.startswith(("https://", "http://")):
+            Gtk.UriLauncher.new(uri).launch(self.win, None, None, None)
+        return None
 
     def _on_message(self, _ucm, value):
         msg = overlay.parse_message(value.to_json(0))
