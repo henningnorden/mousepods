@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=MousePods
+Name[de]=MousePods
+Name[fr]=MousePods
+Comment=AirPods as a head tracker for Steam/Proton games
+Comment[de]=AirPods als Headtracker für Steam-/Proton-Spiele
+Comment[fr]=Les AirPods comme suivi de tête pour les jeux Steam/Proton
+Exec=mousepods-app
+Icon=io.github.henningnorden.MousePods
+Terminal=false
+Categories=Game;Utility;
+Keywords=headtracking;trackir;airpods;simracing;

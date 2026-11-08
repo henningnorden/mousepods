@@ -790,7 +790,9 @@ $("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconne
 $("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
 $("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").checked})
   .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("games")});
-function renderState(){checkWizard();renderWizard();
+// features that need things the Flatpak does not ship (Garmin's AGPL dependency)
+function hideInFlatpak(){if(!S.flatpak)return;$$('#nav a[data-p="garmin"]').forEach(a=>a.style.display="none")}
+function renderState(){checkWizard();renderWizard();hideInFlatpak();
   const s=ANON?anonymize(S):S;
   $("#side-model").textContent=s.model||"—";
   const name=(s.info||[]).find(i=>i.key==="info.name");

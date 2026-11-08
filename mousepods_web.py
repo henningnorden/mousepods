@@ -43,6 +43,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import airpods_mouse_controller as m
 import i18n
+import paths
 from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -407,7 +408,7 @@ class WebUI:
         self.speech_result = None
         try:
             import silent_speech
-            self.speech = silent_speech.SpeechSession(os.path.join(HERE, "captures", "private", "silent_speech.json"))
+            self.speech = silent_speech.SpeechSession(os.path.join(paths.captures_dir(private=True), "silent_speech.json"))
             ctl.gesture_hooks.append(self.speech.on_sample)
         except Exception as e:  # noqa: BLE001
             m.log.warning("Parole silencieuse indisponible : %s", e)
@@ -519,7 +520,7 @@ class WebUI:
             g.cancel_calib()
         elif a == "rec_start":
             name = re.sub(r"[^\w.-]", "_", str(body.get("name") or f"gestes_{int(time.time())}"))
-            g.start_record(os.path.join(HERE, "captures", "private", name + ".csv"), str(body.get("label", "")))
+            g.start_record(os.path.join(paths.captures_dir(private=True), name + ".csv"), str(body.get("label", "")))
         elif a == "rec_label":
             g.set_label(str(body.get("label", "")))
         elif a == "rec_stop":
@@ -559,7 +560,7 @@ class WebUI:
         if self.labo is not None and not self.labo.done:
             self.labo.cancel()
         name = f"labo_{proto}_{time.strftime('%Y%m%d_%H%M%S')}"
-        path = os.path.join(HERE, "captures", "private", name + ".json")
+        path = os.path.join(paths.captures_dir(private=True), name + ".json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         now = time.monotonic()
         rec = {"t0": now, "until": now + steps[-1]["t1"] + 1.5, "path": path, "rows": [], "phase": ""}
@@ -725,7 +726,7 @@ class WebUI:
             "ear": ear_view(self.dev.ear),
             "controls": [control_view(c) for c in sorted(self.dev.controls.values(), key=lambda c: c["ident"])],
             "services": services, "replies": replies, "log": log, "counts": counts,
-            "config": cfg, "profiles": ctl.cfg.get("profiles", {}),
+            "config": cfg, "profiles": ctl.cfg.get("profiles", {}), "flatpak": paths.in_flatpak(),
             "profile_key": ctl.profile_key(), "calibrated": ctl.profile_key() in ctl.cfg.get("profiles", {}),
             "uptime": round(time.time() - self.t_start),
             "gesture_stats": ctl.gestures.buf.stats() if getattr(ctl, "gestures", None) else None,
@@ -857,7 +858,7 @@ class WebUI:
                     ui.q.put(("reconnect",))
                 elif self.path == "/api/record":
                     secs = float(body.get("seconds", 10))
-                    path = os.path.join(HERE, "captures", body.get("name", f"record_{int(time.time())}") + ".json")
+                    path = os.path.join(paths.captures_dir(), os.path.basename(str(body.get("name", f"record_{int(time.time())}"))) + ".json")
                     now = time.monotonic()
                     ui.rec = {"t0": now, "until": now + secs, "path": path, "rows": []}
                     return self._json({"ok": True, "path": path})

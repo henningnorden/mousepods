@@ -68,8 +68,29 @@ def _paths(game):
     return os.path.join(game.prefix, "user.reg"), os.path.join(game.prefix, "drive_c", DIR_NAME)
 
 
+STEAM_REGISTRIES = ("~/.steam/registry.vdf", "~/.local/share/Steam/registry.vdf")
+
+
+def steam_running_appid():
+    """The game Steam itself reports as running (registry.vdf RunningAppID), or None.
+    Works from inside a Flatpak, where other processes are invisible."""
+    for rel in STEAM_REGISTRIES:
+        path = os.path.join(os.environ.get("HOME", os.path.expanduser("~")), rel[2:])
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                m = re.search(r'"RunningAppID"\s+"(\d+)"', f.read())
+        except OSError:
+            continue
+        if m and m.group(1) != "0":
+            return m.group(1)
+    return None
+
+
 def process_running(appid, proc="/proc"):
-    """True if any process belongs to this Steam app (SteamAppId / STEAM_COMPAT_APP_ID / AppId=)."""
+    """True if the game runs: Steam's RunningAppID, or any process with SteamAppId /
+    STEAM_COMPAT_APP_ID / AppId= for it."""
+    if steam_running_appid() == str(appid):
+        return True
     needles = (f"SteamAppId={appid}\0".encode(), f"STEAM_COMPAT_APP_ID={appid}\0".encode())
     for d in glob.glob(os.path.join(proc, "[0-9]*")):
         try:
