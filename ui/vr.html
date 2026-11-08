@@ -1,0 +1,227 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MousePods · 360° video</title>
+<style>
+  :root { --fg:#f5f5f7; --dim:rgba(245,245,247,.72); --glass:rgba(18,20,26,.62); --accent:#0a84ff; }
+  html,body { margin:0; height:100%; background:#000 !important; color:var(--fg); overflow:hidden;
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif; }
+  canvas, #yt { position:fixed; inset:0; width:100vw; height:100vh; border:0; }
+  #yt { display:none; }
+  .hud { position:fixed; left:16px; top:16px; right:16px; display:flex; gap:12px; align-items:flex-start;
+    justify-content:space-between; pointer-events:none; flex-wrap:wrap; z-index:3; }
+  .card { background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 14px; pointer-events:auto; }
+  h1 { font-size:15px; margin:0 0 2px; font-weight:650; }
+  .sub, .keys { color:var(--dim); font-size:12.5px; max-width:420px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  button, select, input[type=text] { font:inherit; color:var(--fg); background:rgba(255,255,255,.12); border:0;
+    border-radius:9px; padding:6px 10px; }
+  button { cursor:pointer; } button.p { background:var(--accent); }
+  input[type=text] { width:260px; }
+  input[type=range] { width:100px; accent-color:var(--accent); }
+  a { color:var(--dim); font-size:12.5px; }
+  .mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12.5px; color:var(--dim); }
+  #status { font-size:12.5px; color:#ffd60a; min-height:1em; }
+  #drop { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:1;
+    color:var(--dim); font-size:18px; text-align:center; pointer-events:none; }
+  #flash { position:fixed; left:50%; top:24px; transform:translateX(-50%); background:rgba(18,20,26,.75);
+    padding:8px 16px; border-radius:12px; font-size:15px; font-weight:600; display:none; z-index:5; }
+  body.clean .hud { display:none; } body.clean { cursor:none; }
+</style>
+<script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="drop" data-i18n="vr.drop">Drop a 360° video here, or open one with the button</div>
+<div id="yt"></div>
+<div id="flash"></div>
+<div class="hud">
+  <div class="card">
+    <h1 data-i18n="vr.title">360° video</h1>
+    <div class="sub" data-i18n="vr.hint">Turn your head to look around the video, the AirPods move the view.</div>
+    <div class="row">
+      <button class="p" id="open" data-i18n="vr.open">Open a video</button>
+      <input type="file" id="file" accept="video/*" hidden>
+      <select id="format">
+        <option value="mono360" data-i18n="vr.fmt_mono360">360°</option>
+        <option value="tb360" data-i18n="vr.fmt_tb360">360° VR (top/bottom)</option>
+        <option value="sbs360" data-i18n="vr.fmt_sbs360">360° VR (side by side)</option>
+        <option value="sbs180" data-i18n="vr.fmt_sbs180">180° VR (side by side)</option>
+      </select>
+    </div>
+    <div class="row">
+      <input type="text" id="yturl" placeholder="YouTube 360° link">
+      <button id="ytgo" data-i18n="vr.youtube">Play from YouTube</button>
+    </div>
+    <div class="keys" data-i18n="vr.keys">Space: play/pause · ←/→: 10 s · R: recenter · F: full screen · H: hide · Y/P/O: invert an axis</div>
+    <div id="status"></div>
+  </div>
+  <div class="card row" style="margin-top:0">
+    <span class="mono" id="angles">yaw 0° · pitch 0°</span>
+    <label class="row" style="margin:0"><span data-i18n="demo.gain">Amplification</span>
+      <input type="range" id="gain" min="1" max="3" step="0.1" value="1"><span class="mono" id="gainv">×1.0</span></label>
+    <button id="recenter" data-i18n="demo.recenter">Recenter</button>
+    <button id="fs" data-i18n="demo.fullscreen">Full screen</button>
+    <a href="/" data-i18n="demo.back">Back to the app</a>
+  </div>
+</div>
+<script type="module">
+import * as THREE from "three";
+
+// ---------------------------------------------------------------- i18n
+let I18N = {};
+const t = k => I18N[k] || null;
+fetch("/api/i18n").then(r => r.json()).then(j => {
+  I18N = j.strings || {}; document.documentElement.lang = j.lang || "en";
+  document.querySelectorAll("[data-i18n]").forEach(e => { const s = t(e.dataset.i18n); if (s) e.textContent = s; });
+  const ph = t("vr.youtube_placeholder"); if (ph) document.getElementById("yturl").placeholder = ph;
+}).catch(() => {});
+
+// ---------------------------------------------------------------- head pose (same endpoint and axis settings as the cockpit)
+let target = [0, 0, 0], live = false, connected = false, serverUp = true;
+(async function poll() {
+  try {
+    const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
+    serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
+    if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+  } catch (e) { serverUp = false; }
+  setTimeout(poll, 16);
+})();
+let SIGNS = { yaw: 1, pitch: 1, roll: 1 };
+try { Object.assign(SIGNS, JSON.parse(localStorage.getItem("mp_cockpit_signs") || "{}")); } catch (_) {}
+let flashMsg = "", flashUntil = 0;
+const flash = m => { flashMsg = m; flashUntil = performance.now() + 1500; };
+const gainEl = document.getElementById("gain");
+gainEl.oninput = () => document.getElementById("gainv").textContent = "×" + (+gainEl.value).toFixed(1);
+const recenter = () => fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd: "recenter" }) });
+document.getElementById("recenter").onclick = recenter;
+const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
+document.getElementById("fs").onclick = toggleFs;
+
+// ---------------------------------------------------------------- local video on an inside-out sphere
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.1, 2000);
+addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+const video = document.createElement("video");
+video.loop = true; video.playsInline = true; video.crossOrigin = "anonymous";
+const tex = new THREE.VideoTexture(video); tex.colorSpace = THREE.SRGBColorSpace;
+let sphere = null;
+function buildSphere(fmt) {
+  if (sphere) { scene.remove(sphere); sphere.geometry.dispose(); }
+  const half = fmt === "sbs180";
+  // 180°: half sphere in front of the viewer; 360°: full sphere. Seen from inside (scale x = -1).
+  const g = new THREE.SphereGeometry(500, 96, 64, half ? Math.PI : 0, half ? Math.PI : Math.PI * 2);
+  g.scale(-1, 1, 1);
+  tex.repeat.set(1, 1); tex.offset.set(0, 0);
+  if (fmt === "tb360") { tex.repeat.set(1, 0.5); tex.offset.set(0, 0.5); }        // left eye = top half
+  if (fmt === "sbs360" || fmt === "sbs180") { tex.repeat.set(0.5, 1); tex.offset.set(0, 0); }   // left eye = left half
+  sphere = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex }));
+  sphere.rotation.y = half ? 0 : -Math.PI / 2;      // centre of the picture straight ahead
+  scene.add(sphere);
+}
+const fmtEl = document.getElementById("format");
+fmtEl.onchange = () => buildSphere(fmtEl.value);
+function guessFormat(name) {
+  const n = name.toLowerCase();
+  if (/180/.test(n)) return "sbs180";
+  if (/(_tb|_ou|topbottom|top-bottom|overunder)/.test(n)) return "tb360";
+  if (/(_lr|_sbs|sidebyside|side-by-side)/.test(n)) return "sbs360";
+  return null;
+}
+function openFile(f) {
+  if (!f) return;
+  stopYouTube();
+  const g = guessFormat(f.name); if (g) fmtEl.value = g;
+  buildSphere(fmtEl.value);
+  video.src = URL.createObjectURL(f);
+  video.play().catch(() => {});
+  document.getElementById("drop").style.display = "none";
+}
+const fileEl = document.getElementById("file");
+document.getElementById("open").onclick = () => fileEl.click();
+fileEl.onchange = () => openFile(fileEl.files[0]);
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", e => { e.preventDefault(); openFile(e.dataTransfer.files[0]); });
+buildSphere("mono360");
+
+// ---------------------------------------------------------------- YouTube 360 (official IFrame API: setSphericalProperties)
+let yt = null, ytReady = false;
+function ytId(u) {
+  const m = String(u).match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/); return m ? m[1] : (/^[\w-]{11}$/.test(u) ? u : null);
+}
+function stopYouTube() { if (yt) { yt.destroy(); yt = null; ytReady = false; } document.getElementById("yt").style.display = "none"; renderer.domElement.style.display = "block"; }
+document.getElementById("ytgo").onclick = () => {
+  const id = ytId(document.getElementById("yturl").value.trim());
+  if (!id) { flash(t("vr.bad_link") || "Not a YouTube link"); return; }
+  video.pause();
+  const start = () => {
+    stopYouTube();
+    const holder = document.getElementById("yt"); holder.innerHTML = "<div id='ytp'></div>"; holder.style.display = "block";
+    renderer.domElement.style.display = "none"; document.getElementById("drop").style.display = "none";
+    yt = new YT.Player("ytp", { width: "100%", height: "100%", videoId: id,
+      playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 },
+      events: { onReady: () => { ytReady = true; yt.getIframe().style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0"; } } });
+  };
+  if (window.YT && YT.Player) return start();
+  window.onYouTubeIframeAPIReady = start;
+  const s = document.createElement("script"); s.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(s);
+};
+
+// ---------------------------------------------------------------- keys
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && e.target.type === "text") return;
+  const k = e.key;
+  if (k === " ") { e.preventDefault(); if (yt && ytReady) (yt.getPlayerState() === 1 ? yt.pauseVideo() : yt.playVideo()); else video.paused ? video.play() : video.pause(); }
+  else if (k === "ArrowRight" || k === "ArrowLeft") {
+    const d = k === "ArrowRight" ? 10 : -10;
+    if (yt && ytReady) yt.seekTo(Math.max(0, yt.getCurrentTime() + d), true); else video.currentTime = Math.max(0, video.currentTime + d);
+  }
+  else if (k === "r" || k === "R") recenter();
+  else if (k === "f" || k === "F") toggleFs();
+  else if (k === "h" || k === "H") document.body.classList.toggle("clean");
+  else if (k === "Escape") document.body.classList.remove("clean");
+  else if ("yYpPoO".includes(k)) {
+    const ax = { y: "yaw", p: "pitch", o: "roll" }[k.toLowerCase()];
+    SIGNS[ax] *= -1;
+    try { localStorage.setItem("mp_cockpit_signs", JSON.stringify(SIGNS)); } catch (_) {}
+    flash(`${ax} ${SIGNS[ax] > 0 ? "normal" : "inverted"}`);
+  }
+});
+if (new URLSearchParams(location.search).get("clean") === "1") document.body.classList.add("clean");
+
+// ---------------------------------------------------------------- loop
+let cur = [0, 0, 0], last = performance.now(), lastYt = 0;
+const euler = new THREE.Euler(0, 0, 0, "YXZ");
+function frame(now) {
+  const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05); last = now;
+  const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.03);
+  const want = [target[0] * g * SIGNS.yaw, Math.max(-89, Math.min(89, target[1] * g * SIGNS.pitch)), target[2] * SIGNS.roll];
+  cur = cur.map((v, i) => v + (want[i] - v) * k);
+  if (yt && ytReady && now - lastYt > 33) {                 // YouTube: yaw 0..360 clockwise, pitch up positive
+    lastYt = now;
+    try { yt.setSphericalProperties({ yaw: ((cur[0] % 360) + 360) % 360, pitch: cur[1], roll: -cur[2], enableOrientationSensor: false }); } catch (_) {}
+  } else if (!yt) {
+    euler.set(THREE.MathUtils.degToRad(cur[1]), THREE.MathUtils.degToRad(-cur[0]), THREE.MathUtils.degToRad(-cur[2]));
+    camera.quaternion.setFromEuler(euler);
+    renderer.render(scene, camera);
+  }
+  const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
+           : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";
+  document.getElementById("status").textContent = st;
+  document.getElementById("angles").textContent = `yaw ${target[0].toFixed(0)}° · pitch ${target[1].toFixed(0)}°`;
+  const fl = document.getElementById("flash");
+  if (now < flashUntil) { fl.textContent = flashMsg; fl.style.display = "block"; } else fl.style.display = "none";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

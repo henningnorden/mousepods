@@ -55,6 +55,7 @@ UI_FILE = os.path.join(HERE, "ui", "index.html")
 CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
 DEMO_FILE = os.path.join(HERE, "ui", "cockpit.html")          # /demo : cockpit réaliste (WebGL)
 DEMO_SIMPLE_FILE = os.path.join(HERE, "ui", "demo.html")      # /demo/simple : rendu canvas léger
+VR_FILE = os.path.join(HERE, "ui", "vr.html")                 # /vr : vidéos 360° / VR, la vue suit la tête
 VENDOR = {"three.module.min.js": "text/javascript", "Sky.js": "text/javascript",
           "LICENSE-three.txt": "text/plain; charset=utf-8"}   # ui/vendor, liste fermée
 
@@ -783,9 +784,9 @@ class WebUI:
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
-                elif self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo/simple"):
+                elif self.path in ("/", "/index.html", "/calibrate", "/demo", "/demo/simple", "/vr"):
                     page = {"/calibrate": CALIBRATE_FILE, "/demo": DEMO_FILE,
-                            "/demo/simple": DEMO_SIMPLE_FILE}.get(self.path, UI_FILE)
+                            "/demo/simple": DEMO_SIMPLE_FILE, "/vr": VR_FILE}.get(self.path, UI_FILE)
                     with open(page, "rb") as f:
                         data = f.read()
                     self.send_response(200)
