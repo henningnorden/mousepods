@@ -100,13 +100,20 @@ let STEREO = q.get("sbs") === "1";
 try { if (!q.has("sbs")) STEREO = localStorage.getItem("mp_stereo") === "1"; } catch (_) {}
 
 let target = [0, 0, 0], live = false, connected = false, serverUp = true;
+// anti-spike: median of the last 3 samples per axis, so a single outlier (jump and back) never reaches the view
+const lastPoses = [];
+function despike(p) {
+  lastPoses.push(p); if (lastPoses.length > 3) lastPoses.shift();
+  if (lastPoses.length < 3) return p;
+  return p.map((_, i) => lastPoses.map(q => q[i]).sort((x, y) => x - y)[1]);
+}
 const FAKE = (q.get("fake") || "").split(",").map(Number);          // ?fake=yaw,pitch : fixed view, for testing
 (async function poll() {
   if (FAKE.length === 2 && FAKE.every(isFinite)) { target = [FAKE[0], FAKE[1], 0]; live = connected = true; return; }
   try {
     const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
     serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
-    if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+    if (j.pose) target = despike([j.pose[3], j.pose[4], j.pose[5]]);
     setRecording(!!j.rec);
   } catch (e) { serverUp = false; }
   setTimeout(poll, 16);

@@ -82,11 +82,18 @@ fetch("/api/i18n").then(r => r.json()).then(j => {
 
 // ---------------------------------------------------------------- head pose (same endpoint and axis settings as the cockpit)
 let target = [0, 0, 0], live = false, connected = false, serverUp = true;
+// anti-spike: median of the last 3 samples per axis, so a single outlier (jump and back) never reaches the view
+const lastPoses = [];
+function despike(p) {
+  lastPoses.push(p); if (lastPoses.length > 3) lastPoses.shift();
+  if (lastPoses.length < 3) return p;
+  return p.map((_, i) => lastPoses.map(q => q[i]).sort((x, y) => x - y)[1]);
+}
 (async function poll() {
   try {
     const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
     serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
-    if (j.pose) target = [j.pose[3], j.pose[4], j.pose[5]];
+    if (j.pose) target = despike([j.pose[3], j.pose[4], j.pose[5]]);
   } catch (e) { serverUp = false; }
   setTimeout(poll, 16);
 })();
