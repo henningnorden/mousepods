@@ -2,7 +2,7 @@
 // Isolated-world bridge: settings from chrome.storage and the pose from the background go to page.js
 // (main world, where the YouTube player API lives) through window.postMessage.
 (() => {
-  const DEFAULTS = { enabled: true, youtube: true, gyro: false, gain: 1, yawSign: 1, pitchSign: 1 };
+  const DEFAULTS = { enabled: true, youtube: true, gyro: false, webxr: true, xrStereo: false, gain: 1, yawSign: 1, pitchSign: 1 };
   let settings = { ...DEFAULTS }, port = null, keepalive = null, wanted = false;
 
   const toPage = msg => window.postMessage({ __mousepods: true, ...msg }, "*");
