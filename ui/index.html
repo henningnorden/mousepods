@@ -36,6 +36,7 @@ nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8p
 nav a:hover{background:var(--line)}
 nav a.on{background:var(--accent);color:#fff}
 nav a .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:12px;flex:none}
+nav a .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav a.on .ic{background:rgba(255,255,255,.22)!important}
 .side-foot{margin-top:auto;padding:10px;color:var(--text2);font-size:12px;line-height:1.5}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text2);margin-right:6px;vertical-align:1px}
@@ -159,20 +160,21 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 4a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3h.5v8a1.5 1.5 0 0 0 3 0V7a3 3 0 0 0-3-3H7zM17 4a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-.5v8a1.5 1.5 0 0 1-3 0V7a3 3 0 0 1 3-3h.5z"/></svg></div>
     <div><b data-i18n="side.airpods_mouse">AirPods Mouse</b><small id="side-model">—</small></div>
   </div>
-  <nav id="nav">
-    <a data-p="overview" class="on"><span class="ic" style="background:#0a84ff" data-i18n="side.text">◉</span><span data-i18n="side.overview">Aperçu</span></a>
-    <a data-p="motion"><span class="ic" style="background:#30d158" data-i18n="side.text_2">∿</span><span data-i18n="side.motion">Mouvement</span></a>
-    <a data-p="settings"><span class="ic" style="background:#8e8e93" data-i18n="side.text_3">⚙︎</span><span data-i18n="side.settings">Réglages</span></a>
-    <a data-p="calib"><span class="ic" style="background:#ff9f0a" data-i18n="side.text_4">◎</span><span data-i18n="side.calibration">Calibration</span></a>
-    <a data-p="gestures"><span class="ic" style="background:#ff375f" data-i18n="side.text_5">☺︎</span><span data-i18n="side.gestures">Gestes</span></a>
-    <a data-p="labo"><span class="ic" style="background:#64d2ff" data-i18n="side.text_6">⚗︎</span><span data-i18n="side.lab">Labo</span></a>
-    <a data-p="sims"><span class="ic" style="background:#ff9500" data-i18n="side.text_7">✈︎</span><span data-i18n="side.simulators">Simulateurs</span></a>
-    <a data-p="games"><span class="ic" style="background:#34c759">◫</span><span data-i18n="side.games">Games</span></a>
-    <a data-p="garmin"><span class="ic" style="background:#007aff" data-i18n="side.text_8">⌚︎</span>Garmin</a>
-    <a data-p="sensors"><span class="ic" style="background:#af52de" data-i18n="side.text_9">⌬</span><span data-i18n="side.sensors">Capteurs</span></a>
-    <a data-p="device"><span class="ic" style="background:#ff375f" data-i18n="side.i">ⓘ</span>AirPods</a>
-    <a data-p="log"><span class="ic" style="background:#5e5ce6" data-i18n="side.text_10">≡</span><span data-i18n="side.log">Journal</span></a>
-    <a data-p="about"><span class="ic" style="background:#30b0c7" data-i18n="side.text_11">★</span><span data-i18n="side.findings">Découvertes</span></a>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-overview" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol><symbol id="i-motion" viewBox="0 0 24 24"><path d="M3 12c3-6 6-6 9 0s6 6 9 0"/></symbol><symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol><symbol id="i-calib" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol><symbol id="i-gestures" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4.5a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7c-2.5 0-4-1.5-5.5-3.5L3 14.5a1.5 1.5 0 0 1 2.5-1.7L8 15"/></symbol><symbol id="i-labo" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9"/></symbol><symbol id="i-sims" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="13" r="2"/><path d="M3.5 10.5c5 1 12 1 17 0M12 15v6"/></symbol><symbol id="i-games" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M8 10.5v4M6 12.5h4"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor"/></symbol><symbol id="i-garmin" viewBox="0 0 24 24"><rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2l1.5 1"/></symbol><symbol id="i-sensors" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol><symbol id="i-device" viewBox="0 0 24 24"><path d="M9 4a4 4 0 0 0-4 4v1a4 4 0 0 0 4 4v7M15 4a4 4 0 0 1 4 4v1a4 4 0 0 1-4 4v7"/></symbol><symbol id="i-log" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></symbol><symbol id="i-about" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/></symbol></svg>
+<nav id="nav">
+    <a data-p="overview" class="on"><span class="ic" style="background:#0a84ff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-overview"/></svg></span><span data-i18n="side.overview">Aperçu</span></a>
+    <a data-p="motion"><span class="ic" style="background:#30d158"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-motion"/></svg></span><span data-i18n="side.motion">Mouvement</span></a>
+    <a data-p="settings"><span class="ic" style="background:#8e8e93"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"/></svg></span><span data-i18n="side.settings">Réglages</span></a>
+    <a data-p="calib"><span class="ic" style="background:#ff9f0a"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-calib"/></svg></span><span data-i18n="side.calibration">Calibration</span></a>
+    <a data-p="gestures"><span class="ic" style="background:#ff375f"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gestures"/></svg></span><span data-i18n="side.gestures">Gestes</span></a>
+    <a data-p="labo"><span class="ic" style="background:#64d2ff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-labo"/></svg></span><span data-i18n="side.lab">Labo</span></a>
+    <a data-p="sims"><span class="ic" style="background:#ff9500"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sims"/></svg></span><span data-i18n="side.simulators">Simulateurs</span></a>
+    <a data-p="games"><span class="ic" style="background:#34c759"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-games"/></svg></span><span data-i18n="side.games">Games</span></a>
+    <a data-p="garmin"><span class="ic" style="background:#007aff"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-garmin"/></svg></span>Garmin</a>
+    <a data-p="sensors"><span class="ic" style="background:#af52de"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sensors"/></svg></span><span data-i18n="side.sensors">Capteurs</span></a>
+    <a data-p="device"><span class="ic" style="background:#ff375f"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-device"/></svg></span>AirPods</a>
+    <a data-p="log"><span class="ic" style="background:#5e5ce6"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-log"/></svg></span><span data-i18n="side.log">Journal</span></a>
+    <a data-p="about"><span class="ic" style="background:#30b0c7"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-about"/></svg></span><span data-i18n="side.findings">Découvertes</span></a>
   </nav>
   <div class="side-foot"><div><span class="dot" id="side-dot"></span><span id="side-status">—</span></div>
     <div id="side-rate" class="mono" style="margin-top:4px"></div></div>
@@ -243,7 +245,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 <!-- =============================== RÉGLAGES -->
 <section class="page" id="p-settings">
   <h1 data-i18n="settings.settings">Réglages</h1><div class="sub" data-i18n="settings.everything_applies_instantly">Tout s'applique instantanément.</div>
-  <div class="card"><div class="kv"><span data-i18n="settings.language">Langue</span><span><div class="seg" data-key="ui_lang">
+  <div class="card" style="margin-bottom:14px"><div class="kv"><span data-i18n="settings.language">Langue</span><span><div class="seg" data-key="ui_lang">
     <button data-v="auto" data-i18n="lang.auto">Automatique</button><button data-v="en" data-i18n="lang.en">English</button><button data-v="de" data-i18n="lang.de">Deutsch</button><button data-v="fr" data-i18n="lang.fr">Français</button></div></span></div></div>
   <div class="card"><h3 data-i18n="settings.sensitivity">Sensibilité</h3>
     <div class="set"><label data-i18n="settings.horizontal">Horizontale</label><input type="range" data-k="sensitivity_x" min="0.1" max="5" step="0.05"><output></output></div>
@@ -466,7 +468,7 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
 
 <!-- =============================== GARMIN -->
 <section class="page" id="p-welcome">
-  <h1 data-i18n="welcome.title">Welcome to MousePods</h1><div class="sub" data-i18n="welcome.intro">Five short steps and your AirPods steer the camera in your games.</div>
+  <h1 data-i18n="welcome.title">Welcome to MousePods</h1><div class="sub" data-i18n="welcome.intro">Five short steps, then MousePods follows your head.</div>
   <div class="card" id="wz-lang"><h3 data-i18n="welcome.step_lang">1 · Language</h3>
     <div class="seg" data-key="ui_lang"><button data-v="auto" data-i18n="lang.auto">Automatic</button><button data-v="en" data-i18n="lang.en">English</button><button data-v="de" data-i18n="lang.de">Deutsch</button><button data-v="fr" data-i18n="lang.fr">Français</button></div></div>
   <div class="card" id="wz-airpods"><h3 data-i18n="welcome.step_airpods">2 · AirPods</h3>
@@ -481,13 +483,13 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <button class="btn sm" data-cmd="recenter" data-i18n="welcome.recenter_go">Set centre</button></div>
   <div class="card" id="wz-autostart"><h3 data-i18n="welcome.step_autostart">5 · Start with the computer</h3>
     <div class="set toggle"><label data-i18n="welcome.autostart_label">Start MousePods hidden at login (recommended)</label><label class="sw"><input type="checkbox" id="wz-autostart-on"><span></span></label></div></div>
-  <div class="row" style="margin-top:14px"><button class="btn p" id="wz-done" data-i18n="welcome.done">Done – to the games</button></div>
+  <div class="row" style="margin-top:14px"><button class="btn p" id="wz-done" data-i18n="welcome.done">Done</button></div>
 </section>
 
 <section class="page" id="p-games">
   <h1 data-i18n="games.title">Games</h1><div class="sub" data-i18n="games.intro">Tick a Steam game and its in-game camera follows your head, without opentrack. The game must be closed while you switch it on or off.</div>
   <div class="card" style="margin-bottom:14px"><h3 data-i18n="games.live">Live head pose</h3><div class="vec" id="games-live"></div>
-    <div class="hint" data-i18n="games.live_hint">Values on the right of each game show what that game receives with its profile.</div></div>
+    <div class="hint" data-i18n="games.live_hint">Open a game's profile to see what that game receives.</div></div>
   <div id="games-list"><div class="card empty" data-i18n="games.loading">Looking for Steam games…</div></div>
 </section>
 
@@ -791,7 +793,7 @@ function renderWizard(){if(page!=="welcome")return;$("#wz-status").textContent=S
 $("#wz-reconnect").onclick=()=>{post("/api/reconnect");toast(t("js.toast.reconnecting"))};
 $("#wz-calib-go").onclick=()=>{go("calib");const b=$('#cal-src button[data-v="head"]');if(b)b.click()};
 $("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").checked})
-  .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("games")});
+  .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("overview")});
 // features that need things the Flatpak does not ship (Garmin's AGPL dependency)
 function hideInFlatpak(){if(!S.flatpak)return;$$('#nav a[data-p="garmin"]').forEach(a=>a.style.display="none")}
 function renderState(){checkWizard();renderWizard();hideInFlatpak();
@@ -921,11 +923,11 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
     <label>${t("js.games.curve")} <input type="range" data-f="curve" min="1" max="3" step="0.05" value="${a.curve}"></label>
     <label>${t("js.games.limit")} <input type="range" data-f="limit" min="0" max="180" step="5" value="${a.limit}"></label></div>`}).join("");
   return `<div class="card game" data-appid="${esc(g.appid)}"><div class="row"><span class="name">${esc(g.name)}</span>${pill}
-    <span class="prev" data-prev></span>
     <label class="sw"><input type="checkbox" data-toggle ${g.enabled?"checked":""} ${dis?"disabled":""}><span></span></label></div>
     ${gameHint(g)?`<div class="hint">${esc(gameHint(g))}</div>`:""}
     ${g.launch_option_hint?`<div class="hint">${esc(t("js.games.hint_launch_option"))}</div>`:""}
     <details><summary>${t("js.games.profile")}${g.proton?" · "+esc(g.proton.split("/").pop()):""}</summary>
+      <div class="kv"><span>${t("js.games.receives")}</span><span class="prev mono" data-prev>—</span></div>
       <div class="kv"><span>${t("js.games.smoothing")}</span><span><input type="range" data-f="smoothing" min="0" max="1" step="0.05" value="${p.smoothing}"></span></div>
       ${ax}
       <div class="kv"><span>${t("js.games.neck")}</span><span><label><input type="checkbox" data-f="neck.enabled" ${p.neck.enabled?"checked":""}> ${t("js.games.on_short")}</label>

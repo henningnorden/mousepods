@@ -412,6 +412,7 @@ class TestController(unittest.TestCase):
         cfg = m.load_config("/nonexistent/config.json")
         cfg["opentrack"].update(ot_cfg)
         cfg["notifications"] = False
+        cfg["mouse_paused"] = False
         ctl = m.Controller(cfg, m.NullPointer())
         return ctl
 

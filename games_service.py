@@ -67,14 +67,23 @@ def list_payload(cfg_path):
     saved = saved_games(cfg_path)
     running = bridge_install.running_appids()        # one /proc pass for the whole list
     out = []
+    adopted = {}
     for g in games:
         entry = saved.get(g.appid) or {}
+        status = bridge_install.status(g)
+        if status == "on" and not entry.get("enabled"):
+            # our bridge is in the prefix but this config doesn't know (set up by another
+            # MousePods, e.g. a distrobox): show it as on and feed it, so the switch tells the truth
+            entry = adopted[g.appid] = {"enabled": True, "profile": normalize_profile(entry.get("profile"))}
         out.append({"appid": g.appid, "name": g.name, "has_prefix": bool(g.prefix), "proton": g.proton,
-                    "flatpak": g.flatpak, "status": bridge_install.status(g),
+                    "flatpak": g.flatpak, "status": status,
                     "foreign_tracker": bridge_install.foreign_tracker(g),
                     "enabled": bool(entry.get("enabled")), "running": g.appid in running,
                     "launch_option_hint": "opentrack-launcher" in g.launch_options,
                     "profile": normalize_profile(entry.get("profile"))})
+    if adopted:
+        from airpods_mouse_controller import update_config_file
+        update_config_file(cfg_path, {"games": adopted})
     return {"steam_found": root is not None, "steam_flatpak": bool(root and root.flatpak), "games": out,
             "missing_libraries": steam_games.missing_libraries(root) if root else []}
 

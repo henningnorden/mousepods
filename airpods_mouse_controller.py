@@ -54,6 +54,7 @@ DEFAULTS = {
     "device_address": "auto",
     "ui_lang": "auto",             # "auto" (system language) | "en" | "de" | "fr"
     "wizard_done": False,          # first-run wizard in the web UI completed
+    "mouse_paused": True,          # mouse control starts off; Pause/Resume is remembered
     "games": {},                   # Steam appid -> {"enabled": bool, "profile": {...}} (game bridge)
     "auto_connect": True,
     "mode": "souris",              # "souris" | "pointeur" | "glisse"
@@ -954,7 +955,7 @@ class Controller:
         self.engine = MotionEngine(cfg["bias"])
         self.glide = GlideEngine(cfg["glisse"])
         self._make_filters()
-        self.paused = False
+        self.paused = bool(cfg.get("mouse_paused", True))
         self.scroll_mode = False
         self.ang = [0.0, 0.0]            # angles intégrés (mode pointeur)
         self.vel = (0.0, 0.0)            # vitesse curseur px/s (mode souris)
@@ -1011,6 +1012,9 @@ class Controller:
             old_mode = self.cfg["mode"]
             self.cfg.clear()
             self.cfg.update(new)
+            if bool(new.get("mouse_paused", True)) != self.paused:
+                self.paused = bool(new.get("mouse_paused", True))
+                self.vel = (0.0, 0.0)
             i18n.apply_config(self.cfg)
             self.engine.bcfg = self.cfg["bias"]
             self.glide.c = self.cfg["glisse"]
@@ -1130,7 +1134,7 @@ class Controller:
         self.target = self.cur = (0.5, 0.5)
         if self.opentrack:
             self.opentrack.recenter()
-        if not self.diag and not self.opentrack_pauses_mouse:
+        if not self.diag and not self.paused and not self.opentrack_pauses_mouse:
             self.ptr.move_abs(0.5, 0.5)
         if not quiet:
             notify(self.cfg, tr("srv.status.recentered"))
@@ -1138,6 +1142,10 @@ class Controller:
     def set_paused(self, p):
         self.paused = p
         self.vel = (0.0, 0.0)
+        self.cfg["mouse_paused"] = bool(p)
+        if self.cfg_path:
+            update_config_file(self.cfg_path, {"mouse_paused": bool(p)})
+            self._cfg_mtime = self._mtime()
         notify(self.cfg, tr("srv.status.paused") if p else tr("srv.status.control_active"))
 
     @property
