@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - name: Release notes in the metainfo (release tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python packaging/flatpak/release_notes.py check "$GITHUB_REF_NAME"
       - name: Tests
         shell: bash
         run: |
@@ -46,6 +49,10 @@ jobs:
   flatpak:
     needs: [tests, dlls]
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    env:
+      CHANNEL: ${{ startsWith(github.ref, 'refs/tags/v') && 'stable' || 'test' }}   # Flatpak branch
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
@@ -60,9 +67,11 @@ jobs:
         run: |
           set -o pipefail
           [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id    # the CI container has none
+          echo "{\"commit\": \"$GITHUB_SHA\", \"ref\": \"$GITHUB_REF_NAME\"}" > build-info.json   # shown in the app
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo build \
-              packaging/flatpak/io.github.henningnorden.MousePods.json 2>&1 | tee build.log; then
+          if ! flatpak-builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=repo \
+              --default-branch="$CHANNEL" build \
+              packaging/flatpak/io.github.starman_tech.MousePods.json 2>&1 | tee build.log; then
             # job logs need a login; an annotation is public, so the tail of the log goes there
             echo "::error title=flatpak-builder::$(tail -n 60 build.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             exit 1
@@ -83,12 +92,40 @@ jobs:
           print('imports ok')" 2>&1 | tee check.log || { echo "::error title=imports::$(tail -n 40 check.log | sed -e ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"; exit 1; }
       - name: Bundle
         run: |
-          flatpak build-bundle repo MousePods.flatpak io.github.henningnorden.MousePods \
+          flatpak build-bundle repo MousePods.flatpak io.github.starman_tech.MousePods "$CHANNEL" \
             --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: MousePods-flatpak
           path: MousePods.flatpak
+      - name: Sign the repo and lay out the Pages site (stable from tags, test from main)
+        id: publish
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'   # "Run workflow" = test channel
+        shell: bash
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: packaging/flatpak/publish-repo.sh "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" "$CHANNEL"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        if: steps.publish.outputs.published == 'true'
+        with:
+          path: site
+
+  pages:
+    if: needs.flatpak.outputs.published == 'true'
+    needs: [flatpak]
+    concurrency:
+      group: pages                   # one deploy at a time; each one mirrors the repo that is live
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -97,10 +134,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           path: dist
           merge-multiple: true
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --generate-notes
+        run: |
+          # what's new from the metainfo (as in Discover), then GitHub's list of changes
+          python3 packaging/flatpak/release_notes.py markdown "$GITHUB_REF_NAME" > notes.md
+          pre=$(case "$GITHUB_REF_NAME" in *-*) echo --prerelease;; esac)
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --notes-file notes.md --generate-notes $pre

@@ -22,6 +22,8 @@ Tourne dans le processus du contrôleur, dans un thread :
   POST /api/labo         {"action": "start", "protocol": "dents|mouvements|mots", "reps", "words"} | {"action": "cancel"}
   GET  /api/opentrack    état de la sortie OpenTrack (réglages, paquets envoyés, pose)
   GET  /api/pose        pose de tête en direct pour la page /demo (cockpit 3D) ; garde la pose calculée tant que la page interroge
+  GET  /api/version      version, channel (stable/test), release notes, "what's new" once per version
+  POST /api/version      {"seen": "1.1.0"}
   GET  /api/calibration  calibration of a game profile: {"active", "step", "progress", "hint", "result"}
   POST /api/calibration  {"action": "start" | "cancel"} | {"action": "save_baseline", "yaw", "pitch", ...}
   GET  /calibrate        full-screen overlay for that calibration (ui/calibrate.html?roles=main,left,right)
@@ -816,6 +818,13 @@ class WebUI:
                 elif self.path == "/api/games":
                     import games_service
                     self._json(games_service.list_payload(ui.cfg_path))
+                elif self.path == "/api/version":               # version, channel, release notes
+                    import releases
+                    seen = saved_config_value(ui.cfg_path, "whats_new_seen")
+                    v = releases.info(seen=seen)
+                    if seen is None and v["version"]:            # first start: announce the next update
+                        m.update_config_file(ui.cfg_path, {"whats_new_seen": v["version"]})
+                    self._json(v)
                 elif self.path == "/api/calibration":
                     ui.ctl.calibration_tick(time.monotonic())       # also ends it when the AirPods are gone
                     self._json(ui.ctl.calibration_state())
@@ -993,6 +1002,12 @@ class WebUI:
                     return self._json({"ok": True, "enabled": on})
                 elif self.path.startswith("/api/games/"):
                     return self._games_post(self.path[len("/api/games/"):], body)
+                elif self.path == "/api/version":               # "what's new" read
+                    seen = body.get("seen")
+                    if not isinstance(seen, str) or not 0 < len(seen) <= 32:
+                        return self._json({"error": tr("srv.error.bad_request")}, 400)
+                    m.update_config_file(ui.cfg_path, {"whats_new_seen": seen})
+                    return self._json({"ok": True})
                 elif self.path == "/api/calibration":
                     action = body.get("action")
                     if action == "start":

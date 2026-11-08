@@ -21,7 +21,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, WebKit  # noqa: E402
 import i18n  # noqa: E402
 from desktop import controller, overlay  # noqa: E402
 
-APP_ID = "io.github.henningnorden.MousePods"
+APP_ID = "io.github.starman_tech.MousePods"
 PORT = 8737
 log = logging.getLogger("mousepods-app")
 

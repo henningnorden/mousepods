@@ -52,7 +52,7 @@ class AutostartTests(unittest.TestCase):
         shutil.rmtree(self.home)
 
     def test_autostart_desktop_file_outside_flatpak(self):
-        path = os.path.join(self.home, ".config", "autostart", "io.github.henningnorden.MousePods.desktop")
+        path = os.path.join(self.home, ".config", "autostart", "io.github.starman_tech.MousePods.desktop")
         self.assertFalse(autostart.is_enabled())
         autostart.set_enabled(True, command=["/opt/mp/mousepods-app"])
         with open(path) as f:
@@ -65,7 +65,7 @@ class AutostartTests(unittest.TestCase):
 
     def test_exec_quotes_paths_with_spaces(self):
         autostart.set_enabled(True, command=["/home/h/My Apps/mousepods-app"])
-        path = os.path.join(self.home, ".config", "autostart", "io.github.henningnorden.MousePods.desktop")
+        path = os.path.join(self.home, ".config", "autostart", "io.github.starman_tech.MousePods.desktop")
         with open(path) as f:
             self.assertIn('Exec="/home/h/My Apps/mousepods-app" --background', f.read())
 
@@ -79,7 +79,7 @@ class AutostartTests(unittest.TestCase):
 
     def test_flatpak_uses_portal(self):
         calls = []
-        with mock.patch.dict(os.environ, {"FLATPAK_ID": "io.github.henningnorden.MousePods"}), \
+        with mock.patch.dict(os.environ, {"FLATPAK_ID": "io.github.starman_tech.MousePods"}), \
                 mock.patch.object(autostart, "_portal_request", side_effect=lambda on, cmd: calls.append((on, cmd))):
             autostart.set_enabled(True)
         self.assertEqual(calls, [(True, ["mousepods-app", "--background"])])

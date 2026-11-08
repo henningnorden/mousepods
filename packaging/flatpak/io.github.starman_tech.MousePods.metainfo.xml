@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.starman_tech.MousePods</id>
+  <name>MousePods</name>
+  <summary>AirPods as a head tracker for Steam/Proton games</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <description>
+    <p>Reads the motion sensors of AirPods over Bluetooth and moves the in-game camera of
+    TrackIR/FreeTrack games running through Proton, without opentrack. Per-game smoothing,
+    ranges, calibration with points on your monitors and a neck model. Also works as a mouse.</p>
+  </description>
+  <launchable type="desktop-id">io.github.starman_tech.MousePods.desktop</launchable>
+  <url type="homepage">https://github.com/starman-tech/mousepods</url>
+  <developer id="io.github.starman_tech"><name>Matteo Gaudioso</name></developer>
+  <content_rating type="oars-1.1"/>
+  <!-- served from docs/screenshots by GitHub Pages (packaging/flatpak/publish-repo.sh) -->
+  <screenshots>
+    <screenshot type="default">
+      <image>https://starman-tech.github.io/mousepods/screenshots/app-games.png</image>
+      <caption>Games page: tick a Steam game and its camera follows your head</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://starman-tech.github.io/mousepods/screenshots/app-cockpit-demo.png</image>
+      <caption>3D cockpit demo: the view follows your AirPods, no game needed</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://starman-tech.github.io/mousepods/screenshots/app-calibration-overlay.png</image>
+      <caption>Calibration: look at each point and hold still</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://starman-tech.github.io/mousepods/screenshots/app-calibration-points.png</image>
+      <caption>Measured head angles, editable before saving</caption>
+    </screenshot>
+  </screenshots>
+  <!-- newest first; a release tag needs an entry with a description (release_notes.py check) -->
+  <releases>
+    <release version="1.0.0" date="2026-11-04">
+      <description>
+        <p>First release: head tracking from AirPods 3 and AirPods Pro on Linux, without an Apple device.</p>
+      </description>
+    </release>
+  </releases>
+</component>
