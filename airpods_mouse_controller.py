@@ -1323,6 +1323,7 @@ class Controller:
                              "y_pos": base["pitch"]["pos"], "y_neg": base["pitch"]["neg"]}
             updates["profiles"] = {key: prof}
         update_config_file(self.cfg_path, updates)
+        self.cfg["game_baseline"] = base          # the state shows it now; games/pointer follow on reload
         return pointer
 
     def calibration_state(self):

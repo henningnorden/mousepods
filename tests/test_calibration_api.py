@@ -222,6 +222,7 @@ class CalibrationApiTests(unittest.TestCase):
         body = {"action": "save_baseline", "yaw": {"neg": 19, "pos": 17}, "pitch": {"neg": 8, "pos": 11},
                 "target_side": 150, "target_vert": 70}
         self.assertEqual(self.post(body), {"ok": True, "pointer": False})
+        self.assertEqual(self.ctl.cfg["game_baseline"]["yaw"], {"neg": 19.0, "pos": 17.0})   # state shows it at once
         with open(self.cfg_path) as f:
             saved = json.load(f)
         self.assertNotIn(self.ctl.profile_key(), saved.get("profiles", {}))

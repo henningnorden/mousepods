@@ -309,6 +309,11 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px}
     <div class="steps" id="cal-steps"></div>
     <div class="row" style="justify-content:center;margin-top:22px"><button class="btn p" id="cal-start" data-i18n="calib.start">Commencer</button><button class="btn" id="cal-cancel" data-i18n="calib.cancel">Annuler</button></div>
   </div>
+  <h2 data-i18n="calib_ui.baseline">Baseline calibration</h2>
+  <div class="card" style="margin-bottom:14px"><div class="hint" data-i18n="calib_ui.baseline_hint">Look at five points on the monitors you play on. This sets the range for every game without own values and the pointer's screen edges.</div>
+    <div class="kv"><span data-i18n="calib_ui.baseline_now">Now</span><span id="cal-base-now">—</span></div>
+    <div class="row" style="margin-top:8px"><button class="btn p" id="cal-base-go" data-i18n="calib_ui.baseline_go">Start baseline calibration</button></div>
+    <div id="cal-base-panel"></div></div>
   <h2 data-i18n="calib.saved_profiles">Profils enregistrés</h2>
   <div class="card"><table><thead><tr><th data-i18n="calib.profile">Profil</th><th data-i18n="calib.content">Contenu</th></tr></thead><tbody id="cal-prof"></tbody></table></div>
 </section>
@@ -798,7 +803,7 @@ $("#wz-done").onclick=()=>post("/api/autostart",{enabled:$("#wz-autostart-on").c
   .then(()=>post("/api/wizard",{done:true})).then(()=>{toast(t("js.toast.wizard_done"));go("overview")});
 // features that need things the Flatpak does not ship (Garmin's AGPL dependency)
 function hideInFlatpak(){if(!S.flatpak)return;$$('#nav a[data-p="garmin"]').forEach(a=>a.style.display="none")}
-function renderState(){checkWizard();renderWizard();hideInFlatpak();
+function renderState(){checkWizard();renderWizard();renderBaseline();hideInFlatpak();
   const s=ANON?anonymize(S):S;
   $("#side-model").textContent=s.model||"—";
   const name=(s.info||[]).find(i=>i.key==="info.name");
@@ -937,6 +942,7 @@ function gameCard(g){const p=g.profile,dis=g.flatpak||!g.has_prefix||g.running;
       <div class="row" style="margin:8px 0"><button class="btn sm p" data-calibrate>${t("js.games.calibrate")}</button>
         <span class="hint">${t("js.games.calibrate_hint")}</span></div>
       <div data-calpanel></div>
+      ${gamesData.baseline?`<div class="kv"><span>${g.profile.own?t("js.games.own_values"):t("js.games.uses_baseline")}</span><span>${g.profile.own?`<button class="btn sm" data-to-baseline>${t("js.games.to_baseline")}</button>`:""}</span></div>`:""}
       <div class="kv"><span>${t("js.games.receives")}</span><span class="prev mono" data-prev>—</span></div>
       <div class="hint">${t("js.games.sens_hint")}</div>
       <div class="kv"><span>${t("js.games.smoothing")}</span><span><input type="range" data-f="smoothing" min="0" max="1" step="0.05" value="${p.smoothing}"></span></div>
@@ -951,7 +957,7 @@ function readProfile(card,prev){const v=f=>card.querySelector(`[data-f="${f}"]`)
   const axes={};GAXES.forEach(n=>{const r=card.querySelector(`[data-axis="${n}"]`),q=f=>r.querySelector(`[data-f="${f}"]`);
     const pos=num(q("edge_pos")),neg=r.querySelector('[data-f="edge_neg"]')?num(q("edge_neg")):pos;
     axes[n]={enabled:q("enabled").checked,invert:q("invert").checked,edge_neg:neg,edge_pos:pos,target:num(q("target")),curve:sensToCurve(num(q("sens")))}});
-  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes,monitors:(prev&&prev.monitors)||[]}}
+  return {smoothing:num(v("smoothing")),neck:{enabled:v("neck.enabled").checked,strength:num(v("neck.strength")),lean_forward:v("neck.lean_forward").checked},axes,monitors:(prev&&prev.monitors)||[],own:true}}
 function gameError(r){return r.json().then(j=>{throw new Error(j.error||r.status)})}
 function postGame(appid,body){return fetch("/api/games/"+encodeURIComponent(appid),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
   .then(r=>r.ok?r.json():gameError(r))}
@@ -969,7 +975,9 @@ function renderGames(){const box=$("#games-list");if(!gamesData)return;
     card.querySelectorAll("details input").forEach(inp=>inp.onchange=()=>{const prof=readProfile(card,g.profile);g.profile=prof;
       postGame(appid,{profile:prof}).then(()=>toast(t("js.games.toast_profile"))).catch(err=>toast(err.message))});
     card.querySelector("[data-reset]").onclick=()=>postGame(appid,{profile:{}}).then(()=>{toast(t("js.games.toast_reset"));loadGames()});
-    card.querySelector("[data-calibrate]").onclick=()=>calibStart(card,g)})}
+    card.querySelector("[data-calibrate]").onclick=()=>calibStart(card,g);
+    const tb=card.querySelector("[data-to-baseline]");
+    if(tb)tb.onclick=()=>postGame(appid,{profile:{...g.profile,own:false}}).then(()=>{toast(t("js.games.toast_baseline"));loadGames()})})}
 function loadGames(){return fetch("/api/games").then(r=>r.json()).then(d=>{gamesData=d;renderGames()}).catch(()=>{})}
 function refreshGamesLive(){if(page!=="games"){clearInterval(gamesTimer);gamesTimer=null;return}
   fetch("/api/opentrack").then(r=>r.json()).then(o=>{const p=o.pose||[0,0,0,0,0,0];
@@ -980,19 +988,26 @@ function refreshGamesLive(){if(page!=="games"){clearInterval(gamesTimer);gamesTi
 // mirror of desktop/overlay.roles_for (tests/test_games_ui.py checks they agree)
 function rolesFor(sel){if(!sel.length)return {};const r={};sel.forEach(m=>r[m.connector]=[]);const main=(sel.find(m=>m.main)||sel[0]).connector;r[main].push("main");r[sel[0].connector].push("left");r[sel[sel.length-1].connector].push("right");return r}
 const desktopBridge=()=>window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.mousepods;
-let calib=null;          // {card, g, sel, list}
+let calib=null;          // {box, saved, sel, list, targets:{side,vert}, save(result, targets, sel)}
 window.mpDesktop={onMessage(msg){if(msg.cmd==="monitors"&&calib)calibMonitors(msg.list,msg.selection)}};
-function calibStart(card,g){calib={card,g,sel:[],list:[]};
-  if(desktopBridge())desktopBridge().postMessage({cmd:"monitors",saved:g.profile.monitors||[]});
+function calibBegin(c){calib={sel:[],list:[],...c};
+  if(desktopBridge())desktopBridge().postMessage({cmd:"monitors",saved:calib.saved||[]});
   else calibRun()}
+function calibStart(card,g){const A=g.profile.axes;
+  calibBegin({box:card.querySelector("[data-calpanel]"),saved:g.profile.monitors,targets:{side:A.yaw.target,vert:A.pitch.target},
+    save:(r,tg,sel)=>{const p=JSON.parse(JSON.stringify(g.profile));
+      Object.assign(p.axes.yaw,{edge_neg:r.yaw.neg,edge_pos:r.yaw.pos,target:tg.side});
+      Object.assign(p.axes.pitch,{edge_neg:r.pitch.neg,edge_pos:r.pitch.pos,target:tg.vert});
+      if(sel.length)p.monitors=sel;p.own=true;
+      return postGame(g.appid,{profile:p}).then(()=>{toast(t("js.games.toast_calibrated"));loadGames()})}})}
 function calibMonitors(list,sel){calib.list=list;calib.sel=sel;if(list.length<=1)return calibRun();calibDialog()}
-function calibDialog(){const c=calib,box=c.card.querySelector("[data-calpanel]");
+function calibDialog(){const c=calib,box=c.box;
   const order=[...c.sel.map(s=>s.connector),...c.list.map(m=>m.connector).filter(x=>!c.sel.some(s=>s.connector===x))];
   const info=x=>c.list.find(m=>m.connector===x)||{connector:x,model:"",width:"?",height:"?"};
   box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.mon_title")}</b><div class="hint">${t("js.games.mon_hint")}</div>
     ${order.map((x,i)=>{const m=info(x),s=c.sel.find(v=>v.connector===x);return `<div class="kv" data-mon="${esc(x)}"><span>
       <label><input type="checkbox" data-mon-on ${s?"checked":""}> <b>${esc(x)}</b> ${esc(m.model)} · ${m.width}×${m.height}</label></span><span>
-      <label><input type="radio" name="mon-main-${esc(c.g.appid)}" data-mon-main ${s&&s.main?"checked":""}> ${t("js.games.mon_main")}</label>
+      <label><input type="radio" name="mon-main" data-mon-main ${s&&s.main?"checked":""}> ${t("js.games.mon_main")}</label>
       <button class="btn sm" data-mon-up ${i?"":"disabled"}>↑</button><button class="btn sm" data-mon-down ${i<order.length-1?"":"disabled"}>↓</button>
       <button class="btn sm" data-mon-flash>${t("js.games.mon_flash")}</button></span></div>`}).join("")}
     <div class="row" style="margin-top:10px"><button class="btn sm p" data-mon-start>${t("js.games.start")}</button><button class="btn sm" data-cal-close>${t("js.games.discard")}</button></div></div>`;
@@ -1007,7 +1022,7 @@ function calibDialog(){const c=calib,box=c.card.querySelector("[data-calpanel]")
     r.querySelector("[data-mon-up]").onclick=()=>move(-1);r.querySelector("[data-mon-down]").onclick=()=>move(1)});
   box.querySelector("[data-cal-close]").onclick=()=>{box.innerHTML="";calib=null};
   box.querySelector("[data-mon-start]").onclick=()=>{read();if(!c.sel.length)return toast(t("js.games.mon_none"));calibRun()}}
-function calibRun(){const c=calib,box=c.card.querySelector("[data-calpanel]");
+function calibRun(){const c=calib,box=c.box;
   box.innerHTML=`<div class="hint" style="margin:8px 0">${t("js.games.calib_running")}</div>`;
   post("/api/calibration",{action:"start"}).then(()=>{
     if(desktopBridge()){const roles=rolesFor(c.sel);
@@ -1023,25 +1038,36 @@ function calibFrame(){const f=document.createElement("iframe");f.src="/calibrate
 function calibWait(){if(!calib)return;
   fetch("/api/calibration").then(r=>r.json()).then(st=>{if(!calib)return;
     if(st.active||st.step===null)return setTimeout(calibWait,300);
-    const box=calib.card.querySelector("[data-calpanel]");
     if(st.step==="done")return calibResult(st.result);
-    box.innerHTML=st.hint==="no_signal"?`<div class="hint">${t("js.games.calib_no_signal")}</div>`:"";
+    calib.box.innerHTML=st.hint==="no_signal"?`<div class="hint">${t("js.games.calib_no_signal")}</div>`:"";
     calib=null}).catch(()=>setTimeout(calibWait,1000))}
-function calibResult(r){const c=calib,g=c.g,box=c.card.querySelector("[data-calpanel]"),A=g.profile.axes,f=v=>v.toFixed(0);
+function calibResult(r){const c=calib,box=c.box,f=v=>Math.round(v*10)/10;
+  const L={left:t("js.games.res_left"),right:t("js.games.res_right"),up:t("js.games.res_up"),down:t("js.games.res_down")};
+  const num=(k,v)=>`<label>${L[k]} <input type="number" data-ang="${k}" min="2" max="180" step="0.5" value="${f(v)}" style="width:5.5em"> °</label>`;
   box.innerHTML=`<div class="card" style="margin:8px 0"><b>${t("js.games.res_title")}</b>
-    <div class="hint">${t("js.games.res_values",{l:f(r.yaw.neg),r:f(r.yaw.pos),u:f(r.pitch.pos),d:f(r.pitch.neg)})}</div>
-    <div class="kv"><span>${t("js.games.target_side")}</span><span><input type="range" data-res="side" min="30" max="180" step="5" value="${A.yaw.target}"> <output></output></span></div>
-    <div class="kv"><span>${t("js.games.target_vert")}</span><span><input type="range" data-res="vert" min="10" max="90" step="5" value="${A.pitch.target}"> <output></output></span></div>
+    <div class="hint">${t("js.games.res_edit_hint")}</div>
+    <div class="row" style="gap:14px;flex-wrap:wrap;margin:8px 0">${num("left",r.yaw.neg)}${num("right",r.yaw.pos)}${num("up",r.pitch.pos)}${num("down",r.pitch.neg)}</div>
+    <div class="kv"><span>${t("js.games.target_side")}</span><span><input type="range" data-res="side" min="0" max="180" step="5" value="${c.targets.side}"> <output></output></span></div>
+    <div class="kv"><span>${t("js.games.target_vert")}</span><span><input type="range" data-res="vert" min="0" max="180" step="5" value="${c.targets.vert}"> <output></output></span></div>
     <div class="row" style="margin-top:10px"><button class="btn sm p" data-res-save>${t("js.games.save")}</button>
       <button class="btn sm" data-res-again>${t("js.games.repeat")}</button><button class="btn sm" data-res-discard>${t("js.games.discard")}</button></div></div>`;
   box.querySelectorAll("[data-res]").forEach(i=>{const o=i.nextElementSibling,s=()=>o.textContent=i.value+"°";s();i.oninput=s});
   box.querySelector("[data-res-discard]").onclick=()=>{box.innerHTML="";calib=null};
   box.querySelector("[data-res-again]").onclick=()=>calibRun();
-  box.querySelector("[data-res-save]").onclick=()=>{const p=JSON.parse(JSON.stringify(g.profile));
-    Object.assign(p.axes.yaw,{edge_neg:r.yaw.neg,edge_pos:r.yaw.pos,target:+box.querySelector('[data-res="side"]').value});
-    Object.assign(p.axes.pitch,{edge_neg:r.pitch.neg,edge_pos:r.pitch.pos,target:+box.querySelector('[data-res="vert"]').value});
-    if(c.sel.length)p.monitors=c.sel;
-    postGame(g.appid,{profile:p}).then(()=>{toast(t("js.games.toast_calibrated"));calib=null;loadGames()}).catch(e=>toast(e.message))}}
+  box.querySelector("[data-res-save]").onclick=()=>{
+    const a=k=>Math.min(Math.max(+box.querySelector(`[data-ang="${k}"]`).value||2,2),180);
+    const res={yaw:{neg:a("left"),pos:a("right")},pitch:{neg:a("down"),pos:a("up")}};
+    const tg={side:+box.querySelector('[data-res="side"]').value,vert:+box.querySelector('[data-res="vert"]').value};
+    c.save(res,tg,c.sel).then(()=>{box.innerHTML="";calib=null}).catch(e=>toast(e.message))}}
+// baseline calibration on the Calibration page: default for every game without own values + pointer edges
+function renderBaseline(){const b=S&&S.config&&S.config.game_baseline,el=$("#cal-base-now");if(!el)return;
+  el.textContent=b&&b.yaw?t("js.games.res_values",{l:Math.round(b.yaw.neg),r:Math.round(b.yaw.pos),u:Math.round(b.pitch.pos),d:Math.round(b.pitch.neg)}):t("js.calib_ui.no_baseline")}
+$("#cal-base-go").onclick=()=>{const b=(S&&S.config&&S.config.game_baseline)||{};
+  calibBegin({box:$("#cal-base-panel"),saved:b.monitors||[],targets:{side:b.target_side??180,vert:b.target_vert??90},
+    save:(r,tg,sel)=>post("/api/calibration",{action:"save_baseline",...r,target_side:tg.side,target_vert:tg.vert,monitors:sel})
+      .then(x=>x.json()).then(j=>{if(j.error)throw new Error(j.error);
+        toast(j.pointer?t("js.calib_ui.saved_all"):t("js.calib_ui.saved_games_only"));
+        S.config.game_baseline={...r,target_side:tg.side,target_vert:tg.vert,monitors:sel};renderBaseline()})})}
 function showGames(){loadGames();if(!gamesTimer)gamesTimer=setInterval(refreshGamesLive,250)}
 // ---------- Simulateurs : OpenTrack + manette virtuelle (passent par /api/opentrack)
 $("#ot-en").onchange=()=>post("/api/opentrack",{enabled:$("#ot-en").checked}).then(()=>toast($("#ot-en").checked?t("js.toast.ot_on"):t("js.toast.ot_off")));
