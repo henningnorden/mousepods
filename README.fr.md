@@ -106,7 +106,7 @@ Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accor
 | Sortie OpenTrack (UDP) | ✅ | testé dans Assetto Corsa sous Proton |
 | Manette virtuelle pour jeux natifs | ⚠️ | axes testés, pas encore en jeu |
 | Démo cockpit 3D, sans jeu | ✅ | `/demo`, aussi en 3D côte à côte |
-| Lecteur vidéo 360° / VR (fichiers, YouTube) | ✅ | `/vr`, 3D côte à côte pour lunettes |
+| Lecteur vidéo 360° / VR (fichiers, YouTube) | ✅ | `/vr`, 3D côte à côte pour lunettes (testé sur Fat Shark Dominator V3) |
 | Extension navigateur (YouTube 360° sur youtube.com) | ⚠️ | nouvelle, voir [browser-extension/](browser-extension/README.md) |
 | Appli Flatpak avec mises à jour automatiques | ✅ | canaux stable et test |
 | Interface en français, anglais, allemand | ✅ | [ajoute ta langue](CONTRIBUTING.md#translations) |

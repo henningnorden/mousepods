@@ -191,7 +191,7 @@ with *Enable both*. Assetto Corsa follows the head in the cockpit camera.
 | opentrack output (UDP) | ✅ | tested in Assetto Corsa under Proton |
 | Virtual joystick for native games | ⚠️ | axes tested, not yet tried in a game |
 | 3D cockpit demo, no game needed | ✅ | `/demo`, also side-by-side 3D |
-| 360° / VR video player (local files, YouTube) | ✅ | `/vr`, side-by-side 3D for goggles |
+| 360° / VR video player (local files, YouTube) | ✅ | `/vr`, side-by-side 3D for goggles (tested on Fat Shark Dominator V3) |
 | Browser extension (YouTube 360° on youtube.com) | ⚠️ | new, see [browser-extension/](browser-extension/README.md) |
 | Flatpak app with automatic updates | ✅ | stable and test channels |
 | Interface in English, French, German | ✅ | [add your language](CONTRIBUTING.md#translations) |
