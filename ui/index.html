@@ -712,8 +712,8 @@ function renderTelemetry(){
     $$(".seg[data-key=mode] button").forEach(b=>b.classList.toggle("on",b.dataset.v===tm.mode));
     $$(".seg[data-key=source] button").forEach(b=>b.classList.toggle("on",b.dataset.v===tm.source_cfg));
     $("#ov-src-hint").textContent=`${t("js.ov.detected",{place:({ear:t("js.place.ear"),case:t("js.place.case"),out:t("js.place.out")})[tm.place]||"—"})} → ${t("js.source_src",{src:SRC(tm.source)})}`;
-    const bats=(tm.battery||[]).map(b=>{const col=b.level<=20?"var(--red)":b.state==="charging"?"var(--green)":"var(--accent)";
-      return `<div class="card bat">${b.state==="disconnected"?'<div class="ring" style="display:grid;place-items:center;color:var(--text2)">—</div>':ring(b.level,col)}<b>${b.part}</b><small>${b.state_label}</small></div>`});
+    const bats=(tm.battery||[]).map(b=>{const col=b.level!=null&&b.level<=20?"var(--red)":b.state==="charging"?"var(--green)":"var(--accent)";
+      return `<div class="card bat">${b.state==="disconnected"||b.level==null?'<div class="ring" style="display:grid;place-items:center;color:var(--text2)">—</div>':ring(b.level,col)}<b>${b.part}</b><small>${b.state_label}</small></div>`});
     const ear=tm.ear?`<div class="card bat"><div class="ring" style="display:grid;place-items:center;font-size:30px">🎧</div><b>${t("js.ov.ears")}</b><small>${tm.ear.join(" · ")}</small></div>`:"";
     $("#ov-bat").innerHTML=bats.join("")+ear||`<div class="card empty">${t("js.ov.waiting_airpods")}</div>`;
   }
@@ -839,7 +839,7 @@ function renderState(){checkWizard();renderWizard();renderBaseline();hideInFlatp
   if(page==="device"){
     $("#dev-info").innerHTML=(s.info||[]).map(i=>`<div class="kv"><span>${esc(i.label)}</span><span class="mono">${esc(i.value)}</span></div>`).join("")||'<div class="empty">—</div>';
     $("#dev-state").innerHTML=[[t("js.dev.address"),s.addr],[t("js.dev.model"),s.model],["Product ID","0x"+(s.pid||"")],[t("js.dev.protocol"),s.protocol],[t("js.dev.interval"),(s.interval_us||"—")+" µs"],
-      [t("js.dev.earbuds"),(s.ear||[]).join(" · ")],...(s.battery||[]).map(b=>[t("js.dev.battery",{part:b.part.toLowerCase()}),b.level+" % · "+b.state_label]),[t("js.dev.uptime"),Math.round((s.uptime||0)/60)+" min"]]
+      [t("js.dev.earbuds"),(s.ear||[]).join(" · ")],...(s.battery||[]).map(b=>[t("js.dev.battery",{part:b.part.toLowerCase()}),(b.level==null?"—":b.level+" %")+" · "+b.state_label]),[t("js.dev.uptime"),Math.round((s.uptime||0)/60)+" min"]]
       .map(([k,v])=>`<div class="kv"><span>${k}</span><span>${esc(v??"—")}</span></div>`).join("");
     $("#dev-ctl").innerHTML=(s.controls||[]).map(c=>`<tr><td class="mono">0x${c.ident.toString(16).padStart(2,"0")}</td><td>${esc(c.name)}</td><td class="mono">${c.values.map(v=>v.toString(16).padStart(2,"0")).join(" ")}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">—</td></tr>';
   }

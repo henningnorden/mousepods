@@ -109,7 +109,8 @@ def info_view(info):
 
 def battery_view(battery):
     return [{"part": tr(f"info.part.{b['part']}") if b["part"] in BATTERY_PART.values() else b["part"],
-             "level": b["level"], "state": b["state"],
+             # 0xFF (255) means "unknown" (bud just put in the case, no reading yet): show no number
+             "level": b["level"] if 0 <= b["level"] <= 100 else None, "state": b["state"],
              "state_label": tr(f"info.battery.{b['state']}") if b["state"] in BATTERY_STATE.values() else b["state"]}
             for b in battery]
 
