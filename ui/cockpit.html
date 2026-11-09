@@ -30,7 +30,7 @@
     padding:8px 16px; border-radius:12px; font-size:15px; font-weight:600; display:none; z-index:5; }
   body.clean { cursor:none; }
 </style>
-<script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
 <div class="hud">
@@ -55,12 +55,14 @@
 <div id="nogl"><div class="card" data-i18n="demo.no_webgl">WebGL is not available in this browser. Try the simple mode.</div></div>
 <script type="module">
 import * as THREE from "three";
-import { Sky } from "/vendor/Sky.js";
+import { Sky } from "./vendor/Sky.js";
+// in the app the page is served by MousePods itself; on the website it talks to MousePods on this computer, if running
+const API = location.port === "8737" ? "" : "http://127.0.0.1:8737";
 
 // ---------------------------------------------------------------- UI, i18n, pose
 let I18N = {};
 const t = k => I18N[k] || null;
-fetch("/api/i18n").then(r => r.json()).then(j => {
+fetch(API + "/api/i18n").then(r => r.json()).then(j => {
   I18N = j.strings || {}; document.documentElement.lang = j.lang || "en";
   document.querySelectorAll("[data-i18n]").forEach(e => { const s = t(e.dataset.i18n); if (s) e.textContent = s; });
 }).catch(() => {});
@@ -69,7 +71,7 @@ const ROLL_SIGN = q.get("roll") === "-1" ? -1 : 1;
 const gainEl = document.getElementById("gain");
 gainEl.oninput = () => document.getElementById("gainv").textContent = "×" + (+gainEl.value).toFixed(1);
 document.getElementById("recenter").onclick = () =>
-  fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd: "recenter" }) });
+  fetch(API + "/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd: "recenter" }) });
 const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
 const toggleClean = force => document.body.classList.toggle("clean", force);
 document.getElementById("fs").onclick = toggleFs;
@@ -111,13 +113,26 @@ const FAKE = (q.get("fake") || "").split(",").map(Number);          // ?fake=yaw
 (async function poll() {
   if (FAKE.length === 2 && FAKE.every(isFinite)) { target = [FAKE[0], FAKE[1], 0]; live = connected = true; return; }
   try {
-    const j = await (await fetch("/api/pose", { cache: "no-store" })).json();
+    const j = await (await fetch(API + "/api/pose", { cache: "no-store" })).json();
     serverUp = true; connected = j.connected; live = j.age != null && j.age < 0.5;
     if (j.pose) target = despike([j.pose[3], j.pose[4], j.pose[5]]);
     setRecording(!!j.rec);
-  } catch (e) { serverUp = false; }
-  setTimeout(poll, 16);
+  } catch (e) { serverUp = false; live = false; }
+  setTimeout(poll, serverUp ? 16 : 2000);                  // no MousePods (e.g. on the website): retry slowly
 })();
+// without AirPods: look around with the mouse (click and drag)
+const drag = [0, 0]; let dragging = null;
+addEventListener("pointerdown", e => { if (e.target.closest && e.target.closest(".hud")) return; dragging = [e.clientX, e.clientY]; });
+addEventListener("pointerup", () => { dragging = null; });
+addEventListener("pointermove", e => {
+  if (!dragging) return;
+  drag[0] += (e.clientX - dragging[0]) * 0.25;
+  drag[1] = Math.max(-60, Math.min(60, drag[1] - (e.clientY - dragging[1]) * 0.25));
+  dragging = [e.clientX, e.clientY];
+});
+if (API) {                                                  // on the website: the back link goes to the site
+  const back = document.querySelector('a[data-i18n="demo.back"]'); back.href = "./"; back.removeAttribute("data-i18n"); back.textContent = "← MousePods";
+}
 
 // ---------------------------------------------------------------- self-recording of the 3D view (no desktop, no compositor
 // effects): started/stopped by the server flag (POST /api/demo {"record": true|false}), uploaded when done
@@ -128,7 +143,7 @@ function setRecording(on) {
     chunks = [];
     rec = new MediaRecorder(renderer.domElement.captureStream(60), { mimeType: type, videoBitsPerSecond: 16e6 });
     rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-    rec.onstop = () => fetch("/api/demo/upload", { method: "POST", body: new Blob(chunks, { type: "video/webm" }) });
+    rec.onstop = () => fetch(API + "/api/demo/upload", { method: "POST", body: new Blob(chunks, { type: "video/webm" }) });
     rec.start(1000);
     flash("● REC");
   } else if (!on && rec) { rec.stop(); rec = null; }
@@ -357,8 +372,9 @@ function frame(now) {
   plane.position.set(x, ALT + Math.sin(now / 4200) * 6, -z);
   plane.rotation.set(Math.sin(now / 3100) * 0.006, Math.atan2(-(ahead - x), 400), Math.sin(now / 2700) * 0.01);
   // head pose (+yaw = look right, +pitch = look up), amplified and smoothed
-  const g = +gainEl.value, k = 1 - Math.exp(-dt / 0.03);
-  const want = [target[0] * g, target[1] * g * 0.85, target[2]];
+  const g = live ? +gainEl.value : 1, k = 1 - Math.exp(-dt / 0.03);
+  const src = live ? target : [drag[0], drag[1], 0];
+  const want = [src[0] * g, src[1] * g * (live ? 0.85 : 1), src[2]];
   cur = cur.map((v, i) => v + (want[i] - v) * k);
   euler.set(THREE.MathUtils.degToRad(cur[1] * SIGNS.pitch), THREE.MathUtils.degToRad(-cur[0] * SIGNS.yaw), THREE.MathUtils.degToRad(-cur[2] * ROLL_SIGN * SIGNS.roll));
   head.quaternion.setFromEuler(euler);
@@ -368,7 +384,7 @@ function frame(now) {
     const d = new THREE.Vector3(); camera.getWorldDirection(d);
     document.title = `dir ${d.x.toFixed(2)} ${d.y.toFixed(2)} ${d.z.toFixed(2)} cur ${cur.map(v => v.toFixed(1)).join(" ")} cam ${camera.position.toArray().map(v => v.toFixed(2)).join(" ")}`;
   }
-  const st = !serverUp ? t("demo.no_server") || "MousePods is not running"
+  const st = !serverUp ? t("demo.drag_hint") || "Click and drag to look around. With MousePods running, your AirPods move the view."
            : (!connected || !live) ? t("demo.waiting") || "Waiting for the AirPods…" : "";
   document.getElementById("status").textContent = st;
   const fl = document.getElementById("flash");

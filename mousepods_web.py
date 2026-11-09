@@ -57,6 +57,9 @@ UI_FILE = os.path.join(HERE, "ui", "index.html")
 CALIBRATE_FILE = os.path.join(HERE, "ui", "calibrate.html")
 DEMO_FILE = os.path.join(HERE, "ui", "cockpit.html")          # /demo : cockpit réaliste (WebGL)
 DEMO_SIMPLE_FILE = os.path.join(HERE, "ui", "demo.html")      # /demo/simple : rendu canvas léger
+# The website's cockpit demo may read the head pose and recenter, nothing else (CORS, Chrome's local network access)
+SITE_ORIGINS = ("https://starman-tech.github.io",)
+SITE_PATHS = ("/api/pose", "/api/i18n", "/api/cmd")
 VR_FILE = os.path.join(HERE, "ui", "vr.html")                 # /vr : vidéos 360° / VR, la vue suit la tête
 VENDOR = {"three.module.min.js": "text/javascript", "Sky.js": "text/javascript",
           "LICENSE-three.txt": "text/plain; charset=utf-8"}   # ui/vendor, liste fermée
@@ -808,9 +811,33 @@ class WebUI:
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
+                self._cors()
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _site_origin(self):
+                origin = self.headers.get("Origin")
+                return origin if origin in SITE_ORIGINS and self.path.split("?")[0] in SITE_PATHS else None
+
+            def _cors(self):
+                origin = self._site_origin()
+                if origin:
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Vary", "Origin")
+
+            def do_OPTIONS(self):                           # preflight from the website (CORS + local network access)
+                origin = self._site_origin()
+                if not self._local_host() or not origin:
+                    self.send_response(403); self.end_headers(); return
+                self.send_response(204)
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Methods", "GET, POST")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.send_header("Access-Control-Max-Age", "600")
+                self.send_header("Vary", "Origin")
+                self.end_headers()
 
             def _local_host(self):
                 """DNS-rebinding guard: only answer requests addressed to our own host name."""
@@ -911,6 +938,12 @@ class WebUI:
                     self._json({"error": tr("srv.error.not_found")}, 404)
 
             def do_POST(self):
+                origin = self.headers.get("Origin") or ""
+                limited = origin in SITE_ORIGINS or origin.startswith(("chrome-extension://", "moz-extension://"))
+                if origin and not limited and not origin.startswith(("http://127.0.0.1", "http://localhost")):
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
+                if limited and self.path.split("?")[0] not in SITE_PATHS:   # website, browser extension: pose + recenter only
+                    return self._json({"error": tr("srv.error.forbidden")}, 403)
                 if not self._local_host():
                     return self._json({"error": tr("srv.error.forbidden")}, 403)
                 # CSRF guard: any web page can POST to 127.0.0.1. Only JSON bodies (cross-site JSON
@@ -949,6 +982,8 @@ class WebUI:
                         ui.demo_last_video = None
                     return self._json({"ok": True, "record": ui.demo_rec})
                 if self.path == "/api/cmd":
+                    if limited and body.get("cmd") != "recenter":
+                        return self._json({"error": tr("srv.error.forbidden")}, 403)   # the website may only recenter
                     ui.q.put(("cmd", str(body.get("cmd", ""))))
                 elif self.path == "/api/config":
                     if "ui_lang" in body and body["ui_lang"] not in i18n.SETTINGS:
