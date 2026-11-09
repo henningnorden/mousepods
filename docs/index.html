@@ -331,6 +331,29 @@ footer .wrap{display:flex;gap:20px;flex-wrap:wrap;justify-content:space-between}
   </div>
 </div></section>
 
+<!-- ======================================== PLAY -->
+<section id="headtracking"><div class="wrap">
+  <div class="head center"><div class="eyebrow">New in 1.1</div><h2>Look around with your head.</h2>
+    <p class="lead">Your AirPods become a head tracker: the camera of a game, a 3D cockpit or a 360° video follows where you look. No webcam, no IR hat, works in the dark.</p></div>
+  <video src="media/cockpit-demo.mp4" poster="screenshots/app-cockpit-demo.png" autoplay muted loop playsinline
+         style="display:block;width:100%;max-width:960px;margin:0 auto 34px;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)"></video>
+  <div class="grid g2">
+    <div class="card"><h3>Games, without opentrack<span class="new">NEW</span></h3>
+      <p>Tick a Steam game running through Proton and its camera follows your head. Per-game profiles, curves and a full-screen calibration. Tested in Assetto Corsa and Euro Truck Simulator 2. opentrack and a virtual joystick are there too.</p></div>
+    <div class="card"><h3>A 3D cockpit, no game needed<span class="new">NEW</span></h3>
+      <p>A small flight over a valley, built into the app, to try head tracking in seconds. Shown in the video above, with my head in the corner.</p></div>
+    <div class="card"><h3>360° videos and VR goggles<span class="new">NEW</span></h3>
+      <p>Open a 360° or VR video, or a YouTube 360° link, and look around by turning your head. Side-by-side 3D for FPV goggles and 3D screens, like the Fat Shark Dominator V3 in HDMI 3D mode.</p></div>
+    <div class="card"><h3>Browser extension<span class="new">NEW</span></h3>
+      <p>On youtube.com, 360° videos follow your head. WebXR sites can see your AirPods as a headset. Experimental, <a href="https://github.com/starman-tech/mousepods/tree/main/browser-extension">install it from the repo</a>.</p></div>
+  </div>
+  <div class="shots" style="margin-top:34px">
+    <figure><img src="screenshots/app-games.png" alt="Games page"><figcaption>Games page: tick a game, done</figcaption></figure>
+    <figure><img src="screenshots/app-calibration-overlay.png" alt="Calibration overlay"><figcaption>Full-screen calibration, one point at a time</figcaption></figure>
+    <figure><img src="screenshots/app-cockpit-demo.png" alt="Cockpit demo"><figcaption>The 3D cockpit demo</figcaption></figure>
+  </div>
+</div></section>
+
 <!-- ======================================== INSTALL -->
 <section id="install"><div class="wrap">
   <div class="grid g2" style="align-items:start">
@@ -369,7 +392,9 @@ cd mousepods && python3 -m venv .venv
   <details><summary>Do I need an iPhone, a Mac, or root?</summary><p>No. Everything runs on a plain Linux PC as a normal user. It talks to the AirPods over Bluetooth (L2CAP) and moves the cursor through a virtual input device.</p></details>
   <details><summary>Windows or macOS?</summary><p>Not today. The protocol itself doesn't depend on the OS. Windows needs a driver that exposes L2CAP (like MagicAAP), and macOS keeps the AirPods channel for itself.</p></details>
   <details><summary>Is it safe for my AirPods?</summary><p>MousePods only reads sensor streams. It doesn't touch the firmware. The app has an advanced panel that can send raw commands, and that panel is clearly marked.</p></details>
-  <details><summary>Can I use my AirPods as a head tracker in simulators?</summary><p>Yes. MousePods sends your head orientation to <a href="https://github.com/opentrack/opentrack">opentrack</a> (its "UDP over network" input), which passes it to games under Proton/Wine as TrackIR or FreeTrack (DCS, MSFS, IL-2, Elite Dangerous…) or to X-Plane and FlightGear. For native Linux games that can bind the camera to joystick axes (Euro Truck Simulator 2, American Truck Simulator, War Thunder), it can also create a virtual joystick. Rotation only, no leaning. Guide: <a href="https://github.com/starman-tech/mousepods/blob/main/docs/SIMS.md">docs/SIMS.md</a>.</p></details>
+  <details><summary>Can I use my AirPods as a head tracker in simulators?</summary><p>Yes. The simplest way is the Games page: tick a Steam game running through Proton and its camera follows your head, no opentrack needed (tested in Assetto Corsa and ETS2). MousePods can also send your head orientation to <a href="https://github.com/opentrack/opentrack">opentrack</a> (its "UDP over network" input), which passes it to games under Proton/Wine as TrackIR or FreeTrack (DCS, MSFS, IL-2, Elite Dangerous…) or to X-Plane and FlightGear. For native Linux games that can bind the camera to joystick axes (Euro Truck Simulator 2, American Truck Simulator, War Thunder), it can also create a virtual joystick. Rotation only, no leaning. Guide: <a href="https://github.com/starman-tech/mousepods/blob/main/docs/SIMS.md">docs/SIMS.md</a>.</p></details>
+  <details><summary>Can I watch 360° videos or use VR goggles?</summary><p>Yes. The built-in player (<code>/vr</code> in the app) plays 360° and 180° videos from your PC or a YouTube 360° link, and the view follows your head. Press 3 for side-by-side 3D: FPV goggles and 3D screens in "HDMI 3D" mode then show real depth in stereo VR videos.</p></details>
+  <details><summary>How do updates work?</summary><p>Install the Flatpak once with the command above. After that, updates come through <code>flatpak update</code> or your software center, like any other app. There is a stable channel (releases) and a test channel (every change, for people who want new things early).</p></details>
   <details><summary>Can a Garmin watch be the mouse?</summary><p>Yes, with an optional module: tilt your wrist to move the cursor, double-tap the watch to click. A Garmin watch only streams its accelerometer in real time over BLE (24.9 Hz, no gyroscope), so the cursor follows the tilt of the wrist and reacts more slowly than with AirPods. It needs <a href="https://github.com/gwerneckp/garmin-ble">garmin-ble</a> (AGPL-3.0), installed separately. Findings and numbers: <a href="https://github.com/starman-tech/mousepods/blob/main/docs/GARMIN.md">docs/GARMIN.md</a>.</p></details>
   <details><summary>Did an AI do this?</summary><p>I reverse-engineered it with Claude (Anthropic) as an AI pair engineer. Claude ran the probes, read the public research, disassembled a clone firmware statically, and wrote the code and the tests. I held the AirPods, made the calls and checked every result on real hardware. The <a href="https://github.com/starman-tech/mousepods/blob/main/docs/JOURNAL.fr.md">journal</a> documents the whole process, failures included.</p></details>
 </div></section>
