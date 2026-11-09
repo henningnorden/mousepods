@@ -177,6 +177,7 @@ with *Enable both*. Assetto Corsa follows the head in the cockpit camera.
 | AirPods Pro 2 (Lightning and USB-C) | ✅ verified on hardware | SensorDataWX, ~100 Hz |
 | AirPods Pro (1st gen), AirPods 4, AirPods Max | ❓ untested | they have the sensors; [report how it goes](https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml) |
 | AirPods 1 / 2 | ❌ | no head-tracking sensors |
+| Sony WH/WF-1000XM5 and XM6, ULT Wear · Pixel Buds Pro / Pro 2 | ⚠️ experimental | Android's head-tracker HID, needs testing: [docs/HEADSETS.md](docs/HEADSETS.md) |
 | Garmin watch (optional module) | ⚠️ first tests | wrist tilt, accelerometer only, 25 Hz ([below](#garmin-watch-as-a-mouse-optional)) |
 
 ### Features

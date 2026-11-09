@@ -2,28 +2,112 @@
   "updated": "2026-11-09",
   "how_to_add": "Add a line after a device report (https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml). The website reads this file.",
   "tested": [
-    {"device": "AirPods 3", "model": "A2564 / A2565", "kind": "earbuds", "system": "Ubuntu 24.04, GNOME, Wayland", "result": "ok",
-     "details": "RemoteHID, up to ~210 Hz · mouse, cockpit, 360° player", "by": "starman-tech", "date": "2026-11"},
-    {"device": "AirPods Pro 2", "model": "USB-C, A3047", "kind": "earbuds", "system": "Bazzite (Fedora Atomic)", "result": "ok",
-     "details": "SensorDataWX, ~100 Hz · Assetto Corsa, ETS2 (Games page, opentrack)", "by": "henningnorden", "date": "2026-11"},
-    {"device": "AirPods Pro 2", "model": "", "kind": "earbuds", "system": "Ubuntu 24.04, GNOME, Wayland", "result": "ok",
-     "details": "SensorDataWX · mouse", "by": "starman-tech", "date": "2026-11"},
-    {"device": "Fat Shark Dominator V3", "model": "FPV goggles", "kind": "display", "system": "HDMI 3D (side by side), 1280×720", "result": "ok",
-     "details": "3D cockpit and 360° videos in stereo, head tracking by the AirPods", "by": "starman-tech", "date": "2026-11"},
-    {"device": "Garmin quatix 7", "model": "watch", "kind": "watch", "system": "Ubuntu 24.04 (from source)", "result": "partial",
-     "details": "wrist tilt mouse, accelerometer only, 25 Hz", "by": "starman-tech", "date": "2026-11"}
+    {
+      "device": "AirPods 3",
+      "model": "A2564 / A2565",
+      "kind": "earbuds",
+      "system": "Ubuntu 24.04, GNOME, Wayland",
+      "result": "ok",
+      "details": "RemoteHID, up to ~210 Hz · mouse, cockpit, 360° player",
+      "by": "starman-tech",
+      "date": "2026-11"
+    },
+    {
+      "device": "AirPods Pro 2",
+      "model": "USB-C, A3047",
+      "kind": "earbuds",
+      "system": "Bazzite (Fedora Atomic)",
+      "result": "ok",
+      "details": "SensorDataWX, ~100 Hz · Assetto Corsa, ETS2 (Games page, opentrack)",
+      "by": "henningnorden",
+      "date": "2026-11"
+    },
+    {
+      "device": "AirPods Pro 2",
+      "model": "",
+      "kind": "earbuds",
+      "system": "Ubuntu 24.04, GNOME, Wayland",
+      "result": "ok",
+      "details": "SensorDataWX · mouse",
+      "by": "starman-tech",
+      "date": "2026-11"
+    },
+    {
+      "device": "Fat Shark Dominator V3",
+      "model": "FPV goggles",
+      "kind": "display",
+      "system": "HDMI 3D (side by side), 1280×720",
+      "result": "ok",
+      "details": "3D cockpit and 360° videos in stereo, head tracking by the AirPods",
+      "by": "starman-tech",
+      "date": "2026-11"
+    },
+    {
+      "device": "Garmin quatix 7",
+      "model": "watch",
+      "kind": "watch",
+      "system": "Ubuntu 24.04 (from source)",
+      "result": "partial",
+      "details": "wrist tilt mouse, accelerometer only, 25 Hz",
+      "by": "starman-tech",
+      "date": "2026-11"
+    }
   ],
   "support": [
-    {"family": "AirPods 3", "status": "supported", "notes": "RemoteHID, up to ~210 Hz"},
-    {"family": "AirPods Pro 2 (Lightning and USB-C)", "status": "supported", "notes": "SensorDataWX, ~100 Hz"},
-    {"family": "AirPods Pro (1st gen), AirPods 4, AirPods Pro 3, AirPods Max", "status": "untested", "notes": "they have the sensors, reports welcome"},
-    {"family": "AirPods 1 and 2", "status": "impossible", "notes": "no head-tracking sensors"},
-    {"family": "Sony WH-1000XM5 / XM6, WF-1000XM5 / XM6, ULT Wear", "status": "planned", "notes": "Android head-tracker HID protocol"},
-    {"family": "Google Pixel Buds Pro / Pro 2", "status": "planned", "notes": "Android head-tracker HID protocol"},
-    {"family": "Samsung Galaxy Buds Pro", "status": "planned", "notes": "Samsung's own protocol"},
-    {"family": "Bose, JBL (models with head tracking)", "status": "unknown", "notes": "no public protocol yet"},
-    {"family": "Headphones without motion sensors (most Marshall, older Sony…)", "status": "impossible", "notes": "nothing to read"},
-    {"family": "Garmin watches", "status": "experimental", "notes": "wrist tilt, accelerometer only, 25 Hz, source version"},
-    {"family": "FPV goggles and 3D screens (side by side)", "status": "supported", "notes": "as a display for the cockpit and 360° videos"}
+    {
+      "family": "AirPods 3",
+      "status": "supported",
+      "notes": "RemoteHID, up to ~210 Hz"
+    },
+    {
+      "family": "AirPods Pro 2 (Lightning and USB-C)",
+      "status": "supported",
+      "notes": "SensorDataWX, ~100 Hz"
+    },
+    {
+      "family": "AirPods Pro (1st gen), AirPods 4, AirPods Pro 3, AirPods Max",
+      "status": "untested",
+      "notes": "they have the sensors, reports welcome"
+    },
+    {
+      "family": "AirPods 1 and 2",
+      "status": "impossible",
+      "notes": "no head-tracking sensors"
+    },
+    {
+      "family": "Sony WH-1000XM5 / XM6, WF-1000XM5 / XM6, ULT Wear",
+      "status": "experimental",
+      "notes": "Android head-tracker HID, needs testing (docs/HEADSETS.md)"
+    },
+    {
+      "family": "Google Pixel Buds Pro / Pro 2",
+      "status": "experimental",
+      "notes": "Android head-tracker HID, needs testing (docs/HEADSETS.md)"
+    },
+    {
+      "family": "Samsung Galaxy Buds Pro",
+      "status": "planned",
+      "notes": "Samsung's own protocol"
+    },
+    {
+      "family": "Bose, JBL (models with head tracking)",
+      "status": "unknown",
+      "notes": "no public protocol yet"
+    },
+    {
+      "family": "Headphones without motion sensors (most Marshall, older Sony…)",
+      "status": "impossible",
+      "notes": "nothing to read"
+    },
+    {
+      "family": "Garmin watches",
+      "status": "experimental",
+      "notes": "wrist tilt, accelerometer only, 25 Hz, source version"
+    },
+    {
+      "family": "FPV goggles and 3D screens (side by side)",
+      "status": "supported",
+      "notes": "as a display for the cockpit and 360° videos"
+    }
   ]
 }

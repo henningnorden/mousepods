@@ -1,0 +1,5 @@
+# MousePods: let the desktop user read Bluetooth HID head trackers (Sony WH/WF-1000XM5/XM6, ULT Wear,
+# Pixel Buds Pro…) through hidraw. Install, then reconnect the headset:
+#   sudo cp 70-mousepods-headtrackers.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+# Bus 0005 = Bluetooth. uaccess grants access to the user logged in at the seat only.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:*", TAG+="uaccess"

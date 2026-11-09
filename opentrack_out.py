@@ -333,6 +333,10 @@ class HeadTracker:
                 self.roll += k * (gr - self.roll)
         return self.yaw, self.pitch, self.roll
 
+    def update_angles(self, yaw, pitch, roll, dt, yaw_rate=0.0):
+        """Absolute head angles from another source (HID head-tracker headsets), same finishing as the AirPods."""
+        return self._finish((yaw, pitch, roll), dt, yaw_rate)
+
     def _finish(self, ang, dt, yaw_rate):
         c = self.cfg
         yaw, pitch, roll = ang
@@ -482,6 +486,11 @@ class OpenTrackOutput:
     def feed(self, yaw_rate, pitch_rate, roll_rate, dt, up=None, lat=None, signs=(1, 1), att=None):
         with self.lock:
             self.pose = self.tracker.update(yaw_rate, pitch_rate, roll_rate, dt, up, lat, signs, att)
+            self.last_feed = time.monotonic()
+
+    def feed_angles(self, yaw, pitch, roll, dt, yaw_rate=0.0):
+        with self.lock:
+            self.pose = self.tracker.update_angles(yaw, pitch, roll, dt, yaw_rate)
             self.last_feed = time.monotonic()
 
     def head(self):

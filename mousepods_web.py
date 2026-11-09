@@ -782,7 +782,9 @@ class WebUI:
             counts = {("0x%02x" % k if k >= 0 else ("handshake" if k == -2 else tr("info.opcode_other"))): v
                       for k, v in self.dev.counts.items()}
         cfg = {k: v for k, v in ctl.cfg.items()}
+        hs = getattr(ctl, "headsets", None)
         return {
+            "headsets": hs.status() if hs else [],     # other headsets (Android head-tracker HID), experimental
             "addr": aap.addr if aap else None, "pid": aap.pid if aap else None,
             "model": model_name(aap.pid) if aap else None,
             "protocol": ("RemoteHID (0x800)" if aap and aap.rhid_devs else "SensorDataWX (0x100000)")

@@ -39,3 +39,10 @@ Head-tracking bridge for Proton/Wine games (native/), contributed by Henning Nor
   (https://github.com/uglyDwarf/linuxtrack), MIT licence. The FreeTrack
   protocol types (native/fttypes.h) were translated by the FaceTrackNoIR /
   FreeTrack teams.
+
+Head-tracker HID headsets (hid_headtracker.py): protocol details and axis mapping from
+  SonyTrackerLinux, Copyright (c) kdani3 — https://github.com/kdani3/SonyTrackerLinux — MIT licence:
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+    and associated documentation files, to deal in the Software without restriction, subject to the
+    condition that the above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.

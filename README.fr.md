@@ -92,6 +92,7 @@ Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accor
 | AirPods Pro 2 (Lightning et USB-C) | ✅ vérifié sur le matériel | SensorDataWX, ~100 Hz |
 | AirPods Pro (1re gén.), AirPods 4, AirPods Max | ❓ pas testé | ils ont les capteurs ; [dis-nous ce que ça donne](https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml) |
 | AirPods 1 / 2 | ❌ | pas de capteurs de suivi de tête |
+| Sony WH/WF-1000XM5 et XM6, ULT Wear · Pixel Buds Pro / Pro 2 | ⚠️ expérimental | protocole HID standard d'Android, à tester : [docs/HEADSETS.md](docs/HEADSETS.md) |
 | Montre Garmin (module optionnel) | ⚠️ premiers essais | inclinaison du poignet, accéléromètre seul, 25 Hz |
 
 ### Fonctions

@@ -126,6 +126,8 @@ DEFAULTS = {
     },
     "notifications": True,
     # --- OpenTrack (suivi de tête pour simulateurs, voir opentrack_out.py et docs/OPENTRACK.md)
+    # --- other headsets: Android's standard head-tracker HID (Sony XM5/XM6, Pixel Buds Pro…), see hid_headtracker.py
+    "headsets": {"enabled": True, "mouse": True, "px_per_deg": 22.0},
     "opentrack": {"enabled": False, "host": "127.0.0.1", "port": 4242, "rate_hz": 120,
                   "invert_yaw": False, "invert_pitch": False, "invert_roll": False,
                   "scale_yaw": 1.0, "scale_pitch": 1.0, "scale_roll": 1.0, "smoothing": 0.2,
@@ -953,6 +955,8 @@ class Controller:
         i18n.apply_config(cfg)
         self.cfg_path = cfg_path
         self.ptr = pointer
+        self.headsets = None         # hid_headtracker.Manager (other headsets), started by run()
+        self._hs_last = {}           # headset name -> (yaw, pitch) of the previous sample, for the mouse
         self.diag = diag
         self.pid = "0000"
         self.place = "ear"
@@ -1142,7 +1146,23 @@ class Controller:
                 kinds.pop(dev, None)
                 log.info("Gestes : flux %s brut arrêté", name)
 
+    def on_head_pose(self, yaw, pitch, roll, dt, yaw_rate=0.0, name=""):
+        """Head angles from a HID head-tracker headset (another thread): simulator outputs, demo pages, mouse."""
+        ot = self.opentrack
+        if ot:
+            ot.feed_angles(yaw, pitch, roll, dt, yaw_rate)
+        hc = self.cfg.get("headsets", {})
+        prev = self._hs_last.get(name)
+        self._hs_last[name] = (yaw, pitch)
+        if prev is None or not hc.get("mouse", True) or self.inactive or self.cfg.get("mode") != "souris":
+            return
+        k = float(hc.get("px_per_deg", 22.0))
+        dyaw = (yaw - prev[0] + 180.0) % 360.0 - 180.0
+        self.ptr.move_rel(dyaw * k, -(pitch - prev[1]) * k)
+
     def recenter(self, quiet=False):
+        if self.headsets:
+            self.headsets.recenter()
         self.ang = [0.0, 0.0]
         self.vel = (0.0, 0.0)
         self.glide.reset()
@@ -1569,6 +1589,13 @@ def run(cfg, cfg_path, diag=False, web_port=8737, opentrack=False, joystick=Fals
         ctl.raw_imu_hooks.append(ctl.gestures.on_raw)
     except Exception as e:  # noqa: BLE001
         log.warning("Module gestes indisponible : %s", e)
+    try:                       # other headsets (Android head-tracker HID): optional, never blocks the AirPods
+        import hid_headtracker
+        ctl.headsets = hid_headtracker.Manager(ctl.on_head_pose,
+                                               enabled=lambda: ctl.cfg.get("headsets", {}).get("enabled", True))
+        ctl.headsets.start()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Head-tracker headsets unavailable: %s", e)
     ctl.opentrack_forced = opentrack
     ctl.joystick_forced = joystick
     ctl.sync_opentrack()
