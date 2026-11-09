@@ -1,0 +1,22 @@
+name: Device report
+description: You tried MousePods with earbuds that are not in the supported table yet
+labels: [device report]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: AirPods 4 ANC, AirPods Pro (1st gen), AirPods Max…
+    validations: { required: true }
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Head tracking works, Connects but no motion data, Doesn't connect]
+    validations: { required: true }
+  - type: textarea
+    id: diag
+    attributes:
+      label: Output of --diag
+      description: "`airpods_mouse_controller.py --diag` for about 20 seconds. Remove MAC addresses and serial numbers."
+      render: text

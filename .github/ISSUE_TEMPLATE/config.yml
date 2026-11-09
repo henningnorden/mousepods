@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How it works, protocol findings
+    url: https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md
+    about: Read this first if your question is about the AirPods protocol.

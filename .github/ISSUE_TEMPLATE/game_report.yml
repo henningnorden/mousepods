@@ -1,0 +1,31 @@
+name: Game report
+description: You tried MousePods head tracking in a game
+labels: [game report]
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+    validations: { required: true }
+  - type: dropdown
+    id: result
+    attributes:
+      label: Did it work?
+      options: [Works great, Works with some issues, Doesn't work]
+    validations: { required: true }
+  - type: dropdown
+    id: how
+    attributes:
+      label: How did you connect it?
+      options: [Games page (no opentrack), opentrack, Virtual joystick, Other]
+    validations: { required: true }
+  - type: input
+    id: setup
+    attributes:
+      label: Earbuds, distro, Proton version
+      placeholder: AirPods Pro 2, Bazzite, GE-Proton9-20
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Axis signs, settings you changed, anything that would help the next person.

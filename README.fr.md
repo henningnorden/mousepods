@@ -30,6 +30,17 @@
 
 ---
 
+## Démarrage rapide
+
+```bash
+flatpak install --user https://starman-tech.github.io/mousepods/MousePods.flatpakref
+```
+
+Appaire tes AirPods avec le PC, ouvre **MousePods** et suis l'assistant. Les mises à jour arrivent
+par `flatpak update` ou ta logithèque. Pour avoir les nouveautés en avance, le canal test :
+`flatpak install --user https://starman-tech.github.io/mousepods/MousePods-test.flatpakref`. L'installation depuis le code est dans [Installer](#installer).
+
+
 ## Ce qui est nouveau
 
 Avant ce projet, **aucun outil public n'arrivait à lire le suivi de tête des AirPods 3**. LibrePods, librepods-rs, pods-head-tracker,
@@ -71,19 +82,54 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 Linux avec BlueZ, AirPods appairés, accès en écriture à `/dev/uinput` (accordé par `uaccess` sur la plupart des bureaux). Pas besoin de root.
 
-## État : ce qui est réel, ce qui ne l'est pas
+## Ce qui marche
 
-| | |
+### Écouteurs et appareils
+
+| Appareil | État | Détails |
+|---|---|---|
+| AirPods 3 | ✅ vérifié sur le matériel | RemoteHID, jusqu'à ~210 Hz |
+| AirPods Pro 2 (Lightning et USB-C) | ✅ vérifié sur le matériel | SensorDataWX, ~100 Hz |
+| AirPods Pro (1re gén.), AirPods 4, AirPods Max | ❓ pas testé | ils ont les capteurs ; [dis-nous ce que ça donne](https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml) |
+| AirPods 1 / 2 | ❌ | pas de capteurs de suivi de tête |
+| Montre Garmin (module optionnel) | ⚠️ premiers essais | inclinaison du poignet, accéléromètre seul, 25 Hz |
+
+### Fonctions
+
+| Fonction | État | Remarques |
+|---|---|---|
+| Souris avec la tête ou un écouteur en main | ✅ | essayé sur le matériel, encore en réglage |
+| Pointeur (calibration par les coins) | ⚠️ | testé en simulation |
+| Mode glisse (écouteur sur la table) | ⚠️ | expérimental |
+| Gestes de tête et de mâchoire | ⚠️ | expérimental |
+| Page Jeux : les jeux Proton suivent la tête, sans OpenTrack | ✅ | testé dans Assetto Corsa et ETS2 |
+| Sortie OpenTrack (UDP) | ✅ | testé dans Assetto Corsa sous Proton |
+| Manette virtuelle pour jeux natifs | ⚠️ | axes testés, pas encore en jeu |
+| Démo cockpit 3D, sans jeu | ✅ | `/demo`, aussi en 3D côte à côte |
+| Lecteur vidéo 360° / VR (fichiers, YouTube) | ✅ | `/vr`, 3D côte à côte pour lunettes |
+| Extension navigateur (YouTube 360° sur youtube.com) | ⚠️ | nouvelle, voir [browser-extension/](browser-extension/README.md) |
+| Appli Flatpak avec mises à jour automatiques | ✅ | canaux stable et test |
+| Interface en français, anglais, allemand | ✅ | [ajoute ta langue](CONTRIBUTING.md#translations) |
+| Boîtier comme souris (écouteurs dedans) | ❌ | capteurs des AirPods 3 éteints dans le boîtier |
+
+### Jeux testés
+
+| Jeu | Comment | Écouteurs | Testé par |
+|---|---|---|---|
+| Assetto Corsa | Proton, page Jeux ou OpenTrack | AirPods Pro 2 | @henningnorden |
+| Euro Truck Simulator 2 | Proton Experimental, page Jeux | AirPods Pro 2 | @henningnorden |
+
+Testé dans un autre jeu ? [Raconte-nous](https://github.com/starman-tech/mousepods/issues/new?template=game_report.yml), il ira dans ce tableau.
+
+### Plateformes
+
+| Plateforme | État |
 |---|---|
-| ✅ Flux de mouvement des AirPods 3 (RemoteHID), jusqu'à ~210 Hz | vérifié sur le matériel |
-| ✅ Flux des AirPods Pro 2 (SensorDataWX), ~100 Hz avec l'intervalle par défaut de 10 ms | vérifié sur le matériel |
-| ✅ Mode souris (tête, écouteur en main), application, raccourcis | essayé sur le matériel, encore en réglage. 159 tests automatiques |
-| ⚠️ Pointeur calibré par les coins | testé en simulation seulement |
-| ⚠️ Mode glisse | marche geste par geste ; une seule capture réelle, et il ne vaudra jamais une souris optique |
-| ⚠️ Suivi de tête pour simulateurs (OpenTrack, manette virtuelle) | format des paquets, manette et calcul des angles testés, quaternion vérifié sur une capture réelle ; pas encore essayé dans un jeu |
-| ⚠️ Montre Garmin comme souris (module optionnel) | premiers essais sur le matériel. Accéléromètre seul, 25 Hz : voir plus bas |
-| ❌ Boîtier comme souris (écouteurs dedans) | impossible sur AirPods 3 : capteurs éteints dans le boîtier |
-| ❓ DeviceID Apple | changé avant le premier succès ; probablement inutile (c'est le MTU qui compte), pas encore isolé |
+| Linux, GNOME / KDE, Wayland et X11 | ✅ (Ubuntu 24.04, Bazzite) |
+| Distributions immuables (Bazzite, Fedora Atomic, SteamOS) | ✅ Flatpak, ou distrobox depuis le code |
+| Windows | ❌ pas encore : Windows n'ouvre pas aux applis le canal Bluetooth des AirPods |
+| macOS | ❌ inutile : l'API d'Apple donne déjà le suivi de tête |
+| Android | ❌ pas encore : il faut une pile Bluetooth qui autorise ce canal |
 
 ## Suivi de tête pour simulateurs
 

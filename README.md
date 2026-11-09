@@ -37,6 +37,16 @@
 
 ---
 
+## Quick start
+
+```bash
+flatpak install --user https://starman-tech.github.io/mousepods/MousePods.flatpakref
+```
+
+Pair your AirPods with the PC, open **MousePods**, and follow the first-run wizard. Updates come
+through `flatpak update` or your software center. Want the newest changes first? Use the test
+channel: `flatpak install --user https://starman-tech.github.io/mousepods/MousePods-test.flatpakref`. Running from source is under [Install](#install).
+
 ### Games, desktop app and Flatpak
 
 Contributed by [@henningnorden](https://github.com/henningnorden) for sim racing on Linux gaming systems
@@ -55,9 +65,7 @@ Contributed by [@henningnorden](https://github.com/henningnorden) for sim racing
   `bluetoothctl` through BlueZ over D-Bus.
 - **Languages:** English and German besides French (`ui/i18n/`).
 
-Install: download `MousePods-flatpak` from the latest successful
-[build](https://github.com/starman-tech/mousepods/actions/workflows/build.yml) and run
-`flatpak install --user MousePods.flatpak`. Steam installed as a Flatpak works too (tested with ETS2
+Install: see [Quick start](#quick-start). Steam installed as a Flatpak works too (tested with ETS2
 under Proton Experimental); a game installed in both Steams lets you pick which one on its card.
 
 ### Browser extension
@@ -130,7 +138,7 @@ Requirements: Linux with BlueZ, AirPods paired and connected, write access to `/
 
 ```bash
 .venv/bin/python airpods_mouse_controller.py --diag          # live rates in the terminal, no cursor control
-.venv/bin/python -m unittest discover -s tests               # 159 tests, no hardware needed
+.venv/bin/python -m unittest discover -s tests               # 400+ tests, no hardware needed
 ```
 
 ### Immutable distros (Bazzite, Fedora Atomic): use a distrobox
@@ -159,21 +167,54 @@ game's Steam launch option to `$HOME/.local/bin/opentrack-launcher %command%` (e
 `%command%`). In opentrack: input *UDP over network* port 4242, output *freetrack 2.0 Enhanced*
 with *Enable both*. Assetto Corsa follows the head in the cockpit camera.
 
-## Status: what is real, what is not
+## What works
 
-| | |
+### Earbuds and devices
+
+| Device | Status | Details |
+|---|---|---|
+| AirPods 3 | ✅ verified on hardware | RemoteHID, up to ~210 Hz |
+| AirPods Pro 2 (Lightning and USB-C) | ✅ verified on hardware | SensorDataWX, ~100 Hz |
+| AirPods Pro (1st gen), AirPods 4, AirPods Max | ❓ untested | they have the sensors; [report how it goes](https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml) |
+| AirPods 1 / 2 | ❌ | no head-tracking sensors |
+| Garmin watch (optional module) | ⚠️ first tests | wrist tilt, accelerometer only, 25 Hz ([below](#garmin-watch-as-a-mouse-optional)) |
+
+### Features
+
+| Feature | Status | Notes |
+|---|---|---|
+| Mouse with your head or a bud in hand | ✅ | tried on hardware, still being tuned |
+| Pointer mode (corner calibration) | ⚠️ | tested in simulation |
+| Glide mode (slide a bud on the table) | ⚠️ | experimental, will never match an optical mouse |
+| Head and jaw gestures | ⚠️ | experimental |
+| Games page: Proton games follow your head, no opentrack | ✅ | tested in Assetto Corsa and ETS2 |
+| opentrack output (UDP) | ✅ | tested in Assetto Corsa under Proton |
+| Virtual joystick for native games | ⚠️ | axes tested, not yet tried in a game |
+| 3D cockpit demo, no game needed | ✅ | `/demo`, also side-by-side 3D |
+| 360° / VR video player (local files, YouTube) | ✅ | `/vr`, side-by-side 3D for goggles |
+| Browser extension (YouTube 360° on youtube.com) | ⚠️ | new, see [browser-extension/](browser-extension/README.md) |
+| Flatpak app with automatic updates | ✅ | stable and test channels |
+| Interface in English, French, German | ✅ | [add your language](CONTRIBUTING.md#translations) |
+| Case as a mouse (buds inside) | ❌ | the AirPods 3 sensors are off in the case |
+
+### Games tested
+
+| Game | How | Earbuds | Tested by |
+|---|---|---|---|
+| Assetto Corsa | Proton, Games page or opentrack | AirPods Pro 2 | @henningnorden |
+| Euro Truck Simulator 2 | Proton Experimental, Games page | AirPods Pro 2 | @henningnorden |
+
+Tried it in another game? [Tell us](https://github.com/starman-tech/mousepods/issues/new?template=game_report.yml), it goes in this table.
+
+### Platforms
+
+| Platform | Status |
 |---|---|
-| ✅ AirPods 3 motion stream (RemoteHID), up to ~210 Hz | verified on hardware |
-| ✅ AirPods Pro 2 motion stream (SensorDataWX), ~100 Hz with the default 10 ms interval | verified on hardware |
-| ✅ Mouse mode (head and bud in hand), app, shortcuts | tried on hardware, still being tuned. 159 automated tests (protocol, engine under random orientations, calibration, replay of real captures) |
-| ⚠️ Pointer mode with corner calibration | tested in simulation only |
-| ⚠️ Glide mode | works stroke by stroke. On real slides: drift of 4 cm over 5 strokes after tuning, on **one** capture. A bud is round and rolls, and its sensors freeze when it lies still: it will never match an optical mouse |
-| ✅ Head tracking for simulators via opentrack | tried in a game: Assetto Corsa under Proton on Bazzite (AirPods Pro 2, opentrack inside the game's prefix) |
-| ⚠️ Virtual joystick for native games | packet format, joystick and angle maths tested; not yet tried in a game |
-| ⚠️ Garmin watch as a mouse (optional module) | first tests on hardware. Accelerometer only, 25 Hz: see below |
-| ❌ Case as a mouse (buds inside) | impossible on AirPods 3: the sensors are powered off in the case |
-| ❓ Apple PnP DeviceID | changed before the first success; probably not needed (the MTU is), not isolated yet |
-| ❓ Other models (AirPods 2, Pro 1, Max) | untested |
+| Linux, GNOME / KDE, Wayland and X11 | ✅ (Ubuntu 24.04, Bazzite) |
+| Immutable distros (Bazzite, Fedora Atomic, SteamOS) | ✅ Flatpak, or a distrobox from source |
+| Windows | ❌ not yet: Windows doesn't let apps open the Bluetooth channel AirPods use |
+| macOS | ❌ not needed: Apple's own API already gives head tracking |
+| Android | ❌ not yet: needs a Bluetooth stack that allows the AirPods channel |
 
 ## Head tracking for simulators
 

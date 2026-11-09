@@ -334,10 +334,12 @@ footer .wrap{display:flex;gap:20px;flex-wrap:wrap;justify-content:space-between}
 <!-- ======================================== INSTALL -->
 <section id="install"><div class="wrap">
   <div class="grid g2" style="align-items:start">
-    <div><div class="eyebrow">Get started</div><h2>Three commands.</h2>
+    <div><div class="eyebrow">Get started</div><h2>One command.</h2>
       <p class="lead">You need Linux with BlueZ, AirPods paired with your PC, and write access to <code>/dev/uinput</code> (granted to the desktop user by <code>uaccess</code> on most distributions).</p>
       <p class="lead" style="margin-top:14px;font-size:17px">It can't run in a browser: Web Bluetooth only speaks BLE, and AirPods use Classic Bluetooth.</p></div>
-    <div class="code" id="install-code"><button class="copy" data-copy="install-code">Copy</button><span class="c"># clone and install</span>
+    <div class="code" id="install-code"><button class="copy" data-copy="install-code">Copy</button><span class="c"># install the app (automatic updates)</span>
+flatpak install --user https://starman-tech.github.io/mousepods/MousePods.flatpakref
+<span class="c"># or from source</span>
 git clone https://github.com/starman-tech/mousepods
 cd mousepods && python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -348,10 +350,13 @@ cd mousepods && python3 -m venv .venv
   <table class="tbl">
     <tr><td>AirPods 3 motion stream (RemoteHID), up to ~210 Hz</td><td><span class="st yes">Verified on hardware</span></td></tr>
     <tr><td>AirPods Pro 2 motion stream (SensorDataWX), ~100 Hz with the default 10 ms interval</td><td><span class="st yes">Verified on hardware</span></td></tr>
-    <tr><td>Mouse mode (head, bud in hand), app, shortcuts</td><td><span class="st yes">Tried on hardware · 159 tests</span></td></tr>
+    <tr><td>Mouse mode (head, bud in hand), app, shortcuts</td><td><span class="st yes">Tried on hardware · 400+ tests</span></td></tr>
     <tr><td>Pointer mode with corner calibration</td><td><span class="st warn">Simulation only</span></td></tr>
     <tr><td>Glide mode (slide a bud on the table)</td><td><span class="st warn">Experimental</span></td></tr>
-    <tr><td>Head tracking for simulators (opentrack, virtual joystick)</td><td><span class="st warn">Tested offline · not yet tried in a game</span></td></tr>
+    <tr><td>Head tracking in games (Games page without opentrack, or opentrack)</td><td><span class="st yes">Tried in Assetto Corsa and ETS2</span></td></tr>
+    <tr><td>3D cockpit demo and 360° / VR video player, side-by-side 3D</td><td><span class="st yes">Built in · no game needed</span></td></tr>
+    <tr><td>Flatpak app with automatic updates</td><td><span class="st yes">Stable and test channels</span></td></tr>
+    <tr><td>Browser extension (YouTube 360° on youtube.com)</td><td><span class="st warn">New</span></td></tr>
     <tr><td>Garmin watch as a mouse (wrist tilt, optional module)</td><td><span class="st warn">First tests on hardware · accelerometer only, 25 Hz</span></td></tr>
     <tr><td>Case as a mouse, buds inside</td><td><span class="st no">Impossible: AirPods 3 sensors are off in the case</span></td></tr>
   </table>

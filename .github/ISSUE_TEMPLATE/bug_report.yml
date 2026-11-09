@@ -1,0 +1,33 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations: { required: true }
+  - type: input
+    id: earbuds
+    attributes:
+      label: Earbuds
+      placeholder: AirPods 3, AirPods Pro 2 USB-C…
+    validations: { required: true }
+  - type: input
+    id: system
+    attributes:
+      label: Distro, desktop, Wayland or X11
+      placeholder: Ubuntu 24.04, GNOME, Wayland
+    validations: { required: true }
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install MousePods?
+      options: [Flatpak stable, Flatpak test, From source]
+    validations: { required: true }
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Output of `airpods_mouse_controller.py --diag`, or the Log page of the app. Remove MAC addresses and serial numbers.
+      render: text

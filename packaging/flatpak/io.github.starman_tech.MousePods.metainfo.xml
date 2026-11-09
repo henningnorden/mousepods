@@ -35,6 +35,19 @@
   </screenshots>
   <!-- newest first; a release tag needs an entry with a description (release_notes.py check) -->
   <releases>
+    <release version="1.1.0" date="2026-11-09">
+      <description>
+        <p>Head tracking in games, a 3D cockpit, 360° videos and an app that updates itself.</p>
+        <ul>
+          <li>Games page: tick a Steam game running through Proton and its camera follows your head, no opentrack needed</li>
+          <li>Per-game profiles and a full-screen calibration that learns your head movement first</li>
+          <li>Built-in 3D cockpit demo and a 360° / VR video player, with side-by-side 3D for goggles</li>
+          <li>Browser extension: YouTube 360° videos follow your head on youtube.com</li>
+          <li>Desktop app with tray icon and first-run wizard, installed as a Flatpak with automatic updates</li>
+          <li>Interface in English, French and German</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-04">
       <description>
         <p>First release: head tracking from AirPods 3 and AirPods Pro on Linux, without an Apple device.</p>
