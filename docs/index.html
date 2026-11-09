@@ -357,6 +357,35 @@ footer .wrap{display:flex;gap:20px;flex-wrap:wrap;justify-content:space-between}
   </div>
 </div></section>
 
+<!-- ======================================== DEVICES (from devices.json) -->
+<section id="devices" class="alt"><div class="wrap">
+  <div class="head center"><div class="eyebrow">Devices</div><h2>What it runs on.</h2>
+    <p class="lead">Kept up to date from <a href="https://github.com/starman-tech/mousepods/blob/main/docs/devices.json">devices.json</a>. Tried it on something else? <a href="https://github.com/starman-tech/mousepods/issues/new?template=device_report.yml">Tell us</a> and it goes in the list.</p></div>
+  <h3 style="margin:0 0 14px;font-size:22px">Tested on</h3>
+  <table class="tbl" id="dev-tested"><tr><td>Loading…</td></tr></table>
+  <h3 style="margin:40px 0 14px;font-size:22px">Supported devices</h3>
+  <table class="tbl" id="dev-support"><tr><td>Loading…</td></tr></table>
+  <p class="lead" id="dev-updated" style="font-size:14px;margin-top:14px"></p>
+</div></section>
+<script>
+(() => {
+  const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const RES = { ok: ["yes", "Works"], partial: ["warn", "Partly"], fail: ["no", "Doesn't work"] };
+  const SUP = { supported: ["yes", "Supported"], experimental: ["warn", "Experimental"], untested: ["warn", "Untested"],
+                planned: ["warn", "Planned"], unknown: ["no", "Unknown"], impossible: ["no", "Not possible"] };
+  const pill = ([c, l]) => `<span class="st ${c}">${l}</span>`;
+  fetch("devices.json", { cache: "no-store" }).then(r => r.json()).then(d => {
+    document.getElementById("dev-tested").innerHTML =
+      "<tr><th>Device</th><th>System</th><th>What was tried</th><th>Result</th><th>By</th></tr>" +
+      d.tested.map(t => `<tr><td><b>${esc(t.device)}</b>${t.model ? `<br><small>${esc(t.model)}</small>` : ""}</td><td>${esc(t.system)}</td><td>${esc(t.details)}</td><td>${pill(RES[t.result] || ["warn", esc(t.result)])}</td><td><a href="https://github.com/${esc(t.by)}">@${esc(t.by)}</a><br><small>${esc(t.date)}</small></td></tr>`).join("");
+    document.getElementById("dev-support").innerHTML =
+      "<tr><th>Device</th><th>Status</th><th>Notes</th></tr>" +
+      d.support.map(t => `<tr><td><b>${esc(t.family)}</b></td><td>${pill(SUP[t.status] || ["warn", esc(t.status)])}</td><td>${esc(t.notes)}</td></tr>`).join("");
+    document.getElementById("dev-updated").textContent = "Last update: " + d.updated;
+  }).catch(() => { document.getElementById("dev-tested").innerHTML = "<tr><td>The list is on GitHub: docs/devices.json</td></tr>"; });
+})();
+</script>
+
 <!-- ======================================== INSTALL -->
 <section id="install"><div class="wrap">
   <div class="grid g2" style="align-items:start">

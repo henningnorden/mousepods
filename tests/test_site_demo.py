@@ -24,5 +24,20 @@ class TestSiteDemo(unittest.TestCase):
         self.assertEqual(set(w.SITE_PATHS), {"/api/pose", "/api/i18n", "/api/cmd"})
 
 
+
+class TestDevicesList(unittest.TestCase):
+    def test_devices_json_is_valid(self):
+        import json
+        d = json.load(open(os.path.join(ROOT, "docs", "devices.json"), encoding="utf-8"))
+        self.assertTrue(d["tested"] and d["support"])
+        for t in d["tested"]:
+            self.assertIn(t["result"], ("ok", "partial", "fail"))
+            for k in ("device", "system", "details", "by", "date"):
+                self.assertTrue(t[k], (t, k))
+        for t in d["support"]:
+            self.assertIn(t["status"], ("supported", "experimental", "untested", "planned", "unknown", "impossible"))
+        self.assertIn('fetch("devices.json"', open(os.path.join(ROOT, "docs", "index.html"), encoding="utf-8").read())
+
+
 if __name__ == "__main__":
     unittest.main()
