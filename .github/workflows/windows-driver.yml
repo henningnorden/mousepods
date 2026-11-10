@@ -9,6 +9,9 @@ on:
     branches: [windows-l2cap-driver]
     paths:
       - "windows/**"
+      - "windows/vm/**"
+      - "l2cap_win.py"
+      - "tests/test_run_variants.py"
       - ".github/workflows/windows-driver.yml"
   workflow_dispatch:
 
@@ -36,6 +39,68 @@ jobs:
             windows/driver/out/status.txt
             windows/driver/out/driver.zip
           if-no-files-found: warn
+
+  # The VM round scripts: they run in Windows PowerShell 5.1 on the test VM, and pwsh is not
+  # available where they are written, so they are parsed and their C# compiled here.
+  vm-scripts:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Parse the PowerShell scripts (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $failed = $false
+          foreach ($f in Get-ChildItem windows/vm/*.ps1, windows/driver/*.ps1) {
+            $rel = $f.FullName.Substring($PWD.Path.Length + 1) -replace '\\', '/'
+            $tokens = $null; $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errs)
+            foreach ($e in $errs) {
+              $failed = $true
+              Write-Host "::error file=$rel,line=$($e.Extent.StartLineNumber),col=$($e.Extent.StartColumnNumber),title=PowerShell parse error::$($e.Message)"
+            }
+            if (-not $errs) { Write-Host "parsed: $rel" }
+          }
+          if (Get-Module -ListAvailable PSScriptAnalyzer) {
+            $skip = 'PSAvoidUsingWriteHost', 'PSUseApprovedVerbs', 'PSUseShouldProcessForStateChangingFunctions', 'PSUseSingularNouns', 'PSAvoidUsingPositionalParameters'
+            foreach ($d in Invoke-ScriptAnalyzer -Path windows/vm -Severity Error, Warning -ExcludeRule $skip | Sort-Object Severity -Descending) {
+              $rel = $d.ScriptPath.Substring($PWD.Path.Length + 1) -replace '\\', '/'
+              $level = 'warning'
+              if ("$($d.Severity)" -eq 'Error') { $level = 'error'; $failed = $true }
+              Write-Host "::$level file=$rel,line=$($d.Line),title=$($d.RuleName)::$($d.Message -replace '[\r\n]+', ' ')"
+            }
+          } else { Write-Host 'PSScriptAnalyzer not installed; parse check only' }
+          if ($failed) { exit 1 }
+      - name: Compile the C# helpers (round.ps1 -SelfTest)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File windows/vm/round.ps1 -SelfTest 2>&1 | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            Write-Host "::error file=windows/vm/round.ps1,title=round.ps1 -SelfTest::exit ${code}: $(($out | Select-Object -Last 5) -join ' / ')"
+            exit 1
+          }
+      - name: Python side on Windows (selftest, unit tests)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = & python windows/vm/run_variants.py selftest 2>&1 | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            Write-Host "::error file=windows/vm/run_variants.py,title=run_variants selftest::exit ${code}: $(($out | Select-Object -Last 5) -join ' / ')"
+            exit 1
+          }
+          $out = & python -m unittest tests.test_run_variants 2>&1 | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $fails = ($out | Where-Object { $_ -match '^(FAIL|ERROR):|Error:' } | Select-Object -First 6) -join ' / '
+            Write-Host "::error file=tests/test_run_variants.py,title=unit tests on Windows::$fails"
+            exit 1
+          }
 
   publish:
     needs: build
