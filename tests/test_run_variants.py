@@ -100,14 +100,48 @@ class ResumeTests(unittest.TestCase):
         self.assertEqual(remaining[0]["id"], 1)
         self.assertEqual(len(state["results"]), 1)
 
-    def test_three_crashes_in_a_row_stop_the_round(self):
-        state = {"results": [_done(v, "bugcheck") for v in rv.VARIANTS[:2]]}
-        step = rv.plan_next(state, {"id": 3, "phase": "channel"})
+    def test_three_crashes_in_a_row_across_routes_stop_the_round(self):
+        state = {"results": [_done(v, "ok") for v in rv.VARIANTS[:6]]
+                 + [_done(rv.VARIANTS[6], "bugcheck", phase="channel")]}
+        step = rv.plan_next(state, {"id": 8, "phase": "channel", "route": "root"})
+        self.assertFalse(step.get("done"))
+        self.assertEqual(step["id"], 9)
+        step = rv.plan_next(state, {"id": 9, "phase": "channel", "route": "bthenum"})
         self.assertTrue(step["done"])
         self.assertIn("3 steps in a row", step["stopped"])
         text = rv.render_report(state["results"], state["meta"])
         self.assertIn("The round stopped early", text)
-        self.assertIn("Not run: 4,", text)
+        self.assertIn("Not run: 10,", text)
+
+    def test_two_channel_crashes_skip_only_that_route(self):
+        # three in a row on route a used to stop the round before route b ran
+        state = {"results": []}
+        step = rv.plan_next(state, {"id": 1, "phase": "channel", "route": "root"})
+        self.assertEqual(step["id"], 2)
+        step = rv.plan_next(state, {"id": 2, "phase": "channel", "route": "root"})
+        self.assertNotIn("done", step)
+        self.assertEqual(step["id"], 9)
+        self.assertEqual(step["route"], "bthenum")
+        verdicts = {r["id"]: r["verdict"] for r in state["results"]}
+        self.assertEqual(verdicts[1], "bugcheck")
+        self.assertEqual(verdicts[2], "bugcheck")
+        self.assertEqual([i for i, v in verdicts.items() if v == "skipped"], list(range(3, 9)))
+        self.assertNotIn("stopped", state.get("meta", {}))
+        skipped = [r for r in state["results"] if r["verdict"] == "skipped"]
+        self.assertIn("route root", skipped[0]["detail"])
+
+    def test_one_channel_crash_keeps_the_route(self):
+        state = {"results": []}
+        self.assertEqual(rv.plan_next(state, {"id": 1, "phase": "channel", "route": "root"})["id"], 2)
+
+    def test_three_check_crashes_in_a_row_stop_the_round(self):
+        state = {"results": [_done(v, "ok") for v in _variants()]}
+        for i in (17, 18):
+            state["results"].append(_done(rv.VARIANTS[i - 1], "bugcheck", route="root", mtu=2582,
+                                          security="encrypt", phase="channel"))
+        step = rv.plan_next(state, {"id": 19, "phase": "channel", "route": "root"})
+        self.assertTrue(step["done"])
+        self.assertIn("3 steps in a row", step["stopped"])
 
     def test_crashes_with_a_good_step_between_do_not_stop(self):
         state = {"results": [_done(rv.VARIANTS[0], "bugcheck"), _done(rv.VARIANTS[1], "ok")]}

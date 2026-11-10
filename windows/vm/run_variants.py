@@ -130,7 +130,8 @@ def _step(step_id):
     raise KeyError(step_id)
 
 
-MAX_CRASHES_IN_A_ROW = 3
+MAX_CRASHES_IN_A_ROW = 3          # across routes: the driver takes Windows down everywhere
+MAX_CHANNEL_CRASHES_PER_ROUTE = 2  # once the route is up: the rest of that route is skipped
 
 
 def _skip_route(state, route, done, why):
@@ -148,13 +149,28 @@ def _route_broken(r):
     return r.get("phase") == "route" and r.get("verdict") in ("bugcheck", "interrupted", "hung")
 
 
+def _channel_crash(r):
+    """A bluescreen in a variant after its route was set up (the channel phase)."""
+    return (r.get("kind") == "variant" and r.get("verdict") == "bugcheck" and r.get("route")
+            and r.get("phase") != "route" and not (r.get("crash") or {}).get("at_boot"))
+
+
+def channel_crashes(state, route):
+    return sum(1 for r in state["results"] if _channel_crash(r) and r.get("route") == route)
+
+
 def crashes_in_a_row(state):
-    n = 0
+    """Bluescreens in a row (skipped steps do not break the row). A row made only
+    of one route's variants does not count: that route is skipped after
+    MAX_CHANNEL_CRASHES_PER_ROUTE instead, and the other route still runs."""
+    row = []
     for r in sorted(state["results"], key=lambda r: r["id"]):
         if r["verdict"] == "skipped":
             continue
-        n = n + 1 if r["verdict"] == "bugcheck" else 0
-    return n
+        row = row + [r] if r["verdict"] == "bugcheck" else []
+    if row and all(r.get("kind") == "variant" for r in row) and len({r.get("route") for r in row}) == 1:
+        return 0
+    return len(row)
 
 
 def next_variants(state, marker):
@@ -163,7 +179,9 @@ def next_variants(state, marker):
     "interrupted" when round.ps1 found no crash record). A crash while the
     route was being set up, or at boot (the driver crashed as soon as Windows
     loaded it), skips that route's other variants, which would only crash the
-    same way. After MAX_CRASHES_IN_A_ROW bluescreens in a row the round stops."""
+    same way. MAX_CHANNEL_CRASHES_PER_ROUTE crashes once a route is up skip the
+    rest of that route, so the other route still runs. After MAX_CRASHES_IN_A_ROW
+    bluescreens in a row that span routes (or checks) the round stops."""
     done = {r["id"] for r in state["results"]}
     if marker and marker.get("id") in done:
         marker = None
@@ -188,6 +206,11 @@ def next_variants(state, marker):
             where = "at boot" if crash.get("at_boot") else "while the route was set up"
             _skip_route(state, step["route"], done, "skipped: route %s took Windows down %s in step %d"
                         % (step["route"], where, step["id"]))
+    for route in ("root", "bthenum"):
+        n = channel_crashes(state, route)
+        if n >= MAX_CHANNEL_CRASHES_PER_ROUTE:
+            _skip_route(state, route, done, "skipped: route %s took Windows down in %d variants once "
+                        "the route was up" % (route, n))
     n = crashes_in_a_row(state)
     if n >= MAX_CRASHES_IN_A_ROW:
         state.setdefault("meta", {})["stopped"] = ("Windows crashed (bluescreen) in %d steps in a row; the round stopped "
