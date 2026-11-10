@@ -19,7 +19,7 @@
     <KMDF_VERSION_MINOR>15</KMDF_VERSION_MINOR>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <WdkNuGetVersion>10.0.26100.6584</WdkNuGetVersion>
+    <WdkNuGetVersion>10.0.28000.2526</WdkNuGetVersion>
   </PropertyGroup>
   <!-- WDK and SDK from NuGet (same imports as Microsoft's Windows-driver-samples) -->
   <ImportGroup Label="WdkNuGet">
