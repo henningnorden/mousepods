@@ -96,13 +96,12 @@ if ($ok) {
             '/v:normal', '/clp:NoSummary;ForceNoAlign')
         $seen = @{}
         foreach ($line in $outputs['msbuild']) {
-            $text = $line.Trim()
+            # "2>" is the msbuild node prefix; matches are case-sensitive because
+            # analysis messages contain words like "Error annotation".
+            $text = $line.Trim() -replace '^\d+>', ''
             if ($seen.ContainsKey($text)) { continue }
             $seen[$text] = $true
-            if ($text -match ':\s+(fatal )?error\s+\w+') {
-                $failing.Add($text)
-                Annotate 'error' 'build error' $text
-            } elseif ($text -match ':\s+warning\s+C(\d+)') {
+            if ($text -cmatch ':\s+warning\s+C(\d+)') {
                 $code = [int]$Matches[1]
                 if (($code -ge 6000 -and $code -lt 7000) -or ($code -ge 26000 -and $code -lt 34000)) {
                     $analyzeFindings.Add($text)
@@ -111,7 +110,10 @@ if ($ok) {
                     $compilerWarnings.Add($text)
                     Annotate 'warning' 'compiler' $text
                 }
-            } elseif ($text -match ':\s+warning\s+\w+') {
+            } elseif ($text -cmatch ':\s+(fatal\s+)?error\s+\w+') {
+                $failing.Add($text)
+                Annotate 'error' 'build error' $text
+            } elseif ($text -cmatch ':\s+warning\s+\w+') {
                 $compilerWarnings.Add($text)
                 Annotate 'warning' 'build' $text
             }

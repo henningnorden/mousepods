@@ -244,6 +244,9 @@ Mpl2AllocBuffers(_In_ PMPL2_DEVICE Dev, _In_ USHORT Mtu)
     PVOID rxData = NULL;
     PVOID ringData = NULL;
 
+    if (Mtu == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     attributes.ParentObject = Dev->Device;
     status = WdfMemoryCreate(&attributes, NonPagedPoolNx, MPL2_POOLTAG, Mtu, &rx, &rxData);
