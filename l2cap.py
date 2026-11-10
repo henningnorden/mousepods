@@ -11,6 +11,7 @@ import os
 import re
 import socket
 import struct
+import sys
 
 AF_BLUETOOTH = 31
 BTPROTO_L2CAP = 0
@@ -45,6 +46,9 @@ def _security_and_mtu(get, set_, mtu):
 
 
 def open_seqpacket(addr, psm, mtu, timeout):
+    if sys.platform == "win32":
+        import l2cap_win
+        return l2cap_win.open_seqpacket(addr, psm, mtu, timeout, security="encrypt")
     if _has_native():
         s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         try:

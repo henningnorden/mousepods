@@ -73,6 +73,14 @@ class L2capTests(unittest.TestCase):
             s.close()
             libc.b.close()
 
+    def test_windows_dispatch(self):
+        import l2cap_win
+        with mock.patch.object(l2cap.sys, "platform", "win32"), \
+                mock.patch.object(l2cap_win, "open_seqpacket", return_value="chan") as opener:
+            got = l2cap.open_seqpacket("AA:BB:CC:DD:EE:FF", 0x1001, 2582, 8)
+        self.assertEqual(got, "chan")
+        opener.assert_called_once_with("AA:BB:CC:DD:EE:FF", 0x1001, 2582, 8, security="encrypt")
+
     def test_bad_address_rejected(self):
         with self.assertRaises(ValueError):
             l2cap.pack_sockaddr_l2("not-an-address", 1)
