@@ -303,6 +303,18 @@ class MaskTests(unittest.TestCase):
                 with self.assertRaises(rv.MaskError):
                     rv.mask_dir(d, (), [FULL])
 
+    def test_mask_dir_refuses_utf16_leftovers(self):
+        for enc, bom in (("utf-16-le", b"\xff\xfe"), ("utf-16-be", b"\xfe\xff")):
+            for form in rv.addr_forms(FULL):
+                for text in (form, form.lower()):
+                    with self.subTest(enc=enc, form=text), tempfile.TemporaryDirectory() as d:
+                        with open(os.path.join(d, "pnputil.txt"), "wb") as f:
+                            f.write(bom + ("device BTHENUM\\%s&0\r\n" % text).encode(enc))
+                        with self.assertRaises(rv.MaskError) as cm:
+                            rv.mask_dir(d, (), [FULL])
+                        self.assertIn("pnputil.txt", str(cm.exception))
+                        self.assertNotIn(FULL, str(cm.exception))
+
     def test_mask_dir_keeps_crlf_bom_and_other_bytes(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "report.md")

@@ -361,7 +361,10 @@ def mask_dir(d, hide=(), addrs=()):
                 low = f.read().lower()
             for addr in addrs:
                 for form in addr_forms(addr):
-                    if form.lower().encode() in low:
+                    # UTF-16 too (Windows tools write it; the masking above only reads UTF-8),
+                    # so such a file is refused rather than pushed. bytes.lower() only touches
+                    # ASCII letters, which is what the UTF-16 forms of hex digits are made of.
+                    if any(form.lower().encode(enc) in low for enc in ("ascii", "utf-16-le", "utf-16-be")):
                         left.append("%s (%s)" % (os.path.relpath(path, d), mask_addr(addr)))
     if left:
         raise MaskError("a full Bluetooth address is still in: %s" % ", ".join(sorted(set(left))))
