@@ -1,0 +1,73 @@
+; SPDX-License-Identifier: Apache-2.0
+; MousePods L2CAP driver: opens the AirPods' AAP channel (PSM 0x1001) for
+; the MousePods user-mode program.
+;
+; Two ways to load it:
+;   Root\MousePodsL2cap   route a, a root-enumerated device that talks to the
+;                         local radio (pnputil /add-driver ... /install, then
+;                         create the root device)
+;   BTHENUM\{6d0e3c52-4f1b-4c9a-9a51-2f0b8e7d1a02}
+;                         route b, enumerated by BTHENUM once this service is
+;                         enabled on the paired AirPods (BluetoothSetServiceState)
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider    = %ProviderName%
+CatalogFile = MousePodsL2cap.cat
+DriverVer   = 11/10/2026,1.0.0.0
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+MousePodsL2cap.sys = 1,,
+
+[Manufacturer]
+%ManufacturerName% = MousePods,NTamd64.10.0...16299
+
+[MousePods.NTamd64.10.0...16299]
+%DeviceDesc.Root% = MousePodsL2cap_Inst, Root\MousePodsL2cap
+%DeviceDesc.Bth%  = MousePodsL2cap_Inst, BTHENUM\{6d0e3c52-4f1b-4c9a-9a51-2f0b8e7d1a02}
+
+[MousePodsL2cap_Inst.NT]
+CopyFiles = MousePodsL2cap_CopyFiles
+
+[MousePodsL2cap_CopyFiles]
+MousePodsL2cap.sys
+
+[MousePodsL2cap_Inst.NT.HW]
+AddReg = MousePodsL2cap_Security
+
+; System and administrators: full access; the interactive user: read/write.
+[MousePodsL2cap_Security]
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
+
+[MousePodsL2cap_Inst.NT.Services]
+AddService = MousePodsL2cap, 0x00000002, MousePodsL2cap_Service
+
+[MousePodsL2cap_Service]
+DisplayName   = %ServiceDesc%
+ServiceType   = 1               ; SERVICE_KERNEL_DRIVER
+StartType     = 3               ; SERVICE_DEMAND_START
+ErrorControl  = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary = %13%\MousePodsL2cap.sys
+
+[MousePodsL2cap_Inst.NT.Wdf]
+KmdfService = MousePodsL2cap, MousePodsL2cap_WdfSection
+
+[MousePodsL2cap_WdfSection]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+ProviderName     = "MousePods"
+ManufacturerName = "MousePods"
+DiskName         = "MousePods L2CAP driver installation disk"
+DeviceDesc.Root  = "MousePods L2CAP channel (root)"
+DeviceDesc.Bth   = "MousePods L2CAP channel (Bluetooth service)"
+ServiceDesc      = "MousePods L2CAP driver"

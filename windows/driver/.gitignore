@@ -1,0 +1,5 @@
+packages/
+x64/
+out/
+*.user
+.vs/

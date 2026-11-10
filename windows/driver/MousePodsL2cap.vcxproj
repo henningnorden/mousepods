@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- MousePods L2CAP driver (KMDF). Built with the WDK from NuGet: restore packages.config into packages\ first. -->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{BE1C8ED0-6EF9-4BED-A2CA-A05C86F27427}</ProjectGuid>
+    <RootNamespace>MousePodsL2cap</RootNamespace>
+    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
+    <KMDF_VERSION_MINOR>15</KMDF_VERSION_MINOR>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <WdkNuGetVersion>10.0.26100.6584</WdkNuGetVersion>
+  </PropertyGroup>
+  <!-- WDK and SDK from NuGet (same imports as Microsoft's Windows-driver-samples) -->
+  <ImportGroup Label="WdkNuGet">
+    <Import Project="packages\Microsoft.Windows.WDK.x64.$(WdkNuGetVersion)\build\native\Microsoft.Windows.WDK.x64.props" />
+    <Import Project="packages\Microsoft.Windows.SDK.CPP.x64.$(WdkNuGetVersion)\build\native\Microsoft.Windows.SDK.cpp.x64.props" />
+    <Import Project="packages\Microsoft.Windows.SDK.CPP.$(WdkNuGetVersion)\build\native\Microsoft.Windows.SDK.cpp.props" />
+  </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <DriverTargetPlatform>Windows Driver</DriverTargetPlatform>
+    <DriverType>KMDF</DriverType>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <!-- Signed by the CI script with its own test certificate -->
+    <SignMode>Off</SignMode>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)' == 'Debug'">
+    <UseDebugLibraries>True</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)' == 'Release'">
+    <UseDebugLibraries>False</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <TargetName>MousePodsL2cap</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <WppEnabled>false</WppEnabled>
+    </ClCompile>
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="driver.c" />
+    <ClCompile Include="device.c" />
+    <ClCompile Include="queue.c" />
+    <ClCompile Include="l2cap.c" />
+    <ClCompile Include="log.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="driver.h" />
+    <ClInclude Include="log.h" />
+    <ClInclude Include="public.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="MousePodsL2cap.inf" />
+    <FilesToPackage Include="$(TargetPath)" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
