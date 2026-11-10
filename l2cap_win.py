@@ -112,10 +112,6 @@ class DriverError(OSError):
     """The driver reported a failure; stage 0 means refused before anything was sent."""
 
     def __init__(self, ntstatus, bt_status, stage, winerror=None):
-        self.ntstatus = ntstatus
-        self.bt_status = bt_status
-        self.stage = stage
-        self.winerror = winerror
         what = STAGE_NAMES.get(stage, "refused before sending" if stage == 0 else "stage %d" % stage)
         if winerror is not None:
             msg = "L2CAP driver: %s (Win32 error %d)" % (what, winerror)
@@ -123,6 +119,11 @@ class DriverError(OSError):
             msg = "L2CAP driver: %s failed (NTSTATUS 0x%08X, Bluetooth status 0x%X)" % (
                 what, ntstatus & 0xFFFFFFFF, bt_status)
         super().__init__(msg)
+        # after OSError.__init__: on Windows it resets the winerror slot
+        self.ntstatus = ntstatus
+        self.bt_status = bt_status
+        self.stage = stage
+        self.winerror = winerror
 
 
 def _raise_win(err, what):

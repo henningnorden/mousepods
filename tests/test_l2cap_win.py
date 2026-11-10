@@ -266,6 +266,20 @@ class ChannelTest(unittest.TestCase):
         self.assertEqual(fake.closed, [HANDLE])
 
 
+class DriverErrorTest(unittest.TestCase):
+    def test_attributes_set_after_oserror_init(self):
+        # On Windows OSError.__init__ resets winerror, so the attributes must be
+        # assigned after super().__init__; Linux cannot show that, so check the order.
+        import inspect
+        src = inspect.getsource(l2cap_win.DriverError.__init__)
+        self.assertLess(src.index("super().__init__"), src.index("self.winerror ="))
+        self.assertLess(src.index("super().__init__"), src.index("self.stage ="))
+
+    def test_attributes(self):
+        e = l2cap_win.DriverError(-5, 6, 0, winerror=170)
+        self.assertEqual((e.ntstatus, e.bt_status, e.stage, e.winerror), (-5, 6, 0, 170))
+
+
 class InfoTest(unittest.TestCase):
     def test_driver_info(self):
         fake = FakeDriver()
