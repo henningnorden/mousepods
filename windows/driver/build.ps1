@@ -18,9 +18,9 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-Set-Location $PSScriptRoot
 $null = New-Item -ItemType Directory -Force $OutDir
 $OutDir = (Resolve-Path $OutDir).Path
+Set-Location $PSScriptRoot
 $pkg = Join-Path $OutDir 'pkg'
 Remove-Item -Recurse -Force $pkg -ErrorAction SilentlyContinue
 $null = New-Item -ItemType Directory -Force $pkg
@@ -76,12 +76,15 @@ $ok = Invoke-Step 'nuget restore' 'nuget' @('restore', 'packages.config', '-Pack
 # 2. Build with /analyze
 $built = $false
 if ($ok) {
+    # The WDK 10.0.26100 build tasks exist for MSBuild 17 only: use Visual Studio 2022.
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+    $msbuild = & $vswhere -latest -products * -version '[17.0,18.0)' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+    $instances = @(& $vswhere -all -products * -format value -property installationPath)
     if (-not $msbuild) {
-        $failing.Add('MSBuild not found')
-        Skip-Step 'msbuild' 'MSBuild not found'
+        $failing.Add("MSBuild 17 (Visual Studio 2022) not found; installed: $($instances -join '; ')")
+        Skip-Step 'msbuild' 'MSBuild 17 not found'
     } else {
+        $steps.Add([pscustomobject]@{ Name = 'Visual Studio'; Ok = $true; Detail = "$msbuild (installed: $($instances -join '; '))" })
         $built = Invoke-Step 'msbuild' $msbuild @(
             'MousePodsL2cap.sln', '/m', '/nologo', '/t:Rebuild',
             "/p:Configuration=$Configuration", '/p:Platform=x64', '/p:RunCodeAnalysis=true',
