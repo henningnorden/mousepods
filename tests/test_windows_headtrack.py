@@ -120,6 +120,58 @@ class RunTests(unittest.TestCase):
             self.assertEqual(ht.classify(res), kind, exc)
 
 
+class ResetSock(FakeSock):
+    """Raises ConnectionResetError once the packets are used up, or on the nth send."""
+
+    def __init__(self, packets=(), fail_send_at=None):
+        super().__init__(packets)
+        self.fail_send_at = fail_send_at
+
+    def send(self, p):
+        if self.fail_send_at is not None and len(self.sent) >= self.fail_send_at:
+            raise ConnectionResetError("reset")
+        super().send(p)
+
+    def recv(self, n):
+        if self.packets:
+            return self.packets.pop(0)
+        raise ConnectionResetError("reset")
+
+
+class LinkLostTests(unittest.TestCase):
+    def _run(self, sock):
+        with mock.patch.object(amc.time, "sleep"), mock.patch.object(amc, "log"):
+            return ht.run(lambda addr: sock, "AA:BB:CC:DD:EE:FF", "2013", 2.0,
+                          clock=FakeClock(0.0005), out=lambda s: None)
+
+    def test_reset_during_attach(self):
+        sock = ResetSock(fail_send_at=1)
+        res = self._run(sock)
+        self.assertTrue(sock.closed)
+        self.assertIn("ConnectionResetError", res["error"])
+        self.assertEqual(ht.classify(res), "link_lost")
+        self.assertFalse(res["ok"])
+
+    def test_reset_before_any_block(self):
+        sock = ResetSock()
+        res = self._run(sock)
+        self.assertTrue(sock.closed)
+        self.assertIn("ConnectionResetError", res["error"])
+        self.assertEqual(ht.classify(res), "link_lost")
+
+    def test_reset_after_blocks(self):
+        sock = ResetSock(capture_packets())
+        res = self._run(sock)
+        self.assertGreater(res["blocks"], 0)
+        self.assertIn("ConnectionResetError", res["error"])
+        self.assertEqual(ht.classify(res), "ok")
+        self.assertTrue(res["ok"])
+
+    def test_clean_run_has_no_error(self):
+        res = self._run(FakeSock(capture_packets()))
+        self.assertIsNone(res["error"])
+
+
 class ClassifyTests(unittest.TestCase):
     def test_classify(self):
         def r(**kw):
@@ -127,10 +179,12 @@ class ClassifyTests(unittest.TestCase):
             base.update(kw)
             return base
         self.assertEqual(ht.classify(r(blocks=5, first_reply_ms=20)), "ok")
-        for st in (1, 2, 4):
+        for st in (1, 2, 4, 5):
             self.assertEqual(ht.classify(r(stage=st)), "windows_refused")
         self.assertEqual(ht.classify(r(stage=3)), "airpods_refused")
         self.assertEqual(ht.classify(r()), "no_answer")
+        self.assertEqual(ht.classify(r(error="ConnectionResetError: x")), "link_lost")
+        self.assertEqual(ht.classify(r(blocks=3, error="ConnectionResetError: x")), "ok")
         self.assertEqual(ht.classify(r(first_reply_ms=30)), "no_motion")
         self.assertEqual(ht.classify(r(stage=0)), "refused_by_policy")
 

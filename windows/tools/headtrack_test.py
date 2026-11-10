@@ -26,6 +26,8 @@ PRINT_EVERY_S = 0.1
 def classify(result):
     if result.get("blocks", 0) > 0:
         return "ok"
+    if result.get("error"):
+        return "link_lost"      # channel was open but attach, start or read failed before any block
     stage = result.get("stage")
     if stage in (1, 2, 4, 5):
         return "windows_refused"
@@ -50,7 +52,7 @@ def euler_zyx(q):
 def _result(**kw):
     res = {"ok": False, "stage": None, "ntstatus": None, "bt_status": None,
            "first_reply_ms": None, "blocks": 0, "rate_hz": 0.0,
-           "yaw_span_deg": 0.0, "dropped": 0}
+           "yaw_span_deg": 0.0, "dropped": 0, "error": None}
     res.update(kw)
     return res
 
@@ -79,13 +81,17 @@ def run(channel_factory, addr, pid, seconds, clock=time.monotonic, out=print):
     yaws = []
     last = None
     win_blocks, win_t = 0, t0
+    error = None
     try:
-        t0 = clock()    # attach sends PKT_HANDSHAKE first; replies are timed from here
-        win_t = t0
-        client.attach(chan, addr, pid)
-        client.start_tracking()
-        chan.settimeout(0.2)
-        while True:
+        t0 = win_t = clock()    # attach sends PKT_HANDSHAKE first; replies are timed from here
+        try:
+            client.attach(chan, addr, pid)
+            client.start_tracking()
+            chan.settimeout(0.2)
+        except OSError as e:
+            out("start failed: %s" % e)
+            error = "%s: %s" % (type(e).__name__, e)
+        while error is None:
             now = clock()
             if now - t0 >= seconds:
                 break
@@ -97,6 +103,7 @@ def run(channel_factory, addr, pid, seconds, clock=time.monotonic, out=print):
                 continue
             except OSError as e:
                 out("read failed: %s" % e)
+                error = "%s: %s" % (type(e).__name__, e)
                 break
             now = clock()
             if first_reply is None:
@@ -129,7 +136,7 @@ def run(channel_factory, addr, pid, seconds, clock=time.monotonic, out=print):
         first_reply_ms=first_reply, blocks=blocks,
         rate_hz=round((blocks - 1) / span, 1) if span > 0 else 0.0,
         yaw_span_deg=round(max(yaws) - min(yaws), 1) if yaws else 0.0,
-        dropped=int(getattr(chan, "dropped", 0) or 0),
+        error=error, dropped=int(getattr(chan, "dropped", 0) or 0),
         ntstatus=co.get("ntstatus"), bt_status=co.get("bt_status"))
     res["ok"] = blocks > 0
     return res
@@ -142,7 +149,8 @@ def main(argv=None):
                     help="product id; default None takes the SensorDataWX path (AirPods Pro 2); AirPods 3 is 2013")
     ap.add_argument("--mtu", type=int, default=2582)
     ap.add_argument("--security", default="encrypt", choices=sorted(l2cap_win.SECURITY))
-    ap.add_argument("--seconds", type=float, default=20)
+    ap.add_argument("--seconds", type=float, default=20,
+                    help="run time in seconds, including the ~0.6 s start sequence")
     ap.add_argument("--json", default=None, help="write the result here")
     a = ap.parse_args(argv)
 
