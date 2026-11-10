@@ -4,7 +4,8 @@
 # a self-made certificate and writes a Markdown report (failing lines first).
 #
 # Used by .github/workflows/windows-driver.yml; also runs on a Windows machine
-# with Visual Studio 2022 (C++ workload) and nuget.exe on PATH.
+# with Visual Studio 2026 (C++ workload; the WDK 10.0.28000 build tasks need
+# MSBuild 18) and nuget.exe on PATH.
 #
 #   pwsh windows/driver/build.ps1 [-OutDir out] [-Title "local build"]
 #

@@ -19,7 +19,8 @@ GitHub Actions builds the driver on every push to the `windows-l2cap-driver` bra
 (`/analyze`), InfVerif, and test signing with a certificate made for that build. The report and
 the test-signed `driver.zip` land on the `vm-results` branch under `ci/`.
 
-Locally on Windows (Visual Studio 2022 with the C++ workload, `nuget.exe` on `PATH`):
+Locally on Windows (Visual Studio 2026 with the C++ workload, `nuget.exe` on `PATH`; WDK
+10.0.28000 from NuGet, whose build tasks need MSBuild 18):
 
     pwsh windows/driver/build.ps1
 
