@@ -6,6 +6,7 @@ Run:  python -m unittest tests.test_run_variants -v
 import io
 import os
 import queue
+import re
 import sys
 import tempfile
 import unittest
@@ -209,6 +210,33 @@ class ReportTests(unittest.TestCase):
         text = rv.render_report(res)
         self.assertIn("no variant opened the channel (AirPods refused", text)
         self.assertIn("ok 0 / 16", text)
+
+    def test_no_response_and_driver_busy_are_their_own_verdicts(self):
+        vs = _variants()
+        res = [_done(v, "no_response", result={"stage": 3, "ntstatus": 0xC00000B5 - (1 << 32),
+                                               "bt_status": 0}) for v in vs[:10]]
+        res += [_done(v, "driver_busy", result={"stage": 0, "winerror": 170}) for v in vs[10:]]
+        text = rv.render_report(res)
+        outcome = text.splitlines()[2]
+        self.assertIn("no variant opened the channel", outcome)
+        self.assertIn("no response to the connect request in 10", outcome)
+        self.assertIn("driver busy with another handle in 6", outcome)
+        self.assertNotIn("AirPods refused", outcome)
+        self.assertNotIn("refused by the driver", outcome)
+        self.assertIn("- `no_response`:", text)
+        self.assertIn("- `driver_busy`:", text)
+        self.assertIn("NTSTATUS 0xC00000B5", text)
+        self.assertIn("ERROR_BUSY", text)
+
+    def test_legend_covers_every_verdict_classify_returns(self):
+        import headtrack_test as ht
+        legend = {k for k, _ in rv.LEGEND}
+        for name in ("ok", "link_lost", "driver_busy", "windows_refused", "no_response",
+                     "airpods_refused", "refused_by_policy", "no_answer", "no_motion"):
+            self.assertIn(name, legend)
+        import inspect
+        for name in re.findall(r'return "([a-z_]+)"', inspect.getsource(ht.classify)):
+            self.assertIn(name, legend)
 
     def test_outcome_when_only_windows_refused(self):
         text = rv.render_report([_done(v, "windows_refused") for v in _variants()])

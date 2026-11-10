@@ -110,6 +110,15 @@ class RunTests(unittest.TestCase):
             (l2cap_win.DriverError(0xC0000001, 7, 3), "airpods_refused", 3, 0xC0000001),
             (l2cap_win.DriverError(0xC0000001, 0, 0), "refused_by_policy", 0, 0xC0000001),
             (FileNotFoundError("driver"), "windows_refused", 1, None),
+            # stage 3 timed out or cancelled: nobody answered, the AirPods did not refuse
+            (l2cap_win.DriverError(-0x3FFFFF4B, 0, 3), "no_response", 3, -0x3FFFFF4B),   # 0xC00000B5
+            (l2cap_win.DriverError(0xC00000B5, 0, 3), "no_response", 3, 0xC00000B5),
+            (l2cap_win.DriverError(0xC0000120, 0, 3), "no_response", 3, 0xC0000120),
+            (l2cap_win.DriverError(0xC00000B5, 0, 2), "windows_refused", 2, 0xC00000B5),
+            # a second handle while one is open: the driver is busy, not a policy refusal
+            (l2cap_win.DriverError(0, 0, 0, winerror=l2cap_win.ERROR_BUSY), "driver_busy", 0, 0),
+            (l2cap_win.DriverError(0, 0, 0, winerror=l2cap_win.ERROR_INVALID_PARAMETER),
+             "refused_by_policy", 0, 0),
         ]
         for exc, kind, stage, nt in cases:
             res = ht.run(boom(exc), "AA:BB:CC:DD:EE:FF", None, 1.0, clock=FakeClock(),
@@ -187,6 +196,17 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(ht.classify(r(blocks=3, error="ConnectionResetError: x")), "ok")
         self.assertEqual(ht.classify(r(first_reply_ms=30)), "no_motion")
         self.assertEqual(ht.classify(r(stage=0)), "refused_by_policy")
+        self.assertEqual(ht.classify(r(stage=3, ntstatus=0xC00000B5)), "no_response")
+        self.assertEqual(ht.classify(r(stage=3, ntstatus=0xC0000120 - (1 << 32))), "no_response")
+        self.assertEqual(ht.classify(r(stage=3, ntstatus=0xC0000001)), "airpods_refused")
+        self.assertEqual(ht.classify(r(stage=0, winerror=170)), "driver_busy")
+
+    def test_oserror_with_error_busy_is_driver_busy(self):
+        e = OSError(16, "busy")
+        e.winerror = 170        # what Windows sets on an OSError from a Win32 error
+        res = ht._open_failure(e)
+        self.assertEqual(res["winerror"], 170)
+        self.assertEqual(ht.classify(res), "driver_busy")
 
 
 class ImportTests(unittest.TestCase):

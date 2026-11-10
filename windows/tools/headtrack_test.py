@@ -22,16 +22,26 @@ import l2cap_win  # noqa: E402
 NO_ANSWER_S = 3.0
 PRINT_EVERY_S = 0.1
 
+# NTSTATUS values at stage 3 that mean nobody answered the connect request (the
+# stack timed out or gave up), not that the AirPods said no
+STATUS_IO_TIMEOUT = 0xC00000B5
+STATUS_CANCELLED = 0xC0000120
+NO_RESPONSE_STATUSES = (STATUS_IO_TIMEOUT, STATUS_CANCELLED)
+
 
 def classify(result):
     if result.get("blocks", 0) > 0:
         return "ok"
     if result.get("error"):
         return "link_lost"      # channel was open but attach, start or read failed before any block
+    if result.get("winerror") == l2cap_win.ERROR_BUSY:
+        return "driver_busy"    # another handle holds the driver's one channel
     stage = result.get("stage")
     if stage in (1, 2, 4, 5):
         return "windows_refused"
     if stage == 3:
+        if ((result.get("ntstatus") or 0) & 0xFFFFFFFF) in NO_RESPONSE_STATUSES:
+            return "no_response"
         return "airpods_refused"
     if stage == 0:
         return "refused_by_policy"
@@ -52,16 +62,19 @@ def euler_zyx(q):
 def _result(**kw):
     res = {"ok": False, "stage": None, "ntstatus": None, "bt_status": None,
            "first_reply_ms": None, "blocks": 0, "rate_hz": 0.0,
-           "yaw_span_deg": 0.0, "dropped": 0, "error": None}
+           "yaw_span_deg": 0.0, "dropped": 0, "error": None, "winerror": None}
     res.update(kw)
     return res
 
 
 def _open_failure(exc):
+    winerror = getattr(exc, "winerror", None)
     if isinstance(exc, l2cap_win.DriverError):
-        return _result(stage=exc.stage, ntstatus=exc.ntstatus, bt_status=exc.bt_status)
+        return _result(stage=exc.stage, ntstatus=exc.ntstatus, bt_status=exc.bt_status, winerror=winerror)
     if isinstance(exc, PermissionError):
-        return _result(stage=0)
+        return _result(stage=0, winerror=winerror)
+    if winerror == l2cap_win.ERROR_BUSY:
+        return _result(stage=0, winerror=winerror)
     return _result(stage=1)     # driver not installed or other failure before a channel exists
 
 

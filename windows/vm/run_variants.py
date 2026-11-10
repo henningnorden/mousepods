@@ -410,10 +410,13 @@ LEGEND = [
     ("ok", "the channel opened and motion data arrived"),
     ("windows_refused", "Windows' Bluetooth stack refused (BRB status, stages 1, 2, 4, 5)"),
     ("airpods_refused", "the AirPods refused the L2CAP connection (stage 3, connect result)"),
+    ("no_response", "nobody answered the connect request: the Bluetooth stack timed out or cancelled it "
+                    "(stage 3, STATUS_IO_TIMEOUT or STATUS_CANCELLED); not a refusal by the AirPods"),
     ("no_answer", "the channel opened, but the AirPods sent nothing within 3 s"),
     ("no_motion", "the channel opened and the AirPods answered, but sent no motion data"),
     ("link_lost", "the channel opened, then the link failed before motion arrived"),
     ("refused_by_policy", "the driver refused before sending anything"),
+    ("driver_busy", "the driver was busy (ERROR_BUSY): another handle still held its one channel"),
     ("route_not_loaded", "the requested load route did not load; the channel was not tried"),
     ("bugcheck", "Windows crashed (bluescreen) during this step"),
     ("interrupted", "Windows restarted during this step without a crash record"),
@@ -423,7 +426,9 @@ LEGEND = [
 ]
 
 _FURTHEST = [("no_answer", "no answer"), ("airpods_refused", "AirPods refused"),
-             ("windows_refused", "Windows refused"), ("refused_by_policy", "refused by the driver")]
+             ("no_response", "no response to the connect request"),
+             ("windows_refused", "Windows refused"), ("driver_busy", "driver busy with another handle"),
+             ("refused_by_policy", "refused by the driver")]
 
 
 def _hex32(v):
@@ -446,6 +451,11 @@ def explain(rec):
         bt = r.get("bt_status") or 0
         return "AirPods refused: L2CAP connect result 0x%04X, NTSTATUS %s" % (
             (bt >> 16) & 0xFFFF, _hex32(r.get("ntstatus")))
+    if v == "no_response":
+        return "no response to the connect request (stage 3): NTSTATUS %s, Bluetooth status 0x%X" % (
+            _hex32(r.get("ntstatus")), (r.get("bt_status") or 0) & 0xFF)
+    if v == "driver_busy":
+        return "the driver was busy with another handle (ERROR_BUSY)"
     if v == "no_answer":
         return "channel open, the AirPods sent nothing within %d s" % ht.NO_ANSWER_S
     if v == "no_motion":
