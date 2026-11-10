@@ -323,14 +323,13 @@ def mask_dir(d, hide=(), addrs=()):
             path = os.path.join(root, name)
             with open(path, "rb") as f:
                 raw = f.read()
-            try:
-                text = raw.decode("utf-8-sig")
-            except UnicodeDecodeError:
-                continue            # not text; the check below still looks at the bytes
+            # bytes in, bytes out: line endings (CRLF on Windows), a BOM and bytes
+            # that are not UTF-8 stay exactly as they were, apart from what is masked
+            text = raw.decode("utf-8", "surrogateescape")
             masked = mask_text(text, hide, addrs)
             if masked != text:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(masked)
+                with open(path, "wb") as f:
+                    f.write(masked.encode("utf-8", "surrogateescape"))
     left = []
     for root, _, files in os.walk(d):
         for name in files:

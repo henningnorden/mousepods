@@ -314,6 +314,8 @@ function Reset-ResultsTree([string]$Sha) {
     return ($r.Code -eq 0)
 }
 
+# Returns 'pushed', 'failed' (network, key, git: can be pushed later with -Push) or
+# 'masking' (an address could not be masked: never pushed, not retried).
 function Push-RoundFolder([string]$Dir, [string]$Message) {
     $stamp = Split-Path $Dir -Leaf
     # one line, no double quotes (Windows PowerShell passes them to git unescaped)
@@ -321,7 +323,7 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
     if ($Message.Length -gt 200) { $Message = $Message.Substring(0, 197) + '...' }
     if (-not (Test-Path $KeyPath)) {
         Say "No deploy key at $KeyPath, so the round cannot be pushed." Red
-        return $false
+        return 'failed'
     }
     Use-DeployKey
     $last = ''
@@ -340,7 +342,12 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
                 $ma = @('mask', '--dir', $dest, '--state', $Dir, '--hide', $env:USERNAME, $env:COMPUTERNAME)
                 if ($script:Addr) { $ma += @('--addr', $script:Addr) }
                 $m = Invoke-Py $ma
-                if ($m.Code -ne 0) { $last = "masking failed, not pushing: $($m.Text)"; Remove-Item -Recurse -Force $dest; continue }
+                if ($m.Code -ne 0) {
+                    Remove-Item -Recurse -Force $dest
+                    $null = Reset-ResultsTree $f.Sha
+                    Say "Not pushing: an address could not be masked. $($m.Text)" Red
+                    return 'masking'
+                }
                 $null = Invoke-Git @('add', "rounds/$stamp") $ResultsTree
                 $c = Invoke-Git @('commit', '-q', '-m', $Message) $ResultsTree
                 if ($c.Code -ne 0) { $last = $c.Text; continue }
@@ -357,7 +364,7 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
             $p = Invoke-Git @('push', $PushUrl, 'HEAD:vm-results') $ResultsTree
             if ($p.Code -eq 0) {
                 Say "Pushed to vm-results: rounds/$stamp" Green
-                return $true
+                return 'pushed'
             }
             $last = $p.Text
             Say "Push attempt $attempt failed, trying again." Yellow
@@ -366,7 +373,7 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
         }
     }
     Say "Pushing failed: $last" Red
-    return $false
+    return 'failed'
 }
 
 # --- crash analysis -----------------------------------------------------------
@@ -641,8 +648,12 @@ function Finish-Round($Round, [string]$Fatal) {
     if ($Fatal) { $color = 'Red' }
     $lines = @('The round is finished.', $outcome)
     if ($Fatal) { $lines = @('The round stopped:', $Fatal, '', 'Fix this and run round.ps1 again.') }
-    if ($pushed) { $lines += @('', 'The report is on GitHub (vm-results branch). Nothing else to do.') }
-    else { $lines += @('', 'The report could NOT be pushed. It is kept here:', $dir,
+    if ($pushed -eq 'pushed') { $lines += @('', 'The report is on GitHub (vm-results branch). Nothing else to do.') }
+    elseif ($pushed -eq 'masking') {
+        $lines += @('', 'The report was NOT pushed: a Bluetooth address in it could not be masked,',
+            'and the fork is public. The round folder is kept on this VM only:', $dir,
+            'Tell Claude; do not push it by hand.')
+    } else { $lines += @('', 'The report could NOT be pushed. It is kept here:', $dir,
             "Push it later with: round.ps1 -Push `"$dir`"") }
     Banner $lines $color
     Close-Window
@@ -824,7 +835,7 @@ if (-not $isAdmin) {
 # -Resume, first of all (before Bluetooth reconnects the AirPods and loads the
 # driver through the service, route b): keep Windows from loading the driver.
 # Set-Route switches it back on for the next step.
-if ($Resume -or (Test-Path $ActivePath)) { Set-DriverStart 4 }
+if ($Resume -or ((Test-Path $ActivePath) -and -not $Push -and -not $Uninstall)) { Set-DriverStart 4 }
 
 New-Item -ItemType Directory -Force -Path $Data | Out-Null
 $script:Python = Find-Python
@@ -832,7 +843,7 @@ $script:Python = Find-Python
 if ($Push) {
     $ok = Push-RoundFolder $Push "VM round $(Split-Path $Push -Leaf), pushed later"
     Close-Window
-    if ($ok) { exit 0 } else { exit 1 }
+    if ($ok -eq 'pushed') { exit 0 } else { exit 1 }
 }
 
 if ($Uninstall) {
@@ -844,6 +855,7 @@ if ($Uninstall) {
         if ($pick) { $script:Addr = $pick.address }
     }
     $null = Remove-OldDrivers $log
+    Set-DriverStart 3       # in case a driver key is left behind
     if (Test-Path $CrashControlSaved) {
         $old = Get-Content $CrashControlSaved -Raw | ConvertFrom-Json
         $ccKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl'
@@ -867,7 +879,11 @@ if ($Uninstall) {
 if (-not $Resume -and (Test-Path $ActivePath)) {
     $answer = Read-Host 'An unfinished round exists. Continue it? [Y/n]'
     if ($answer -notmatch '^[nN]') { $Resume = $true }
-    else { Remove-Item $ActivePath, $MarkerPath -Force -ErrorAction SilentlyContinue; Unregister-ResumeTask }
+    else {
+        Remove-Item $ActivePath, $MarkerPath -Force -ErrorAction SilentlyContinue
+        Unregister-ResumeTask
+        Set-DriverStart 3       # no round is going on; a new one sets its route up itself
+    }
 }
 
 if ($Resume) {

@@ -263,10 +263,26 @@ class MaskTests(unittest.TestCase):
             rv.mask_dir(d, (), [FULL])
             with open(os.path.join(d, "sub", "x.txt")) as f:
                 self._assert_masked(f.read())
-            with open(os.path.join(d, "blob.bin"), "wb") as f:
-                f.write(b"\xff\xfe\x00" + FULL.replace(":", "").encode())
-            with self.assertRaises(rv.MaskError):
-                rv.mask_dir(d, (), [FULL])
+            with mock.patch.object(rv, "mask_text", side_effect=lambda t, *a, **k: t):
+                with open(os.path.join(d, "left.txt"), "w") as f:
+                    f.write(FULL)
+                with self.assertRaises(rv.MaskError):
+                    rv.mask_dir(d, (), [FULL])
+
+    def test_mask_dir_keeps_crlf_bom_and_other_bytes(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "report.md")
+            raw = (b"\xef\xbb\xbf| 1 | a |\r\n| 2 | radio " + FULL.encode() + b" |\r\n"
+                   b"bad \xff\xfe byte " + FULL.replace(":", "").encode() + b"\r\n")
+            with open(path, "wb") as f:
+                f.write(raw)
+            rv.mask_dir(d, (), [FULL])
+            with open(path, "rb") as f:
+                out = f.read()
+        want = (raw.replace(FULL.encode(), b"XX:XX:XX:XX:3F:A1")
+                .replace(FULL.replace(":", "").encode(), b"XXXXXXXX3FA1"))
+        self.assertEqual(out, want)
+        self.assertNotIn(b"\r\r\n", out)
 
     def test_mask_cli_uses_the_known_addresses_and_fails_closed(self):
         import shutil
@@ -282,8 +298,14 @@ class MaskTests(unittest.TestCase):
                 with open(os.path.join(copy, name)) as f:
                     self._assert_masked(f.read())
             with open(os.path.join(copy, "x.bin"), "wb") as f:
-                f.write(b"\xff" + FULL.encode())
-            self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 3)
+                f.write(b"\xff" + FULL.encode())       # not UTF-8: masked anyway
+            self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 0)
+            with open(os.path.join(copy, "x.bin"), "rb") as f:
+                self.assertEqual(f.read(), b"\xffXX:XX:XX:XX:3F:A1")
+            with open(os.path.join(copy, "left.txt"), "w") as f:
+                f.write(FULL)
+            with mock.patch.object(rv, "mask_text", side_effect=lambda t, *a, **k: t):
+                self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 3)
 
 
 class SetupCliTests(unittest.TestCase):
