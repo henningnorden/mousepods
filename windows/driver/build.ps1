@@ -76,13 +76,14 @@ $ok = Invoke-Step 'nuget restore' 'nuget' @('restore', 'packages.config', '-Pack
 # 2. Build with /analyze
 $built = $false
 if ($ok) {
+    # 64-bit MSBuild: the NuGet WDK has 64-bit host tools only.
     # The WDK ships its build tasks for one MSBuild major version only
     # (Microsoft.DriverKit.Build.Tasks.<major>.0.dll): pick the matching Visual Studio.
     $tasks = Find-Tool 'bin\Microsoft.DriverKit.Build.Tasks.1*.0.dll'
     $major = 18
     if ($tasks -and ((Split-Path $tasks -Leaf) -match 'Tasks\.(\d+)\.0\.dll$')) { $major = [int]$Matches[1] }
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $msbuild = & $vswhere -latest -products * -version "[$major.0,$($major + 1).0)" -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+    $msbuild = & $vswhere -latest -products * -version "[$major.0,$($major + 1).0)" -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\amd64\MSBuild.exe' | Select-Object -First 1
     $instances = @(& $vswhere -all -products * -format value -property installationPath)
     if (-not $msbuild) {
         $failing.Add("MSBuild $major not found (the WDK needs it); installed: $($instances -join '; ')")

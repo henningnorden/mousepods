@@ -19,6 +19,8 @@
     <KMDF_VERSION_MINOR>15</KMDF_VERSION_MINOR>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <!-- The NuGet WDK carries 64-bit host tools only (prefast plug-ins, InfVerif) -->
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
     <WdkNuGetVersion>10.0.28000.2526</WdkNuGetVersion>
   </PropertyGroup>
   <!-- WDK and SDK from NuGet (same imports as Microsoft's Windows-driver-samples) -->
