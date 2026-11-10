@@ -35,7 +35,7 @@ then four checks (a wrong PSM is refused, a second handle is refused, a killed p
 is cleaned up, a dropped link is reported). It takes about 10 minutes. At the end the script
 pushes its report to the `vm-results` branch, where it can be read without logging in to the VM.
 
-You only do steps 1 to 7 once.
+You only do steps 1 to 7 once. Then take the snapshot in step 7a.
 
 ### 1. Virtualization on Bazzite
 
@@ -123,6 +123,14 @@ title `MousePods VM`, paste the key, tick **Allow write access**, Add key.
 Do **not** add this key to the bypass list of the fork's ruleset (Settings > Rules > Rulesets):
 the ruleset is what keeps `main` and the tags safe from it.
 
+### 7a. A snapshot before the first round
+
+With everything set up, shut Windows down, and in virt-manager open the VM > Manage Snapshots
+(the camera icon) > **+** > name it `ready for rounds` > Finish. If Windows ever stops starting
+(it bluescreens at every start and Safe Mode does not help either), select that snapshot and
+click **Run selected snapshot** (the play button): the VM is back to this state. The reports
+already pushed to GitHub are not affected.
+
 ### 8. Run a round
 
 Before each round: wear the AirPods and make sure they play Windows' sound. Then, in PowerShell:
@@ -150,9 +158,19 @@ If the script picks the wrong AirPods, pass the address yourself:
 
 Nothing to do but **log in again**. Windows restarts by itself; after you log in, the round goes
 on with the next variant on its own (give it 20 seconds). The bluescreen is recorded in the
-report with the crash dump.
+report with the crash analysis (the dump itself stays on the VM).
 
 If nothing happens after logging in, double-click **Continue MousePods round** on the desktop.
+
+If Windows bluescreens again shortly after you log in (the AirPods reconnect and load the driver
+before the round gets going): put the AirPods into the case and close the lid, log in again and
+double-click **Continue MousePods round**. If that does not help, start Safe Mode: on the login
+screen click the power icon, hold **Shift** and click Restart, then Troubleshoot > Advanced
+options > Startup Settings > Restart > press **4**, and continue as below.
+
+If the round window has not changed for **5 minutes**, something in Windows hangs: restart Windows
+(Start > Power > Restart). After logging in, the round goes on and records that step as
+interrupted.
 
 If Windows bluescreens again while starting (before you can log in), the driver crashes as soon
 as Windows loads it. After two failed starts Windows shows a blue "Choose an option" screen:
@@ -166,14 +184,20 @@ would crash the same way.
 - If the report could not be pushed (no network, key problem), the window says where the round
   folder is. Push it later with
   `powershell -ExecutionPolicy Bypass -File windows\vm\round.ps1 -Push <that folder>`.
-- To remove the driver, the root device, the test certificates and the logon task:
+- To remove the driver, the root device, the test certificates and the logon task (and put the
+  crash dump settings back as they were):
   `powershell -ExecutionPolicy Bypass -File windows\vm\round.ps1 -Uninstall`.
 
 What is where: `vm/round.ps1` is the entry point, `vm/devnode.ps1` creates and removes the root
 device (what `devcon` does), `vm/run_variants.py` has the variant list, the checks and the
 report. The round folder on `vm-results` is `rounds/<date-time>/` with `report.md` (outcome
 first, failures first), `results.json`, `driver.log`, `setup.txt`, `install.txt`, `round.log`,
-`steps.log` and, after a bluescreen, `crash.txt` and the minidump.
+`steps.log` and, after a bluescreen, `crash.txt` (the crash analysis).
+
+The fork and `vm-results` are public, so before pushing the script masks every Bluetooth
+address down to its last two bytes (`XX:XX:XX:XX:3F:A1`) and removes the Windows user and
+computer names. Crash dumps hold memory contents and are never pushed; with `-KeepDump` the
+script keeps them in `C:\ProgramData\MousePods\dumps` on the VM only.
 
 ## Credits
 

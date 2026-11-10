@@ -17,7 +17,11 @@ again and the round goes on by itself (a logon task runs round.ps1 -Resume).
     -Resume     continue the unfinished round (the logon task and the desktop file use this)
     -Push DIR   push a round folder that could not be pushed before
     -Uninstall  remove the driver, the root device, the certificates and the logon task
+    -KeepDump   also keep bluescreen minidumps in %ProgramData%\MousePods\dumps (never pushed)
     -SelfTest   compile the C# helpers only (CI)
+
+Everything pushed is masked first: Bluetooth addresses keep only their last two
+bytes, and the Windows user and computer names are removed.
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +30,9 @@ param(
     [string]$Push,
     [switch]$Uninstall,
     [switch]$SelfTest,
-    [switch]$SkipUpdateCheck
+    [switch]$SkipUpdateCheck,
+    [switch]$KeepDump,
+    [switch]$FromTask
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +50,10 @@ $Branch = 'windows-l2cap-driver'
 $KeyPath = Join-Path $env:USERPROFILE '.ssh\mousepods_vm'
 $ServiceKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\MousePodsL2cap'
 $StepTimeoutS = 180
+$ToolTimeoutS = 180           # devnode.ps1, Bluetooth service switch, other helper calls
+$InstallTimeoutS = 300        # pnputil /add-driver, /delete-driver
+$CrashControlSaved = Join-Path $Data 'crashcontrol.json'
+$script:LogFile = $null
 $ResumeFile = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Continue MousePods round.cmd'
 
 $helperSource = @'
@@ -122,7 +132,13 @@ function Add-Helpers {
 
 # --- output -------------------------------------------------------------------
 
-function Say([string]$Text = '', [string]$Color = 'Gray') { Write-Host $Text -ForegroundColor $Color }
+# Everything shown also goes to round.log (masked before it is pushed).
+function Say([string]$Text = '', [string]$Color = 'Gray') {
+    Write-Host $Text -ForegroundColor $Color
+    if ($script:LogFile) {
+        try { Add-Content -Path $script:LogFile -Value "$(Get-Date -Format 'HH:mm:ss') $Text" -Encoding UTF8 } catch { $null = $_ }
+    }
+}
 
 function Banner([string[]]$Lines, [string]$Color = 'Yellow') {
     Say ''
@@ -182,6 +198,48 @@ function Invoke-Git([string[]]$ArgList, [string]$Dir = $Repo) {
     Invoke-Native 'git' (@('-c', 'safe.directory=*', '-C', $Dir) + $ArgList)
 }
 
+# Windows command-line quoting for one argument (CommandLineToArgvW rules).
+function Quote-Arg([string]$Arg) {
+    if ($Arg -ne '' -and $Arg -notmatch '[\s"]') { return $Arg }
+    $q = $Arg -replace '(\\*)"', '$1$1\"'
+    $q = $q -replace '(\\+)$', '$1$1'
+    return '"' + $q + '"'
+}
+
+# Like Invoke-Native, but in its own process with a time limit: driver-touching
+# helpers can block in the kernel, and the round must go on (or stop with a
+# report) instead of hanging. Code is 'timeout' when the limit was hit.
+function Invoke-Timed([string]$Exe, [string[]]$ArgList, [int]$TimeoutS = $ToolTimeoutS) {
+    $id = [guid]::NewGuid().ToString('N')
+    $o = Join-Path $env:TEMP "mousepods-$id.out"
+    $e = Join-Path $env:TEMP "mousepods-$id.err"
+    $line = ($ArgList | ForEach-Object { Quote-Arg $_ }) -join ' '
+    try {
+        $p = Start-Process -FilePath $Exe -ArgumentList $line -NoNewWindow -PassThru `
+            -RedirectStandardOutput $o -RedirectStandardError $e
+    } catch {
+        return [pscustomobject]@{ Code = -1; Out = @("$_"); Text = "$_"; TimedOut = $false }
+    }
+    $null = $p.Handle
+    $timedOut = -not $p.WaitForExit($TimeoutS * 1000)
+    if ($timedOut) {
+        $null = Invoke-Native 'taskkill.exe' @('/PID', "$($p.Id)", '/T', '/F')
+        $code = 'timeout'
+    } else {
+        $p.WaitForExit()
+        $code = $p.ExitCode
+    }
+    $out = @()
+    foreach ($f in @($o, $e)) {
+        if (Test-Path $f) {
+            $out += @(Get-Content -Path $f -Encoding UTF8 -ErrorAction SilentlyContinue)
+            Remove-Item $f -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($timedOut) { $out += "(did not finish in $TimeoutS s and was stopped)" }
+    [pscustomobject]@{ Code = $code; Out = $out; Text = ($out -join "`n"); TimedOut = $timedOut }
+}
+
 function Find-Python {
     $candidates = @()
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
@@ -199,8 +257,10 @@ function Find-Python {
     return $null
 }
 
-function Invoke-Py([string[]]$ArgList) {
-    Invoke-Native $script:Python (@($RunPy) + $ArgList)
+function Invoke-Py([string[]]$ArgList, [int]$TimeoutS = $ToolTimeoutS) {
+    if (-not $script:Python) { return [pscustomobject]@{ Code = -1; Out = @('no Python'); Text = 'no Python'; TimedOut = $false } }
+    $env:PYTHONIOENCODING = 'utf-8'
+    Invoke-Timed $script:Python (@('-u', $RunPy) + $ArgList) $TimeoutS
 }
 
 function Last-Json($Result) {
@@ -211,9 +271,17 @@ function Last-Json($Result) {
 
 function Quote([string]$s) { '"' + $s + '"' }
 
+# AA:BB:CC:DD:3F:A1 -> XX:XX:XX:XX:3F:A1 (what may appear in pushed files)
+function Get-MaskedAddr([string]$Addr) {
+    if (-not $Addr) { return $Addr }
+    $p = $Addr -split '[:-]'
+    if ($p.Count -ne 6) { return $Addr }
+    "XX:XX:XX:XX:$($p[4]):$($p[5])"
+}
+
 function Use-DeployKey {
     $k = $KeyPath -replace '\\', '/'
-    $env:GIT_SSH_COMMAND = "ssh -i `"$k`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
+    $env:GIT_SSH_COMMAND = "ssh -i `"$k`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=20"
     $env:GIT_AUTHOR_NAME = 'MousePods VM'
     $env:GIT_AUTHOR_EMAIL = 'heno@henomedia.de'
     $env:GIT_COMMITTER_NAME = 'MousePods VM'
@@ -268,6 +336,9 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
                 $dest = Join-Path $ResultsTree "rounds\$stamp"
                 New-Item -ItemType Directory -Force -Path $dest | Out-Null
                 Copy-Item -Path (Join-Path $Dir '*') -Destination $dest -Recurse -Force
+                Get-ChildItem $dest -Filter '*.dmp' -Recurse | Remove-Item -Force    # never pushed
+                $m = Invoke-Py @('mask', '--dir', $dest, '--hide', $env:USERNAME, $env:COMPUTERNAME)
+                if ($m.Code -ne 0) { $last = "masking failed, not pushing: $($m.Text)"; Remove-Item -Recurse -Force $dest; continue }
                 $null = Invoke-Git @('add', "rounds/$stamp") $ResultsTree
                 $c = Invoke-Git @('commit', '-q', '-m', $Message) $ResultsTree
                 if ($c.Code -ne 0) { $last = $c.Text; continue }
@@ -330,8 +401,11 @@ function Get-CrashInfo($Marker, [string]$RoundDir, [string]$PkgDir) {
         $info.kind = 'bugcheck'
         $info.dump = $dump.Name
         Add-Line $crashTxt "dump: $($dump.FullName), $($dump.Length) bytes, $($dump.LastWriteTime)"
-        if ($dump.Length -lt 8MB) {
-            Copy-Item $dump.FullName (Join-Path $RoundDir "crash-$($Marker.id)-$($dump.Name)")
+        if ($script:KeepDumps -and $dump.Length -lt 64MB) {
+            # local only: dumps hold memory contents, and vm-results is public
+            $keep = Join-Path $Data 'dumps'
+            New-Item -ItemType Directory -Force -Path $keep | Out-Null
+            Copy-Item $dump.FullName (Join-Path $keep "$(Split-Path $RoundDir -Leaf)-step$($Marker.id)-$($dump.Name)")
         }
         $cdb = Find-Cdb
         if ($cdb) {
@@ -362,7 +436,7 @@ function Get-CrashInfo($Marker, [string]$RoundDir, [string]$PkgDir) {
 function Invoke-Devnode([string]$Action, [string]$Inf, [string]$Log) {
     $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $VmDir 'devnode.ps1'), '-Action', $Action)
     if ($Inf) { $a += @('-InfPath', $Inf) }
-    $r = Invoke-Native 'powershell.exe' $a
+    $r = Invoke-Timed 'powershell.exe' $a $ToolTimeoutS
     if ($Log) { Add-Line $Log "devnode $Action -> exit $($r.Code)`n$($r.Text)" }
     $r
 }
@@ -377,29 +451,56 @@ function Set-DriverStart([int]$Value) {
     if (Test-Path $ServiceKey) { Set-ItemProperty -Path $ServiceKey -Name Start -Value $Value }
 }
 
+# Returns the text of what hung, or $null.
 function Remove-OldDrivers([string]$Log) {
-    $null = Invoke-Devnode 'remove' $null $Log
-    if ($script:Addr) { $null = Set-BtService 'disable' $Log }
+    $hung = @()
+    $r = Invoke-Devnode 'remove' $null $Log
+    if ($r.TimedOut) { $hung += 'removing the root device' }
+    if ($script:Addr) {
+        $r = Set-BtService 'disable' $Log
+        if ($r.TimedOut) { $hung += 'switching the Bluetooth service off' }
+    }
     $infs = @(Select-String -Path "$env:SystemRoot\INF\oem*.inf" -Pattern 'MousePodsL2cap.sys' -SimpleMatch -List -ErrorAction SilentlyContinue)
     foreach ($i in $infs) {
-        $r = Invoke-Native 'pnputil.exe' @('/delete-driver', $i.Filename, '/uninstall', '/force')
+        $r = Invoke-Timed 'pnputil.exe' @('/delete-driver', $i.Filename, '/uninstall', '/force') $InstallTimeoutS
         Add-Line $Log "pnputil /delete-driver $($i.Filename) -> exit $($r.Code)`n$($r.Text)"
+        if ($r.TimedOut) { $hung += "pnputil /delete-driver $($i.Filename)" }
     }
+    if ($hung) { return ($hung -join ', ') }
+    return $null
+}
+
+# Nothing of either route stays: no root device, service off on the AirPods.
+# Returns the text of what hung, or $null.
+function Clear-Routes([string]$Log) {
+    $hung = @()
+    $r = Invoke-Devnode 'remove' $null $Log
+    if ($r.TimedOut) { $hung += 'removing the root device' }
+    if ($script:Addr) {
+        $r = Set-BtService 'disable' $Log
+        if ($r.TimedOut) { $hung += 'switching the Bluetooth service off' }
+    }
+    if ($hung) { return ($hung -join ', ') }
+    return $null
 }
 
 # Clean switch: nothing of the other route stays, then the wanted one is set up.
+# Returns the text of what hung, or $null.
 function Set-Route([string]$Route, [string]$Inf, [string]$Log) {
     Say "Setting up load route $Route ..." Cyan
     Add-Line $Log "=== route $Route, $(Get-Date -Format o)"
+    $hung = Clear-Routes $Log
+    if ($hung) { return $hung }
     Set-DriverStart 3
-    $null = Invoke-Devnode 'remove' $null $Log
-    $null = Set-BtService 'disable' $Log
     Start-Sleep -Seconds 2
     if ($Route -eq 'root') {
-        $null = Invoke-Devnode 'create' $Inf $Log
+        $r = Invoke-Devnode 'create' $Inf $Log
+        if ($r.TimedOut) { return 'creating the root device' }
     } else {
-        $null = Set-BtService 'enable' $Log
+        $r = Set-BtService 'enable' $Log
+        if ($r.TimedOut) { return 'switching the Bluetooth service on' }
     }
+    return $null
 }
 
 # --- setup checks ---------------------------------------------------------------
@@ -431,19 +532,27 @@ function Get-SetupFacts {
     $facts
 }
 
-function Write-Setup([string]$Path, $Facts, [string[]]$Extra) {
-    $lines = @("MousePods VM round setup, $(Get-Date -Format o)", '')
-    foreach ($k in $Facts.Keys) { $lines += "${k}: $($Facts[$k])" }
-    $lines += $Extra
-    Set-Content -Path $Path -Value $lines -Encoding UTF8
+# setup.txt is written by run_variants.py, which masks the addresses in it.
+function Write-Setup([string]$Path, $Facts, $Devices) {
+    $list = New-Object System.Collections.ArrayList
+    foreach ($k in $Facts.Keys) { $null = $list.Add([ordered]@{ k = "$k"; v = "$($Facts[$k])" }) }
+    $devs = New-Object System.Collections.ArrayList
+    foreach ($d in @($Devices)) {
+        if ($d) { $null = $devs.Add([ordered]@{ name = "$($d.name)"; address = "$($d.address)"; connected = [bool]$d.connected }) }
+    }
+    $json = Join-Path $env:TEMP "mousepods-setup-$([guid]::NewGuid().ToString('N')).json"
+    Set-Content -Path $json -Encoding UTF8 -Value (ConvertTo-Json -InputObject ([ordered]@{ facts = $list; devices = $devs }) -Depth 5)
+    $r = Invoke-Py @('setup', '--path', $Path, '--facts', $json)
+    Remove-Item $json -Force -ErrorAction SilentlyContinue
+    if ($r.Code -ne 0) { Say "Writing setup.txt failed: $($r.Text)" Yellow }
 }
 
 function Register-ResumeTask {
     $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $argLine = "-NoProfile -ExecutionPolicy Bypass -File $(Quote $PSCommandPath) -Resume"
+    # no trigger delay: -FromTask switches the driver off first, then waits itself
+    $argLine = "-NoProfile -ExecutionPolicy Bypass -File $(Quote $PSCommandPath) -Resume -FromTask"
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argLine
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $me
-    $trigger.Delay = 'PT20S'
     $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 3)
     $null = Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
@@ -464,17 +573,26 @@ function Save-Round($Round) {
 # Every ending goes through here: report, push, clean up, tell Henning.
 function Finish-Round($Round, [string]$Fatal) {
     $dir = $Round.dir
-    try { Stop-Transcript | Out-Null } catch { }
+    # Leave nothing that loads the driver at the next start: no root device, service off.
+    if ($Round.phase -eq 'variants') {
+        $hung = Clear-Routes (Join-Path $dir 'install.txt')
+        if ($hung) { Say "Cleaning up did not finish ($hung)." Yellow }
+        Set-DriverStart 3
+    }
     $outcome = $null
+    $why = 'Python not found'
     if ($script:Python) {
         $a = @('report', '--dir', $dir)
         if ($Fatal) { $a += @('--fatal', $Fatal) }
         $r = Invoke-Py $a
         $outcome = ($r.Out | Where-Object { $_ -like 'Outcome:*' } | Select-Object -Last 1)
+        $why = $r.Text
     }
     if (-not $outcome) {
-        $outcome = "Outcome: the round stopped before the variants: $Fatal"
-        Set-Content -Path (Join-Path $dir 'report.md') -Encoding UTF8 -Value @("# VM round $(Split-Path $dir -Leaf)", '', $outcome, '')
+        if ($Fatal) { $outcome = "Outcome: the round stopped before the variants: $Fatal" }
+        else { $outcome = 'Outcome: unknown, the report could not be written (run_variants.py report failed); see results.json' }
+        Set-Content -Path (Join-Path $dir 'report.md') -Encoding UTF8 -Value @("# VM round $(Split-Path $dir -Leaf)", '', $outcome, '',
+            'run_variants.py report said:', '', '```', $why, '```', '')
     }
     if ($Round.pkg) {
         $sys = Join-Path $env:SystemRoot 'System32\drivers\MousePodsL2cap.sys'
@@ -509,7 +627,7 @@ function Stop-Round($Round, [string]$Message) {
 
 function Write-Marker($Step, [string]$Phase) {
     $now = (Get-Date).ToUniversalTime()
-    $m = [ordered]@{ id = [int]$Step.id; name = $Step.name; phase = $Phase
+    $m = [ordered]@{ id = [int]$Step.id; name = $Step.name; route = $Step.route; phase = $Phase
         started = $now.ToString('yyyy-MM-ddTHH:mm:ssZ'); started_ticks = $now.Ticks }
     Write-Durable $MarkerPath ($m | ConvertTo-Json)
 }
@@ -566,10 +684,21 @@ function Run-Steps($Round) {
         $step = Last-Json $r
         if (-not $step) { Stop-Round $Round "run_variants.py next failed: $($r.Text)" }
         Remove-Item $MarkerPath -Force -ErrorAction SilentlyContinue
-        if ($step.done) { break }
+        if ($step.done) {
+            if ($step.stopped) { Banner @($step.stopped) Red }
+            break
+        }
         if ($step.route -ne $current) {
             Write-Marker $step 'route'
-            Set-Route $step.route (Join-Path $Round.pkg 'MousePodsL2cap.inf') $install
+            $hung = Set-Route $step.route (Join-Path $Round.pkg 'MousePodsL2cap.inf') $install
+            if ($hung) {
+                Say "Setting up route $($step.route) hung ($hung); skipping that route." Yellow
+                $null = Invoke-Py @('record', '--dir', $Round.dir, '--id', "$($step.id)", '--verdict', 'hung',
+                    '--route', $step.route, '--skip-route', '--detail', "setting up route $($step.route) hung: $hung")
+                Remove-Item $MarkerPath -Force -ErrorAction SilentlyContinue
+                $current = $null
+                continue
+            }
             $current = $step.route
         }
         Write-Marker $step 'channel'
@@ -594,7 +723,7 @@ function Resume-AfterCrash($Round) {
     $marker = Get-Content $MarkerPath -Raw | ConvertFrom-Json
     Banner @("Windows went down during step $($marker.id) ($($marker.name)).", 'Recording it and going on with the next step.')
     $crash = Get-CrashInfo $marker $Round.dir $Round.pkg
-    $m = [ordered]@{ id = $marker.id; name = $marker.name; phase = $marker.phase; started = $marker.started
+    $m = [ordered]@{ id = $marker.id; name = $marker.name; route = $marker.route; phase = $marker.phase; started = $marker.started
         started_ticks = $marker.started_ticks; crash = $crash }
     Write-Durable $MarkerPath ($m | ConvertTo-Json -Depth 4)
     if ($env:SAFEBOOT_OPTION) {
@@ -629,6 +758,8 @@ if (-not $isAdmin) {
     if ($Push) { $a += " -Push $(Quote $Push)" }
     if ($Uninstall) { $a += ' -Uninstall' }
     if ($SkipUpdateCheck) { $a += ' -SkipUpdateCheck' }
+    if ($KeepDump) { $a += ' -KeepDump' }
+    if ($FromTask) { $a += ' -FromTask' }
     Say 'round.ps1 needs administrator rights; Windows will ask for them now.' Yellow
     Start-Process powershell.exe -Verb RunAs -ArgumentList $a
     exit 0
@@ -651,7 +782,16 @@ if ($Uninstall) {
         $pick = Last-Json (Invoke-Py @('devices')) | Where-Object { $_.name -like '*AirPods*' } | Select-Object -First 1
         if ($pick) { $script:Addr = $pick.address }
     }
-    Remove-OldDrivers $log
+    $null = Remove-OldDrivers $log
+    if (Test-Path $CrashControlSaved) {
+        $old = Get-Content $CrashControlSaved -Raw | ConvertFrom-Json
+        $ccKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl'
+        foreach ($n in @('CrashDumpEnabled', 'AutoReboot')) {
+            if ($null -ne $old.$n) { Set-ItemProperty $ccKey -Name $n -Value ([int]$old.$n) }
+        }
+        Remove-Item $CrashControlSaved -Force
+        Add-Line $log "crash dump settings restored: CrashDumpEnabled $($old.CrashDumpEnabled), AutoReboot $($old.AutoReboot)"
+    }
     Get-ChildItem Cert:\LocalMachine\Root, Cert:\LocalMachine\TrustedPublisher |
         Where-Object { $_.Subject -eq 'CN=MousePods Test Signing' } | Remove-Item -Force
     Unregister-ResumeTask
@@ -670,7 +810,12 @@ if (-not $Resume -and (Test-Path $ActivePath)) {
 }
 
 if ($Resume) {
+    # First of all, before Bluetooth reconnects the AirPods and loads the driver
+    # through the service (route b): keep Windows from loading the driver. Set-Route
+    # switches it back on for the next step.
+    Set-DriverStart 4
     if (-not (Test-Path $ActivePath)) {
+        Set-DriverStart 3
         Unregister-ResumeTask
         Say 'No unfinished MousePods round; nothing to do.' Green
         Start-Sleep -Seconds 5
@@ -678,9 +823,18 @@ if ($Resume) {
     }
     $round = Get-Content $ActivePath -Raw | ConvertFrom-Json
     $script:Addr = $round.addr
-    try { Start-Transcript -Path (Join-Path $round.dir 'round.log') -Append | Out-Null } catch { }
+    $script:KeepDumps = [bool]$round.keep_dump
+    $script:LogFile = Join-Path $round.dir 'round.log'
     Banner @('MousePods VM round: going on after a restart.') Cyan
     try {
+        if ($FromTask -and -not $env:SAFEBOOT_OPTION) {
+            Say 'Waiting 20 seconds for Windows to settle ...'
+            Start-Sleep -Seconds 20
+        }
+        if (-not $env:SAFEBOOT_OPTION -and $round.phase -eq 'variants') {
+            $hung = Clear-Routes (Join-Path $round.dir 'install.txt')
+            if ($hung) { Say "Switching the routes off did not finish ($hung); going on." Yellow }
+        }
         Resume-AfterCrash $round
         if ($round.phase -ne 'variants') { Stop-Round $round "Windows went down during the $($round.phase) phase, before the variants (see crash.txt)." }
         Run-Steps $round
@@ -695,9 +849,11 @@ if ($Resume) {
 $stamp = Get-Date -Format 'yyyy-MM-dd-HHmm'
 $roundDir = Join-Path $Data "rounds\$stamp"
 New-Item -ItemType Directory -Force -Path $roundDir | Out-Null
-$round = [ordered]@{ stamp = $stamp; dir = $roundDir; phase = 'setup'; addr = $null; name = $null; pkg = $null; commit = $null }
+$round = [ordered]@{ stamp = $stamp; dir = $roundDir; phase = 'setup'; addr = $null; name = $null; pkg = $null
+    commit = $null; keep_dump = [bool]$KeepDump }
 $round = [pscustomobject]$round
-try { Start-Transcript -Path (Join-Path $roundDir 'round.log') -Append | Out-Null } catch { }
+$script:KeepDumps = [bool]$KeepDump
+$script:LogFile = Join-Path $roundDir 'round.log'
 Banner @("MousePods VM round $stamp", 'Checking the setup first.') Cyan
 
 try {
@@ -734,6 +890,10 @@ try {
     # Crash dumps on, automatic restart after a bluescreen.
     $ccKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl'
     $cc = Get-ItemProperty $ccKey -ErrorAction SilentlyContinue
+    if ($cc -and -not (Test-Path $CrashControlSaved)) {
+        # kept locally, restored by -Uninstall
+        Set-Content -Path $CrashControlSaved -Encoding UTF8 -Value (@{ CrashDumpEnabled = $cc.CrashDumpEnabled; AutoReboot = $cc.AutoReboot } | ConvertTo-Json)
+    }
     if ($cc -and $cc.CrashDumpEnabled -eq 0) { Set-ItemProperty $ccKey -Name CrashDumpEnabled -Value 7 }
     Set-ItemProperty $ccKey -Name AutoReboot -Value 1
 
@@ -749,10 +909,11 @@ try {
 
     # The AirPods: from the paired devices, or -Address.
     $devs = @(Last-Json (Invoke-Py @('devices')))
-    $devLines = @('', 'Paired Bluetooth devices:')
-    foreach ($d in $devs) { if ($d) { $devLines += "  $($d.name)  $($d.address)  connected: $($d.connected)" } }
     if ($Address) {
-        $round.addr = $Address.ToUpper()
+        $round.addr = ($Address.Trim() -replace '-', ':').ToUpper()
+        if ($round.addr -notmatch '^([0-9A-F]{2}:){5}[0-9A-F]{2}$') {
+            Stop-Round $round "-Address must look like AA:BB:CC:DD:EE:FF (got $Address)."
+        }
         $named = @($devs | Where-Object { $_.address -eq $round.addr })
         $round.name = if ($named) { $named[0].name } else { '(not in the paired list)' }
     } else {
@@ -766,7 +927,7 @@ try {
         $round.name = $pick.name
     }
     $script:Addr = $round.addr
-    Say "AirPods: $($round.name) ($($round.addr))" Green
+    Say "AirPods: $($round.name) ($(Get-MaskedAddr $round.addr))" Green
     $audio = $facts['Default audio output']
     if ($audio -notlike '*AirPods*' -or $audio -like '*Hands-Free*') {
         Banner @("Windows plays sound on: $audio",
@@ -808,10 +969,10 @@ try {
     $round.pkg = $pkg
     $facts['Driver package'] = "ci/$pkgSha/driver.zip$note"
     $facts['AirPods'] = "$($round.name) ($($round.addr))"
-    Write-Setup (Join-Path $roundDir 'setup.txt') $facts $devLines
+    Write-Setup (Join-Path $roundDir 'setup.txt') $facts $devs
     $meta = Join-Path $roundDir 'meta.json'
     Set-Content -Path $meta -Encoding UTF8 -Value (@{ stamp = $stamp; commit = $head; driver = "ci/$pkgSha/driver.zip$note"
-            addr = $round.addr; name = $round.name; started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json)
+            addr = (Get-MaskedAddr $round.addr); name = $round.name; started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json)
     $null = Invoke-Py @('init', '--dir', $roundDir, '--meta', $meta)
     Remove-Item $meta -Force
 
@@ -821,7 +982,8 @@ try {
     Register-ResumeTask
     $install = Join-Path $roundDir 'install.txt'
     Say 'Installing the driver ...' Cyan
-    Remove-OldDrivers $install
+    $hung = Remove-OldDrivers $install
+    if ($hung) { Stop-Round $round "Removing the old driver did not finish ($hung). Restart Windows and run round.ps1 again." }
     $cer = Join-Path $pkg 'MousePodsL2cap.cer'
     $inf = Join-Path $pkg 'MousePodsL2cap.inf'
     foreach ($f in @($cer, $inf, (Join-Path $pkg 'MousePodsL2cap.sys'), (Join-Path $pkg 'MousePodsL2cap.cat'))) {
@@ -834,8 +996,9 @@ try {
         $null = Import-Certificate -FilePath $cer -CertStoreLocation $store
     }
     Add-Line $install "certificate $($newCert.Subject) $($newCert.Thumbprint) imported into Root and TrustedPublisher"
-    $r = Invoke-Native 'pnputil.exe' @('/add-driver', $inf, '/install')
+    $r = Invoke-Timed 'pnputil.exe' @('/add-driver', $inf, '/install') $InstallTimeoutS
     Add-Line $install "pnputil /add-driver $inf /install -> exit $($r.Code)`n$($r.Text)"
+    if ($r.TimedOut) { Stop-Round $round "pnputil /add-driver did not finish in $InstallTimeoutS s. Restart Windows and run round.ps1 again." }
     if (@(0, 259, 3010) -notcontains $r.Code) { Stop-Round $round "pnputil could not add the driver (exit $($r.Code)): $($r.Text)" }
     $round.phase = 'variants'
     Save-Round $round

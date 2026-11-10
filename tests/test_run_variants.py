@@ -85,6 +85,49 @@ class ResumeTests(unittest.TestCase):
         skipped = [r for r in state["results"] if r["verdict"] == "skipped"]
         self.assertEqual([r["id"] for r in skipped], list(range(3, 9)))
 
+    def test_crash_while_setting_up_the_route_skips_that_route(self):
+        state = {"results": []}
+        remaining = rv.next_variants(state, {"id": 9, "phase": "route", "route": "bthenum"})
+        self.assertEqual(state["results"][0]["verdict"], "bugcheck")
+        self.assertEqual(state["results"][0]["phase"], "route")
+        self.assertTrue(all(v["route"] != "bthenum" for v in remaining if v["kind"] == "variant"))
+        self.assertEqual([r["id"] for r in state["results"] if r["verdict"] == "skipped"], list(range(10, 17)))
+        self.assertEqual(rv.check_config(state)["route"], "root")
+
+    def test_crash_in_the_channel_phase_does_not_skip_the_route(self):
+        state = {"results": []}
+        remaining = rv.next_variants(state, {"id": 9, "phase": "channel", "route": "bthenum"})
+        self.assertEqual(remaining[0]["id"], 1)
+        self.assertEqual(len(state["results"]), 1)
+
+    def test_three_crashes_in_a_row_stop_the_round(self):
+        state = {"results": [_done(v, "bugcheck") for v in rv.VARIANTS[:2]]}
+        step = rv.plan_next(state, {"id": 3, "phase": "channel"})
+        self.assertTrue(step["done"])
+        self.assertIn("3 steps in a row", step["stopped"])
+        text = rv.render_report(state["results"], state["meta"])
+        self.assertIn("The round stopped early", text)
+        self.assertIn("Not run: 4,", text)
+
+    def test_crashes_with_a_good_step_between_do_not_stop(self):
+        state = {"results": [_done(rv.VARIANTS[0], "bugcheck"), _done(rv.VARIANTS[1], "ok")]}
+        self.assertFalse(rv.plan_next(state, {"id": 3}).get("done"))
+
+    def test_hung_route_setup_skips_the_route(self):
+        state = {"results": []}
+        rv.record_hung_route(state, 1, "root", "devnode create did not finish")
+        verdicts = {r["id"]: r["verdict"] for r in state["results"]}
+        self.assertEqual(verdicts[1], "hung")
+        self.assertEqual([i for i, v in verdicts.items() if v == "skipped"], list(range(2, 9)))
+        self.assertEqual(rv.plan_next(state, None)["id"], 9)
+
+    def test_checks_skipped_when_both_routes_broke(self):
+        state = {"results": []}
+        rv.record_hung_route(state, 1, "root", "hung")
+        rv.record_hung_route(state, 9, "bthenum", "hung")
+        self.assertTrue(rv.plan_next(state, None)["done"])
+        self.assertEqual(sum(1 for r in state["results"] if r["kind"] == "check"), 4)
+
     def test_checks_use_a_route_that_worked(self):
         state = {"results": [_done(v, "windows_refused") for v in _variants()]}
         state["results"][11] = _done(_variants()[11], "ok")
@@ -146,6 +189,53 @@ class ReportTests(unittest.TestCase):
     def test_fatal_round(self):
         text = rv.render_report([], {"fatal": "pnputil failed with exit code 5"})
         self.assertIn("pnputil failed", text.splitlines()[2])
+
+
+FULL = "A4:C3:F0:12:3F:A1"
+
+
+class MaskTests(unittest.TestCase):
+    def _assert_masked(self, text):
+        for form in (FULL, FULL.replace(":", ""), FULL.replace(":", "-"), FULL.lower()):
+            self.assertNotIn(form, text)
+            self.assertNotIn(form.replace(":", "").lower(), text.lower().replace("xxxxxxxx3fa1", ""))
+
+    def test_mask_addr(self):
+        self.assertEqual(rv.mask_addr(FULL), "XX:XX:XX:XX:3F:A1")
+
+    def test_report_never_contains_a_full_address(self):
+        rec = _done(_variants()[0], "link_lost", radio=FULL,
+                    result={"error": "OSError: connect to %s failed" % FULL})
+        text = rv.render_report([rec], {"addr": FULL, "name": "Henning's AirPods Pro"})
+        self._assert_masked(text)
+        self.assertIn("XX:XX:XX:XX:3F:A1", text)
+        self.assertIn("Henning's AirPods Pro", text)
+
+    def test_setup_writer_never_contains_a_full_address(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "setup.txt")
+            rv.write_setup(path, [["AirPods", "Pro (%s)" % FULL], ["Device", "BTHENUM\\X&0&%s_C00000000" % FULL.replace(":", "")]],
+                           [{"name": "AirPods Pro", "address": FULL, "connected": True}])
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        self._assert_masked(text)
+        self.assertIn("AirPods Pro  XX:XX:XX:XX:3F:A1", text)
+
+    def test_driver_log_form_and_guids(self):
+        text = rv.mask_text("state idle -> connecting: A4C3F0123FA1 psm 0x1001; {6d0e3c52-4f1b-4c9a-9a51-2f0b8e7d1a02}")
+        self.assertIn("XXXXXXXX3FA1", text)
+        self.assertIn("2f0b8e7d1a02", text)    # the service GUID stays readable
+
+    def test_mask_dir_and_hidden_words(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "round.log"), "w") as f:
+                f.write("C:\\Users\\henni\\mousepods on DESKTOP-ABC, AirPods %s\n" % FULL)
+            rv.mask_dir(d, ["henni", "DESKTOP-ABC"])
+            with open(os.path.join(d, "round.log")) as f:
+                text = f.read()
+        self._assert_masked(text)
+        self.assertNotIn("henni", text)
+        self.assertNotIn("DESKTOP-ABC", text)
 
 
 class HelperTests(unittest.TestCase):
@@ -326,7 +416,7 @@ class StepTests(unittest.TestCase):
                     mock.patch.object(rv, "_safe_log", return_value="log"):
                 rv.main(["step", "--dir", d, "--id", "1", "--addr", self.ADDR], out=io.StringIO())
             state = rv.load_state(d)
-            self.assertEqual(state["results"][0]["verdict"], "skipped")
+            self.assertEqual(state["results"][0]["verdict"], "error")
             self.assertIn("boom", state["results"][0]["detail"])
             self.assertTrue(os.path.exists(os.path.join(d, "driver.log")))
 

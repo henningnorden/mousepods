@@ -20,6 +20,7 @@ import json
 import math
 import os
 import queue
+import re
 import socket
 import struct
 import subprocess
@@ -121,18 +122,48 @@ def _step(step_id):
     raise KeyError(step_id)
 
 
+MAX_CRASHES_IN_A_ROW = 3
+
+
+def _skip_route(state, route, done, why):
+    for s in VARIANTS:
+        if s["kind"] == "variant" and s["route"] == route and s["id"] not in done:
+            _put(state, _record(s, "skipped", why))
+            done.add(s["id"])
+
+
+def _route_broken(r):
+    """A result that says this route takes Windows down (or hangs) as soon as it is set up."""
+    crash = r.get("crash") or {}
+    if crash.get("at_boot"):
+        return True
+    return r.get("phase") == "route" and r.get("verdict") in ("bugcheck", "interrupted", "hung")
+
+
+def crashes_in_a_row(state):
+    n = 0
+    for r in sorted(state["results"], key=lambda r: r["id"]):
+        if r["verdict"] == "skipped":
+            continue
+        n = n + 1 if r["verdict"] == "bugcheck" else 0
+    return n
+
+
 def next_variants(state, marker):
     """Steps still to run. A marker (current.json) for a step that has no
     result means Windows went down during it: record it as a bugcheck (or
-    "interrupted" when round.ps1 found no crash record). A crash at boot (the
-    driver crashed as soon as Windows loaded it) skips that route's other
-    variants, which would only crash the same way."""
+    "interrupted" when round.ps1 found no crash record). A crash while the
+    route was being set up, or at boot (the driver crashed as soon as Windows
+    loaded it), skips that route's other variants, which would only crash the
+    same way. After MAX_CRASHES_IN_A_ROW bluescreens in a row the round stops."""
     done = {r["id"] for r in state["results"]}
     if marker and marker.get("id") in done:
         marker = None
     if marker:
         crash = marker.get("crash") or {}
         step = _step(marker["id"])
+        if marker.get("route"):
+            step["route"] = marker["route"]
         kind = crash.get("kind", "bugcheck")
         detail = "Windows went down during this step"
         if crash.get("dump"):
@@ -141,41 +172,126 @@ def next_variants(state, marker):
             detail += "; it crashed again while Windows started (Safe Mode was needed)"
         if marker.get("phase"):
             detail += "; phase: %s" % marker["phase"]
-        _put(state, _record(step, kind, detail, started=marker.get("started"), crash=crash))
+        rec = _record(step, kind, detail, started=marker.get("started"), crash=crash,
+                      phase=marker.get("phase"))
+        _put(state, rec)
         done.add(step["id"])
-        if crash.get("at_boot") and step["kind"] == "variant":
-            for s in VARIANTS:
-                if s["kind"] == "variant" and s["route"] == step["route"] and s["id"] not in done:
-                    _put(state, _record(s, "skipped", "skipped: route %s crashed Windows at boot in step %d"
-                                        % (s["route"], step["id"])))
-                    done.add(s["id"])
+        if _route_broken(rec) and step.get("route"):
+            where = "at boot" if crash.get("at_boot") else "while the route was set up"
+            _skip_route(state, step["route"], done, "skipped: route %s took Windows down %s in step %d"
+                        % (step["route"], where, step["id"]))
+    n = crashes_in_a_row(state)
+    if n >= MAX_CRASHES_IN_A_ROW:
+        state.setdefault("meta", {})["stopped"] = ("Windows crashed (bluescreen) in %d steps in a row; the round stopped "
+                                    "there to spare more bluescreens" % n)
+        return []
     return [dict(s) for s in VARIANTS if s["id"] not in done]
+
+
+def broken_routes(state):
+    return {r.get("route") for r in state["results"] if r.get("route") and _route_broken(r)}
 
 
 def check_config(state):
     """Route, MTU and security for the checks: the first variant that got
-    motion; else the first whose route loaded; else route a defaults."""
-    crashed_at_boot = {r.get("route") for r in state["results"] if (r.get("crash") or {}).get("at_boot")}
-    variants = [r for r in state["results"]
-                if r.get("kind") == "variant" and r.get("route") not in crashed_at_boot]
+    motion; else the first whose route loaded; else the first route that did
+    not take Windows down; None when no route is usable."""
+    broken = broken_routes(state)
+    variants = [r for r in state["results"] if r.get("kind") == "variant" and r.get("route") not in broken]
     for want in (lambda r: r["verdict"] == "ok",
                  lambda r: r["verdict"] not in ("route_not_loaded", "bugcheck", "skipped", "hung",
-                                                "interrupted")):
+                                                "interrupted", "error")):
         for r in variants:
             if want(r):
                 return {"route": r["route"], "mtu": r["mtu"], "security": r["security"]}
-    return {"route": "root", "mtu": 2582, "security": "encrypt"}
+    for route in ("root", "bthenum"):
+        if route not in broken:
+            return {"route": route, "mtu": 2582, "security": "encrypt"}
+    return None
 
 
 def plan_next(state, marker):
     remaining = next_variants(state, marker)
+    while remaining and remaining[0]["kind"] == "check":
+        cfg = check_config(state)
+        if cfg is not None:
+            break
+        _put(state, _record(remaining.pop(0), "skipped", "skipped: both routes took Windows down"))
     if not remaining:
-        return {"done": True}
+        out = {"done": True}
+        if state.get("meta", {}).get("stopped"):
+            out["stopped"] = state["meta"]["stopped"]
+        return out
     step = remaining[0]
     if step["kind"] == "check":
-        step.update(check_config(state))
+        step.update(cfg)
         step["audio"] = "idle"
     return step
+
+
+def record_hung_route(state, step_id, route, detail):
+    """The route set-up (devnode, service) did not finish: the step is hung and
+    the route's other variants are skipped."""
+    step = _step(step_id)
+    step["route"] = route
+    rec = _record(step, "hung", detail, phase="route")
+    _put(state, rec)
+    done = {r["id"] for r in state["results"]}
+    _skip_route(state, route, done, "skipped: setting up route %s hung in step %d" % (route, step_id))
+
+
+# --- masking: the fork and vm-results are public ---------------------------------
+
+_MAC = re.compile(r"(?<![0-9A-Fa-f:-])((?:[0-9A-Fa-f]{2}[:-]){4})([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})(?![0-9A-Fa-f:-])")
+_HEX12 = re.compile(r"(?<![0-9A-Fa-f-])[0-9A-Fa-f]{8}([0-9A-Fa-f]{4})(?![0-9A-Fa-f])")
+
+
+def mask_addr(addr):
+    """'AA:BB:CC:DD:3F:A1' -> 'XX:XX:XX:XX:3F:A1'."""
+    if not addr:
+        return addr
+    parts = addr.replace("-", ":").split(":")
+    if len(parts) != 6:
+        return addr
+    return "XX:XX:XX:XX:%s:%s" % (parts[4].upper(), parts[5].upper())
+
+
+def mask_text(text, hide=()):
+    """Every Bluetooth address (AA:BB:.., AA-BB-.., and the driver's 12-hex-digit
+    form) keeps only its last two bytes; words in `hide` (user and machine name)
+    become <hidden>."""
+    text = _MAC.sub(lambda m: "XX:XX:XX:XX:%s:%s" % (m.group(2).upper(), m.group(4).upper()), text)
+    text = _HEX12.sub(lambda m: "XXXXXXXX" + m.group(1).upper(), text)
+    for word in hide:
+        if word and len(word) >= 3:
+            text = re.sub(re.escape(word), "<hidden>", text, flags=re.IGNORECASE)
+    return text
+
+
+def mask_dir(d, hide=()):
+    """Mask every text file in a round folder before it is pushed."""
+    for name in sorted(os.listdir(d)):
+        path = os.path.join(d, name)
+        if not os.path.isfile(path) or not name.endswith((".md", ".json", ".txt", ".log")):
+            continue
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            text = f.read()
+        masked = mask_text(text, hide)
+        if masked != text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(masked)
+
+
+def write_setup(path, facts, devices=()):
+    """setup.txt: facts is a list of [name, value] pairs; addresses are masked."""
+    lines = ["MousePods VM round setup, %s" % _now(), ""]
+    lines += ["%s: %s" % (k, v) for k, v in facts]
+    if devices:
+        lines += ["", "Paired Bluetooth devices:"]
+        lines += ["  %s  %s  connected: %s" % (d.get("name"), d.get("address"), d.get("connected"))
+                  for d in devices]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(mask_text("\n".join(lines) + "\n"))
 
 
 # --- the report ---------------------------------------------------------------
@@ -192,6 +308,7 @@ LEGEND = [
     ("bugcheck", "Windows crashed (bluescreen) during this step"),
     ("interrupted", "Windows restarted during this step without a crash record"),
     ("hung", "the step did not finish in time and was stopped"),
+    ("error", "the step failed in the test program itself (a bug in run_variants.py)"),
     ("skipped", "not run, see the reason"),
 ]
 
@@ -278,10 +395,11 @@ def render_report(results, meta=None):
     lines = ["# VM round %s" % meta.get("stamp", ""), "", outcome_line(results, meta), "",
              "ok %d / %d variants (%d ran); checks: pass %d / 4" % (n_ok, N_VARIANTS, len(variants), n_pass),
              ""]
-    if meta.get("fatal"):
-        lines += ["**The round stopped early:** %s" % meta["fatal"], ""]
+    for why in (meta.get("fatal"), meta.get("stopped")):
+        if why:
+            lines += ["**The round stopped early:** %s" % why, ""]
     facts = [("Commit", meta.get("commit")), ("Driver package", meta.get("driver")),
-             ("AirPods", "%s (%s)" % (meta.get("name"), meta.get("addr")) if meta.get("addr") else None),
+             ("AirPods", "%s (%s)" % (meta.get("name"), mask_addr(meta.get("addr"))) if meta.get("addr") else None),
              ("Started", meta.get("started")), ("Finished", _now())]
     lines += ["- %s: %s" % (k, v) for k, v in facts if v]
     routes = sorted({str(r.get("route_loaded")) for r in variants if r.get("route_loaded")})
@@ -299,7 +417,7 @@ def render_report(results, meta=None):
     lines += ["- `%s`: %s" % (k, v) for k, v in LEGEND]
     lines += ["", "Files: `results.json` (every field), `driver.log` (driver log after each step), "
               "`setup.txt` (VM setup), `install.txt`, `round.log`, `steps.log` (what each step printed), `crash.txt` (only after a bluescreen).", ""]
-    return "\n".join(lines)
+    return mask_text("\n".join(lines))
 
 
 # --- helpers ------------------------------------------------------------------
@@ -415,7 +533,7 @@ def run_variant(step, addr, api=None, out=print):
     out("variant %d: route %s, MTU %d, security %s, audio %s, %d s - turn your head slowly"
         % (step["id"], step["route"], step["mtu"], step["security"], step["audio"], step["seconds"]))
     res = ht.run(lambda a: _open(step, a, api), addr, None, step["seconds"], out=out)
-    return _record(step, ht.classify(res), route_loaded=loaded, result=res, radio=info.get("radio"),
+    return _record(step, ht.classify(res), route_loaded=loaded, result=res, radio=mask_addr(info.get("radio")),
                    devices=len(paths))
 
 
@@ -746,6 +864,15 @@ def main(argv=None, out=None):
     p.add_argument("--id", type=int, required=True)
     p.add_argument("--verdict", required=True)
     p.add_argument("--detail", default="")
+    p.add_argument("--route", default=None)
+    p.add_argument("--skip-route", action="store_true",
+                   help="the route set-up hung: skip the route's other variants")
+    p = sub.add_parser("setup")
+    p.add_argument("--path", required=True)
+    p.add_argument("--facts", required=True, help="JSON: {facts: [[name, value]...], devices: [...]}")
+    p = sub.add_parser("mask")
+    p.add_argument("--dir", required=True)
+    p.add_argument("--hide", nargs="*", default=[])
     p = sub.add_parser("report")
     p.add_argument("--dir", required=True)
     p.add_argument("--fatal", default=None)
@@ -779,12 +906,12 @@ def main(argv=None, out=None):
         def say(text=""):     # noqa: F811 - the step's output also goes to steps.log
             print(text, file=out_stream, flush=True)
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(text + "\n")
+                f.write(mask_text(text) + "\n")
 
         state = load_state(a.dir)
         step = _step(a.id)
         if step["kind"] == "check":
-            step.update(check_config(state))
+            step.update(check_config(state) or {})
             for k in ("route", "mtu", "security"):
                 if getattr(a, k) is not None:
                     step[k] = getattr(a, k)
@@ -794,12 +921,12 @@ def main(argv=None, out=None):
             run = run_variant if step["kind"] == "variant" else run_check
             rec = run(step, a.addr, out=say)
         except Exception as e:      # record it; the round goes on
-            rec = _record(step, "skipped", "the step failed in Python: %s: %s" % (type(e).__name__, e))
+            rec = _record(step, "error", "the step failed in Python: %s: %s" % (type(e).__name__, e))
         rec.update(started=started, seconds=round(time.monotonic() - t0, 1))
         say("step %d %s: %s - %s" % (rec["id"], rec["name"], rec["verdict"], explain(rec)))
         with open(os.path.join(a.dir, "driver.log"), "a", encoding="utf-8") as f:
             f.write("=== step %d %s, %s, verdict %s\n" % (rec["id"], rec["name"], _now(), rec["verdict"]))
-            f.write(_safe_log())
+            f.write(mask_text(_safe_log()))
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
@@ -809,11 +936,23 @@ def main(argv=None, out=None):
         return 0
     if a.cmd == "record":
         state = load_state(a.dir)
-        step = _step(a.id)
-        if step["kind"] == "check":
-            step.update(check_config(state))
-        _put(state, _record(step, a.verdict, a.detail))
+        if a.skip_route and a.route:
+            record_hung_route(state, a.id, a.route, a.detail)
+        else:
+            step = _step(a.id)
+            if step["kind"] == "check":
+                step.update(check_config(state) or {})
+            if a.route:
+                step["route"] = a.route
+            _put(state, _record(step, a.verdict, a.detail))
         save_state(a.dir, state)
+        return 0
+    if a.cmd == "setup":
+        data = _read_json(a.facts) or {}
+        write_setup(a.path, data.get("facts") or [], [d for d in (data.get("devices") or []) if d])
+        return 0
+    if a.cmd == "mask":
+        mask_dir(a.dir, a.hide)
         return 0
     if a.cmd == "report":
         state = load_state(a.dir)
