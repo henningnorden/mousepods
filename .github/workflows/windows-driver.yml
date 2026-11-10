@@ -12,6 +12,8 @@ on:
       - "windows/vm/**"
       - "l2cap_win.py"
       - "tests/test_run_variants.py"
+      - "tests/test_l2cap_win.py"
+      - "tests/test_windows_headtrack.py"
       - ".github/workflows/windows-driver.yml"
   workflow_dispatch:
 
@@ -93,14 +95,18 @@ jobs:
             Write-Host "::error file=windows/vm/run_variants.py,title=run_variants selftest::exit ${code}: $(($out | Select-Object -Last 5) -join ' / ')"
             exit 1
           }
-          $out = & python -m unittest tests.test_run_variants 2>&1 | ForEach-Object { "$_" }
-          $code = $LASTEXITCODE
-          $out | ForEach-Object { Write-Host $_ }
-          if ($code -ne 0) {
-            $fails = ($out | Where-Object { $_ -match '^(FAIL|ERROR):|Error:' } | Select-Object -First 6) -join ' / '
-            Write-Host "::error file=tests/test_run_variants.py,title=unit tests on Windows::$fails"
-            exit 1
+          $failed = $false
+          foreach ($t in 'test_run_variants', 'test_l2cap_win', 'test_windows_headtrack') {
+            $out = & python -m unittest "tests.$t" 2>&1 | ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+            $out | ForEach-Object { Write-Host $_ }
+            if ($code -ne 0) {
+              $fails = ($out | Where-Object { $_ -match '^(FAIL|ERROR):|Error:' } | Select-Object -First 6) -join ' / '
+              Write-Host "::error file=tests/$t.py,title=unit tests on Windows::$fails"
+              $failed = $true
+            }
           }
+          if ($failed) { exit 1 }
 
   publish:
     needs: build
