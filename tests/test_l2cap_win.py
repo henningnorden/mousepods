@@ -98,6 +98,7 @@ class FakeDriver:
         self.paths = ["\\\\?\\fake"]
         self.err = 0
         self.connect_in = None
+        self.read_sizes = []
 
     def list_device_paths(self, guid):
         return self.paths
@@ -133,6 +134,11 @@ class FakeDriver:
                 continue
             if isinstance(item, tuple):
                 self.err = item[1]
+                return None
+            self.read_sizes.append(size)
+            if len(item) > size:
+                # like the driver: the packet is taken off the queue and dropped
+                self.err = l2cap_win.ERROR_INSUFFICIENT_BUFFER
                 return None
             return item
 
@@ -244,6 +250,27 @@ class ChannelTest(unittest.TestCase):
         fake.incoming.put(b"next")
         ch.settimeout(1)
         self.assertEqual(ch.recv(10), b"next")
+        self.assertEqual(ch.dropped, 1)
+
+    def test_packet_bigger_than_out_mtu_still_delivered(self):
+        # out_mtu (what the AirPods accept) is smaller than the packets they send;
+        # the read buffer follows the requested mtu, as the driver's receive slots do.
+        fake = FakeDriver(l2cap_win.ConnectOut(0, 0, 5, 672, 0))
+        ch = self.open(fake)
+        packet = bytes(range(256)) * 4             # 1024 bytes: > out_mtu, <= mtu 2582
+        fake.incoming.put(packet)
+        ch.settimeout(1)
+        self.assertEqual(ch.recv(4096), packet)
+        self.assertEqual(ch.dropped, 0)
+        self.assertGreaterEqual(min(fake.read_sizes), 2582)
+
+    def test_packet_bigger_than_read_buffer_is_dropped(self):
+        fake = FakeDriver()
+        ch = self.open(fake)
+        fake.incoming.put(b"x" * 3000)             # > mtu 2582
+        fake.incoming.put(b"after")
+        ch.settimeout(1)
+        self.assertEqual(ch.recv(4096), b"after")
         self.assertEqual(ch.dropped, 1)
 
     def test_send_writes_one_packet(self):

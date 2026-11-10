@@ -309,7 +309,9 @@ def open_seqpacket(addr, psm, mtu, timeout, security="encrypt", api=None):
         if co.ntstatus != 0:
             raise DriverError(co.ntstatus, co.bt_status, co.stage)
         fields = {name: getattr(co, name) for name, _ in ConnectOut._fields_}
-        return Channel(api, handle, co.out_mtu or mtu, fields)
+        # The driver keeps incoming packets up to the requested mtu (its receive
+        # slot size); out_mtu is what the remote accepts from us, not what it sends.
+        return Channel(api, handle, max(mtu, co.out_mtu), fields)
     except BaseException:
         api.CloseHandle(handle)
         raise
