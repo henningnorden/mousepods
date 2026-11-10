@@ -50,6 +50,8 @@
     <TargetName>MousePodsL2cap</TargetName>
     <!-- The NuGet WDK has stampinf.exe only in bin\<version>\x64, which the x64 props do not search -->
     <ExecutablePath>$(ExecutablePath);$(WDKBinRoot_x64)</ExecutablePath>
+    <!-- The stricter of the WDK's driver rule sets (the default without the VS analysis component is the minimum set) -->
+    <CodeAnalysisRuleSet>$(WDKContentRoot)CodeAnalysis\DriverRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
