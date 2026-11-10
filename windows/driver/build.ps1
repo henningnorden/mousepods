@@ -93,7 +93,7 @@ if ($ok) {
         $built = Invoke-Step 'msbuild' $msbuild @(
             'MousePodsL2cap.sln', '/m', '/nologo', '/t:Rebuild',
             "/p:Configuration=$Configuration", '/p:Platform=x64', '/p:RunCodeAnalysis=true',
-            '/v:minimal', '/clp:NoSummary;ForceNoAlign')
+            '/v:normal', '/clp:NoSummary;ForceNoAlign')
         $seen = @{}
         foreach ($line in $outputs['msbuild']) {
             $text = $line.Trim()
@@ -115,6 +115,19 @@ if ($ok) {
                 $compilerWarnings.Add($text)
                 Annotate 'warning' 'build' $text
             }
+        }
+        # Proof that the analysis really ran with the driver plug-ins: the compiler command line.
+        $clLine = $outputs['msbuild'] | Where-Object { $_ -match 'CL\.exe' -and $_ -match '/analyze' } | Select-Object -First 1
+        if (-not $clLine) {
+            $failing.Add('the compiler ran without /analyze')
+            $steps.Add([pscustomobject]@{ Name = '/analyze'; Ok = $false; Detail = 'no CL.exe command line with /analyze' })
+        } else {
+            $plugins = @([regex]::Matches($clLine, '/analyze:plugin\s*"?([^"]+?\.dll)') | ForEach-Object { Split-Path $_.Groups[1].Value -Leaf })
+            $ruleset = [regex]::Match($clLine, '/analyze:ruleset\s*"?([^"]+?\.ruleset)').Groups[1].Value
+            if ($ruleset) { $ruleset = Split-Path $ruleset -Leaf }
+            $pluginOk = $plugins -contains 'WindowsPrefast.dll' -and $plugins -contains 'drivers.dll'
+            if (-not $pluginOk) { $failing.Add("/analyze ran without the driver plug-ins (plug-ins: $($plugins -join ', '))") }
+            $steps.Add([pscustomobject]@{ Name = '/analyze'; Ok = $pluginOk; Detail = "plug-ins: $($plugins -join ', '); rule set: $(if ($ruleset) { $ruleset } else { 'default' })" })
         }
         if ($analyzeFindings.Count -gt 0) {
             $failing.Add("/analyze reported $($analyzeFindings.Count) finding(s)")

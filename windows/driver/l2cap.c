@@ -310,6 +310,9 @@ Mpl2Connect(PMPL2_DEVICE Dev, WDFREQUEST Request, WDFFILEOBJECT File)
         return;
     }
     timeoutMs = args.timeout_ms != 0 ? args.timeout_ms : MPL2_DEFAULT_CONNECT_TIMEOUT_MS;
+    if (timeoutMs > MPL2_MAX_CONNECT_TIMEOUT_MS) {
+        timeoutMs = MPL2_MAX_CONNECT_TIMEOUT_MS;
+    }
 
     WdfSpinLockAcquire(Dev->Lock);
     if (Dev->State != Mpl2Idle) {

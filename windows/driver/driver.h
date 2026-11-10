@@ -27,8 +27,10 @@
 // dropped when it is full.
 #define MPL2_RX_SLOTS 64
 
-// CONNECT without a timeout waits this long.
+// CONNECT without a timeout waits this long; longer timeouts are cut to the
+// maximum (the CONNECT request cannot be cancelled while it waits).
 #define MPL2_DEFAULT_CONNECT_TIMEOUT_MS 15000
+#define MPL2_MAX_CONNECT_TIMEOUT_MS 60000
 
 // How long cleanup and power-down wait for the channel to close.
 #define MPL2_TEARDOWN_WAIT_MS 5000
