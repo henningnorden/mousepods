@@ -280,6 +280,7 @@ Mpl2Connect(PMPL2_DEVICE Dev, WDFREQUEST Request, WDFFILEOBJECT File)
     ULONG channelFlags;
     ULONG timeoutMs;
     BOOLEAN ready;
+    BOOLEAN abort;
     NTSTATUS lookup;
     struct _BRB_L2CA_OPEN_CHANNEL *brb = &Dev->OpenBrb;
     WDF_REQUEST_SEND_OPTIONS options;
@@ -408,6 +409,18 @@ Mpl2Connect(PMPL2_DEVICE Dev, WDFREQUEST Request, WDFFILEOBJECT File)
     if (!WdfRequestSend(Dev->ConnectReq, Dev->Target, &options)) {
         status = WdfRequestGetStatus(Dev->ConnectReq);
         Mpl2ConnectFailed(Dev, status, 0, MPL2_STAGE_BRB);
+        return;
+    }
+    // A disconnect or close that came before the send could not cancel the
+    // request yet. Still Connecting with AbortConnect set means the completion
+    // routine has not run (it clears both); cancel outside the lock, as the
+    // completion routine may run inside the cancel and takes the lock.
+    WdfSpinLockAcquire(Dev->Lock);
+    abort = Dev->State == Mpl2Connecting && Dev->AbortConnect;
+    WdfSpinLockRelease(Dev->Lock);
+    if (abort) {
+        Mpl2Log("connect aborted while it was being sent; cancelling it");
+        (void)WdfRequestCancelSentRequest(Dev->ConnectReq);
     }
 }
 
@@ -750,11 +763,18 @@ Mpl2ReaderSubmit(PMPL2_DEVICE Dev)
     BTH_ADDR remote;
     PUCHAR buffer;
     USHORT size;
+    BOOLEAN running;
+    BOOLEAN cancel;
     struct _BRB_L2CA_ACL_TRANSFER *brb = &Dev->ReadBrb;
 
     WdfSpinLockAcquire(Dev->Lock);
-    if (Dev->State != Mpl2Open || Dev->ReaderStop || Dev->RxData == NULL) {
+    running = Dev->ReaderRunning;
+    if (running || Dev->State != Mpl2Open || Dev->ReaderStop || Dev->RxData == NULL) {
         WdfSpinLockRelease(Dev->Lock);
+        if (running) {
+            // ReadReq is still out: sending it again would corrupt it.
+            Mpl2Log("reader submit refused: the reader is already running");
+        }
         return;
     }
     Dev->ReaderRunning = TRUE;
@@ -778,6 +798,17 @@ Mpl2ReaderSubmit(PMPL2_DEVICE Dev)
     if (NT_SUCCESS(status)) {
         WdfRequestSetCompletionRoutine(Dev->ReadReq, Mpl2ReadComplete, Dev);
         if (WdfRequestSend(Dev->ReadReq, Dev->Target, WDF_NO_SEND_OPTIONS)) {
+            // A teardown that started between setting ReaderRunning and the send
+            // tried to cancel a request that was not out yet; cancel it now. Still
+            // running means the completion routine has not run. The cancel happens
+            // outside the lock: the completion routine may run inside it and takes
+            // the lock itself.
+            WdfSpinLockAcquire(Dev->Lock);
+            cancel = Dev->ReaderStop && Dev->ReaderRunning;
+            WdfSpinLockRelease(Dev->Lock);
+            if (cancel) {
+                (void)WdfRequestCancelSentRequest(Dev->ReadReq);
+            }
             return;
         }
         status = WdfRequestGetStatus(Dev->ReadReq);
