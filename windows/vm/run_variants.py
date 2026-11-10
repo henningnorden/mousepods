@@ -103,6 +103,14 @@ def save_state(d, state):
     os.replace(tmp, _state_path(d))
 
 
+def _remember(state, addrs):
+    """Full addresses go to meta.known_addrs (local; the pushed copy is masked)."""
+    meta = state.setdefault("meta", {})
+    known = set(meta.get("known_addrs") or [])
+    known.update(a.upper() for a in addrs if a and addr_forms(a))
+    meta["known_addrs"] = sorted(known)
+
+
 def _put(state, rec):
     state["results"] = [r for r in state["results"] if r["id"] != rec["id"]] + [rec]
     state["results"].sort(key=lambda r: r["id"])
@@ -242,8 +250,9 @@ def record_hung_route(state, step_id, route, detail):
 
 # --- masking: the fork and vm-results are public ---------------------------------
 
-_MAC = re.compile(r"(?<![0-9A-Fa-f:-])((?:[0-9A-Fa-f]{2}[:-]){4})([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})(?![0-9A-Fa-f:-])")
+_MAC = re.compile(r"(?<![0-9A-Fa-f])((?:[0-9A-Fa-f]{2}[:-]){4})([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})(?![0-9A-Fa-f])")
 _HEX12 = re.compile(r"(?<![0-9A-Fa-f-])[0-9A-Fa-f]{8}([0-9A-Fa-f]{4})(?![0-9A-Fa-f])")
+_USERS_PATH = re.compile(r"(?i)(\\Users\\|/Users/)[^\\/\s\"']+")
 
 
 def mask_addr(addr):
@@ -256,42 +265,118 @@ def mask_addr(addr):
     return "XX:XX:XX:XX:%s:%s" % (parts[4].upper(), parts[5].upper())
 
 
-def mask_text(text, hide=()):
-    """Every Bluetooth address (AA:BB:.., AA-BB-.., and the driver's 12-hex-digit
-    form) keeps only its last two bytes; words in `hide` (user and machine name)
-    become <hidden>."""
-    text = _MAC.sub(lambda m: "XX:XX:XX:XX:%s:%s" % (m.group(2).upper(), m.group(4).upper()), text)
-    text = _HEX12.sub(lambda m: "XXXXXXXX" + m.group(1).upper(), text)
-    for word in hide:
-        if word and len(word) >= 3:
-            text = re.sub(re.escape(word), "<hidden>", text, flags=re.IGNORECASE)
+def addr_forms(addr):
+    """Every way a full address shows up: colon, dash, bare 12 hex (any case)."""
+    bare = re.sub(r"[^0-9A-Fa-f]", "", addr or "")
+    if len(bare) != 12:
+        return []
+    pairs = [bare[i:i + 2] for i in range(0, 12, 2)]
+    return [":".join(pairs), "-".join(pairs), bare]
+
+
+def _mask_known(text, addrs):
+    for addr in addrs:
+        forms = addr_forms(addr)
+        if not forms:
+            continue
+        tail = forms[2][8:].upper()
+        for form, masked in zip(forms, ("XX:XX:XX:XX:%s:%s" % (tail[:2], tail[2:]),
+                                         "XX-XX-XX-XX-%s-%s" % (tail[:2], tail[2:]),
+                                         "XXXXXXXX" + tail)):
+            text = re.sub(re.escape(form), masked, text, flags=re.IGNORECASE)
     return text
 
 
-def mask_dir(d, hide=()):
-    """Mask every text file in a round folder before it is pushed."""
-    for name in sorted(os.listdir(d)):
-        path = os.path.join(d, name)
-        if not os.path.isfile(path) or not name.endswith((".md", ".json", ".txt", ".log")):
-            continue
-        with open(path, encoding="utf-8-sig", errors="replace") as f:
-            text = f.read()
-        masked = mask_text(text, hide)
-        if masked != text:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(masked)
+def mask_text(text, hide=(), addrs=()):
+    """Every Bluetooth address (AA:BB:.., AA-BB-.., the driver's 12-hex-digit form,
+    and the known addresses in `addrs` in any form, e.g. inside Windows device IDs)
+    keeps only its last two bytes. Words in `hide` (user and machine name, 4+
+    characters) become <hidden> as whole words, and so do user folders in paths."""
+    text = _mask_known(text, addrs)
+    text = _MAC.sub(lambda m: "XX:XX:XX:XX:%s:%s" % (m.group(2).upper(), m.group(4).upper()), text)
+    text = _HEX12.sub(lambda m: "XXXXXXXX" + m.group(1).upper(), text)
+    text = _USERS_PATH.sub(lambda m: m.group(1) + "<hidden>", text)
+    for word in hide:
+        if word and len(word) >= 4:
+            text = re.sub(r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9])" % re.escape(word), "<hidden>", text,
+                          flags=re.IGNORECASE)
+    return text
 
 
-def write_setup(path, facts, devices=()):
-    """setup.txt: facts is a list of [name, value] pairs; addresses are masked."""
+class MaskError(Exception):
+    pass
+
+
+def known_addrs(d, extra=()):
+    """The full addresses this round saw: given ones plus results.json meta.known_addrs."""
+    out = [a for a in extra if a]
+    out += load_state(d)["meta"].get("known_addrs") or []
+    return sorted({a.upper().replace("-", ":") for a in out if addr_forms(a)})
+
+
+def mask_dir(d, hide=(), addrs=()):
+    """Mask every file under a round folder (the copy that gets pushed), then
+    check that no known full address is left in any form; MaskError if one is."""
+    addrs = list(addrs)
+    for root, _, files in os.walk(d):
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            with open(path, "rb") as f:
+                raw = f.read()
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                continue            # not text; the check below still looks at the bytes
+            masked = mask_text(text, hide, addrs)
+            if masked != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(masked)
+    left = []
+    for root, _, files in os.walk(d):
+        for name in files:
+            path = os.path.join(root, name)
+            with open(path, "rb") as f:
+                low = f.read().lower()
+            for addr in addrs:
+                for form in addr_forms(addr):
+                    if form.lower().encode() in low:
+                        left.append("%s (%s)" % (os.path.relpath(path, d), mask_addr(addr)))
+    if left:
+        raise MaskError("a full Bluetooth address is still in: %s" % ", ".join(sorted(set(left))))
+
+
+def _facts_list(facts):
+    """[name, value] pairs or {"k","v"} objects; Windows PowerShell 5.1 may wrap a
+    list as {"value": [...], "Count": n}."""
+    if isinstance(facts, dict) and "value" in facts:
+        facts = facts["value"]
+    if isinstance(facts, dict):
+        return list(facts.items())
+    out = []
+    for f in facts or []:
+        if isinstance(f, dict) and "value" in f and "Count" in f:
+            f = f["value"]
+        if isinstance(f, dict):
+            out.append((f.get("k", f.get("name")), f.get("v", f.get("value"))))
+        elif isinstance(f, (list, tuple)) and len(f) == 2:
+            out.append((f[0], f[1]))
+    return out
+
+
+def write_setup(path, facts, devices=(), addrs=()):
+    """setup.txt: facts as [name, value] pairs (or {"k","v"} objects); addresses masked."""
+    if isinstance(devices, dict) and "value" in devices:
+        devices = devices["value"]
+    devices = [d for d in (devices or []) if isinstance(d, dict)]
     lines = ["MousePods VM round setup, %s" % _now(), ""]
-    lines += ["%s: %s" % (k, v) for k, v in facts]
+    lines += ["%s: %s" % (k, v) for k, v in _facts_list(facts)]
     if devices:
         lines += ["", "Paired Bluetooth devices:"]
         lines += ["  %s  %s  connected: %s" % (d.get("name"), d.get("address"), d.get("connected"))
                   for d in devices]
+    addrs = list(addrs) + [d.get("address") for d in devices if d.get("address")]
     with open(path, "w", encoding="utf-8") as f:
-        f.write(mask_text("\n".join(lines) + "\n"))
+        f.write(mask_text("\n".join(lines) + "\n", addrs=addrs))
 
 
 # --- the report ---------------------------------------------------------------
@@ -534,6 +619,7 @@ def run_variant(step, addr, api=None, out=print):
         % (step["id"], step["route"], step["mtu"], step["security"], step["audio"], step["seconds"]))
     res = ht.run(lambda a: _open(step, a, api), addr, None, step["seconds"], out=out)
     return _record(step, ht.classify(res), route_loaded=loaded, result=res, radio=mask_addr(info.get("radio")),
+                   radio_full=info.get("radio"),
                    devices=len(paths))
 
 
@@ -848,6 +934,7 @@ def main(argv=None, out=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("init")
     p.add_argument("--dir", required=True)
+    p.add_argument("--known", nargs="*", default=[], help="full addresses, kept locally for masking")
     p.add_argument("--meta", default=None, help="JSON file with round facts")
     p = sub.add_parser("next")
     p.add_argument("--dir", required=True)
@@ -872,6 +959,8 @@ def main(argv=None, out=None):
     p.add_argument("--facts", required=True, help="JSON: {facts: [[name, value]...], devices: [...]}")
     p = sub.add_parser("mask")
     p.add_argument("--dir", required=True)
+    p.add_argument("--state", default=None, help="round folder whose results.json lists the known addresses")
+    p.add_argument("--addr", nargs="*", default=[])
     p.add_argument("--hide", nargs="*", default=[])
     p = sub.add_parser("report")
     p.add_argument("--dir", required=True)
@@ -892,6 +981,7 @@ def main(argv=None, out=None):
     if a.cmd == "init":
         state = load_state(a.dir)
         state["meta"].update(_read_json(a.meta) or {})
+        _remember(state, a.known)
         save_state(a.dir, state)
         return 0
     if a.cmd == "next":
@@ -931,6 +1021,7 @@ def main(argv=None, out=None):
             f.flush()
             os.fsync(f.fileno())
         state = load_state(a.dir)
+        _remember(state, [a.addr, rec.pop("radio_full", None)])
         _put(state, rec)
         save_state(a.dir, state)
         return 0
@@ -949,10 +1040,14 @@ def main(argv=None, out=None):
         return 0
     if a.cmd == "setup":
         data = _read_json(a.facts) or {}
-        write_setup(a.path, data.get("facts") or [], [d for d in (data.get("devices") or []) if d])
+        write_setup(a.path, data.get("facts") or [], data.get("devices") or [])
         return 0
     if a.cmd == "mask":
-        mask_dir(a.dir, a.hide)
+        try:
+            mask_dir(a.dir, a.hide, known_addrs(a.state or a.dir, a.addr))
+        except MaskError as e:
+            print("not pushing: %s" % e, file=sys.stderr)
+            return 3
         return 0
     if a.cmd == "report":
         state = load_state(a.dir)

@@ -168,9 +168,12 @@ double-click **Continue MousePods round**. If that does not help, start Safe Mod
 screen click the power icon, hold **Shift** and click Restart, then Troubleshoot > Advanced
 options > Startup Settings > Restart > press **4**, and continue as below.
 
-If the round window has not changed for **5 minutes**, something in Windows hangs: restart Windows
-(Start > Power > Restart). After logging in, the round goes on and records that step as
-interrupted.
+If the round window has not changed for **10 minutes**, something in Windows hangs: restart Windows
+(Start > Power > Restart; if that does not finish either, Force Reset in virt-manager). After
+logging in, the round goes on and records that step as interrupted.
+
+If the window says Windows could not take the driver's device down, it restarts Windows by
+itself after 60 seconds. Log in again; the round goes on with the next step.
 
 If Windows bluescreens again while starting (before you can log in), the driver crashes as soon
 as Windows loads it. After two failed starts Windows shows a blue "Choose an option" screen:
@@ -195,8 +198,9 @@ first, failures first), `results.json`, `driver.log`, `setup.txt`, `install.txt`
 `steps.log` and, after a bluescreen, `crash.txt` (the crash analysis).
 
 The fork and `vm-results` are public, so before pushing the script masks every Bluetooth
-address down to its last two bytes (`XX:XX:XX:XX:3F:A1`) and removes the Windows user and
-computer names. Crash dumps hold memory contents and are never pushed; with `-KeepDump` the
+address down to its last two bytes (`XX:XX:XX:XX:3F:A1`), also inside Windows device IDs, and
+removes the Windows user and computer names. If a full address of the AirPods or the Bluetooth
+stick would still be in a pushed file, it does not push and keeps the round on the VM. Crash dumps hold memory contents and are never pushed; with `-KeepDump` the
 script keeps them in `C:\ProgramData\MousePods\dumps` on the VM only.
 
 ## Credits

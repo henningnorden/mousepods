@@ -337,7 +337,9 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
                 New-Item -ItemType Directory -Force -Path $dest | Out-Null
                 Copy-Item -Path (Join-Path $Dir '*') -Destination $dest -Recurse -Force
                 Get-ChildItem $dest -Filter '*.dmp' -Recurse | Remove-Item -Force    # never pushed
-                $m = Invoke-Py @('mask', '--dir', $dest, '--hide', $env:USERNAME, $env:COMPUTERNAME)
+                $ma = @('mask', '--dir', $dest, '--state', $Dir, '--hide', $env:USERNAME, $env:COMPUTERNAME)
+                if ($script:Addr) { $ma += @('--addr', $script:Addr) }
+                $m = Invoke-Py $ma
                 if ($m.Code -ne 0) { $last = "masking failed, not pushing: $($m.Text)"; Remove-Item -Recurse -Force $dest; continue }
                 $null = Invoke-Git @('add', "rounds/$stamp") $ResultsTree
                 $c = Invoke-Git @('commit', '-q', '-m', $Message) $ResultsTree
@@ -485,22 +487,51 @@ function Clear-Routes([string]$Log) {
 }
 
 # Clean switch: nothing of the other route stays, then the wanted one is set up.
-# Returns the text of what hung, or $null.
+# Returns $null, or what hung and where: 'teardown' (taking the previous route
+# down: the device is stuck, no route is to blame, Windows needs a restart) or
+# 'setup' (creating or enabling the wanted route: that route is skipped).
 function Set-Route([string]$Route, [string]$Inf, [string]$Log) {
     Say "Setting up load route $Route ..." Cyan
     Add-Line $Log "=== route $Route, $(Get-Date -Format o)"
     $hung = Clear-Routes $Log
-    if ($hung) { return $hung }
+    if ($hung) { return [pscustomobject]@{ Where = 'teardown'; What = $hung } }
     Set-DriverStart 3
     Start-Sleep -Seconds 2
     if ($Route -eq 'root') {
         $r = Invoke-Devnode 'create' $Inf $Log
-        if ($r.TimedOut) { return 'creating the root device' }
+        if ($r.TimedOut) { return [pscustomobject]@{ Where = 'setup'; What = 'creating the root device' } }
     } else {
         $r = Set-BtService 'enable' $Log
-        if ($r.TimedOut) { return 'switching the Bluetooth service on' }
+        if ($r.TimedOut) { return [pscustomobject]@{ Where = 'setup'; What = 'switching the Bluetooth service on' } }
     }
     return $null
+}
+
+# A device could not be taken down: only a restart frees it. The round is not
+# finished; after the restart and logon it goes on with the step that was next.
+function Restart-ForStuckDevice($Round, [string]$What) {
+    $n = 0
+    if ($Round.PSObject.Properties['teardown_restarts']) { $n = [int]$Round.teardown_restarts }
+    if ($n -ge 2) {
+        Stop-Round $Round "Taking the driver's device down hung again after $n restarts ($What)."
+    }
+    if ($Round.PSObject.Properties['teardown_restarts']) { $Round.teardown_restarts = $n + 1 }
+    else { $Round | Add-Member -NotePropertyName teardown_restarts -NotePropertyValue ($n + 1) }
+    Save-Round $Round
+    if (Test-Path $MarkerPath) {
+        # a crash found at resume is still recorded; a route marker from the step loop is not (no route to blame)
+        $mk = Get-Content $MarkerPath -Raw | ConvertFrom-Json
+        if ($mk.PSObject.Properties['crash']) { $null = Invoke-Py @('next', '--dir', $Round.dir, '--marker', $MarkerPath) }
+    }
+    Remove-Item $MarkerPath -Force -ErrorAction SilentlyContinue
+    Add-Line (Join-Path $Round.dir 'install.txt') "teardown hung ($What); restart $($n + 1)"
+    Banner @("Windows could not take the driver's device down ($What).",
+        'Only a restart frees it. Windows restarts in 60 seconds (press Enter to restart now);',
+        'log in again afterwards and the round continues by itself.',
+        'If Windows has not restarted after 10 minutes, use Force Reset in virt-manager.') Yellow
+    Wait-Enter 60
+    Restart-Computer -Force
+    exit 0
 }
 
 # --- setup checks ---------------------------------------------------------------
@@ -535,7 +566,8 @@ function Get-SetupFacts {
 # setup.txt is written by run_variants.py, which masks the addresses in it.
 function Write-Setup([string]$Path, $Facts, $Devices) {
     $list = New-Object System.Collections.ArrayList
-    foreach ($k in $Facts.Keys) { $null = $list.Add([ordered]@{ k = "$k"; v = "$($Facts[$k])" }) }
+    # [name, value] pairs; run_variants.py also reads {"k","v"} and 5.1's {"value","Count"} wrappers
+    foreach ($k in $Facts.Keys) { $null = $list.Add([string[]]@("$k", "$($Facts[$k])")) }
     $devs = New-Object System.Collections.ArrayList
     foreach ($d in @($Devices)) {
         if ($d) { $null = $devs.Add([ordered]@{ name = "$($d.name)"; address = "$($d.address)"; connected = [bool]$d.connected }) }
@@ -691,10 +723,14 @@ function Run-Steps($Round) {
         if ($step.route -ne $current) {
             Write-Marker $step 'route'
             $hung = Set-Route $step.route (Join-Path $Round.pkg 'MousePodsL2cap.inf') $install
+            if ($hung -and $hung.Where -eq 'teardown') { Restart-ForStuckDevice $Round $hung.What }
             if ($hung) {
-                Say "Setting up route $($step.route) hung ($hung); skipping that route." Yellow
-                $null = Invoke-Py @('record', '--dir', $Round.dir, '--id', "$($step.id)", '--verdict', 'hung',
-                    '--route', $step.route, '--skip-route', '--detail', "setting up route $($step.route) hung: $hung")
+                Say "Setting up route $($step.route) hung ($($hung.What)); skipping that route." Yellow
+                $rec = Invoke-Py @('record', '--dir', $Round.dir, '--id', "$($step.id)", '--verdict', 'hung',
+                    '--route', $step.route, '--skip-route', '--detail', "setting up route $($step.route) hung: $($hung.What)")
+                if ($rec.Code -ne 0) {
+                    Stop-Round $Round "Setting up route $($step.route) hung ($($hung.What)) and recording that failed: $($rec.Text)"
+                }
                 Remove-Item $MarkerPath -Force -ErrorAction SilentlyContinue
                 $current = $null
                 continue
@@ -746,7 +782,27 @@ if ($SelfTest) {
     Add-Helpers
     try { Say "default audio output: $([MousePodsVm.Helpers]::DefaultOutput())" } catch { Say "default audio output: $($_.Exception.Message)" }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $VmDir 'devnode.ps1') -Action compile
-    exit $LASTEXITCODE
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    # setup.txt exactly as a round writes it: the JSON this PowerShell produces, read by run_variants.py
+    $script:Python = Find-Python
+    $facts = [ordered]@{ 'Windows' = 'selftest value'; 'Test signing' = 'active in this boot: True' }
+    $devs = @([pscustomobject]@{ name = 'AirPods Pro'; address = 'A4:C3:F0:12:3F:A1'; connected = $true })
+    $out = Join-Path $env:TEMP 'mousepods-selftest-setup.txt'
+    Write-Setup $out $facts $devs
+    $text = Get-Content $out -Raw -Encoding UTF8
+    Say $text
+    if ($text -notmatch 'Windows: selftest value' -or $text -notmatch 'Test signing: active in this boot: True' -or
+        $text -match 'A4:C3:F0:12' -or $text -notmatch 'XX:XX:XX:XX:3F:A1') {
+        Write-Host '::error file=windows/vm/round.ps1,title=Write-Setup selftest::setup.txt does not hold the facts or shows a full address'
+        exit 1
+    }
+    $q = Quote-Arg 'C:\Program Files\x "y"\'
+    if ($q -ne '"C:\Program Files\x \"y\"\\"') {
+        Write-Host "::error file=windows/vm/round.ps1,title=Quote-Arg selftest::got $q"
+        exit 1
+    }
+    Say 'round.ps1 selftest: ok'
+    exit 0
 }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -764,6 +820,11 @@ if (-not $isAdmin) {
     Start-Process powershell.exe -Verb RunAs -ArgumentList $a
     exit 0
 }
+
+# -Resume, first of all (before Bluetooth reconnects the AirPods and loads the
+# driver through the service, route b): keep Windows from loading the driver.
+# Set-Route switches it back on for the next step.
+if ($Resume -or (Test-Path $ActivePath)) { Set-DriverStart 4 }
 
 New-Item -ItemType Directory -Force -Path $Data | Out-Null
 $script:Python = Find-Python
@@ -810,10 +871,6 @@ if (-not $Resume -and (Test-Path $ActivePath)) {
 }
 
 if ($Resume) {
-    # First of all, before Bluetooth reconnects the AirPods and loads the driver
-    # through the service (route b): keep Windows from loading the driver. Set-Route
-    # switches it back on for the next step.
-    Set-DriverStart 4
     if (-not (Test-Path $ActivePath)) {
         Set-DriverStart 3
         Unregister-ResumeTask
@@ -831,11 +888,11 @@ if ($Resume) {
             Say 'Waiting 20 seconds for Windows to settle ...'
             Start-Sleep -Seconds 20
         }
-        if (-not $env:SAFEBOOT_OPTION -and $round.phase -eq 'variants') {
-            $hung = Clear-Routes (Join-Path $round.dir 'install.txt')
-            if ($hung) { Say "Switching the routes off did not finish ($hung); going on." Yellow }
-        }
         Resume-AfterCrash $round
+        if ($round.phase -eq 'variants') {
+            $hung = Clear-Routes (Join-Path $round.dir 'install.txt')
+            if ($hung) { Restart-ForStuckDevice $round $hung }
+        }
         if ($round.phase -ne 'variants') { Stop-Round $round "Windows went down during the $($round.phase) phase, before the variants (see crash.txt)." }
         Run-Steps $round
     } catch {
@@ -973,7 +1030,7 @@ try {
     $meta = Join-Path $roundDir 'meta.json'
     Set-Content -Path $meta -Encoding UTF8 -Value (@{ stamp = $stamp; commit = $head; driver = "ci/$pkgSha/driver.zip$note"
             addr = (Get-MaskedAddr $round.addr); name = $round.name; started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json)
-    $null = Invoke-Py @('init', '--dir', $roundDir, '--meta', $meta)
+    $null = Invoke-Py @('init', '--dir', $roundDir, '--meta', $meta, '--known', $round.addr)
     Remove-Item $meta -Force
 
     # Install: old packages out, certificate in, new package into the driver store.

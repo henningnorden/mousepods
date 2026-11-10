@@ -229,13 +229,91 @@ class MaskTests(unittest.TestCase):
     def test_mask_dir_and_hidden_words(self):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "round.log"), "w") as f:
-                f.write("C:\\Users\\henni\\mousepods on DESKTOP-ABC, AirPods %s\n" % FULL)
-            rv.mask_dir(d, ["henni", "DESKTOP-ABC"])
+                f.write("C:\\Users\\henni\\mousepods on DESKTOP-ABC, Henning's AirPods %s\n" % FULL)
+            rv.mask_dir(d, ["henni", "DESKTOP-ABC"], [FULL])
             with open(os.path.join(d, "round.log")) as f:
                 text = f.read()
         self._assert_masked(text)
-        self.assertNotIn("henni", text)
+        self.assertNotIn("\\henni\\", text)
         self.assertNotIn("DESKTOP-ABC", text)
+        self.assertIn("Henning's AirPods", text)    # whole words only
+
+    def test_short_names_are_not_hidden(self):
+        self.assertEqual(rv.mask_text("the pen is here", ["pen"]), "the pen is here")
+
+    def test_address_right_after_colon_or_dash(self):
+        for text in ("radio:%s" % FULL, "radio-%s" % FULL, "x:%s:" % FULL.lower()):
+            self._assert_masked(rv.mask_text(text))
+
+    def test_known_addresses_in_windows_ids(self):
+        radio = "00:1A:7D:DA:71:13"
+        ids = ("Bluetooth#Bluetooth001a7dda7113-a4c3f0123fa1",
+               "BTHENUM\\{6d0e3c52-4f1b-4c9a-9a51-2f0b8e7d1a02}_LOCALMFG&0002\\7&1&0&A4C3F0123FA1_C00000000",
+               "BluetoothDevice_a4c3f0123fa1", "A4-C3-F0-12-3F-A1")
+        for text in ids:
+            out = rv.mask_text(text, addrs=[FULL, radio])
+            self._assert_masked(out)
+            self.assertNotIn("001a7dda7113", out.lower())
+
+    def test_mask_dir_is_recursive_and_refuses_leftovers(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sub"))
+            with open(os.path.join(d, "sub", "x.txt"), "w") as f:
+                f.write("Bluetooth#Bluetooth001a7dda7113-a4c3f0123fa1\n")
+            rv.mask_dir(d, (), [FULL])
+            with open(os.path.join(d, "sub", "x.txt")) as f:
+                self._assert_masked(f.read())
+            with open(os.path.join(d, "blob.bin"), "wb") as f:
+                f.write(b"\xff\xfe\x00" + FULL.replace(":", "").encode())
+            with self.assertRaises(rv.MaskError):
+                rv.mask_dir(d, (), [FULL])
+
+    def test_mask_cli_uses_the_known_addresses_and_fails_closed(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as base:
+            local = os.path.join(base, "round")         # the unmasked local round folder
+            rv.main(["init", "--dir", local, "--known", FULL], out=io.StringIO())
+            with open(os.path.join(local, "install.txt"), "w") as f:
+                f.write("installed on BTHENUM\\X&0&a4c3f0123fa1_C00000000\n")
+            copy = os.path.join(base, "copy")           # what gets pushed
+            shutil.copytree(local, copy)
+            self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 0)
+            for name in ("install.txt", "results.json"):
+                with open(os.path.join(copy, name)) as f:
+                    self._assert_masked(f.read())
+            with open(os.path.join(copy, "x.bin"), "wb") as f:
+                f.write(b"\xff" + FULL.encode())
+            self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 3)
+
+
+class SetupCliTests(unittest.TestCase):
+    """The JSON round.ps1 Write-Setup sends, in the shapes Windows PowerShell 5.1 can produce."""
+
+    SHAPES = {
+        "pairs": '{"facts": [["Windows", "Windows 11 Pro 24H2"], ["Test signing", "active: True"]], '
+                 '"devices": [{"name": "AirPods Pro", "address": "%s", "connected": true}]}' % FULL,
+        "kv": '{"facts": [{"k": "Windows", "v": "Windows 11 Pro 24H2"}, {"k": "Test signing", "v": "active: True"}], '
+              '"devices": [{"name": "AirPods Pro", "address": "%s", "connected": true}]}' % FULL,
+        "wrapped": '{"facts": {"value": [{"value": ["Windows", "Windows 11 Pro 24H2"], "Count": 2}, '
+                   '{"value": ["Test signing", "active: True"], "Count": 2}], "Count": 2}, '
+                   '"devices": {"value": [{"name": "AirPods Pro", "address": "%s", "connected": true}], "Count": 1}}' % FULL,
+    }
+
+    def test_every_shape_gives_the_facts(self):
+        for shape, js in self.SHAPES.items():
+            with tempfile.TemporaryDirectory() as d:
+                facts = os.path.join(d, "facts.json")
+                with open(facts, "w", encoding="utf-8-sig") as f:      # PowerShell writes a BOM
+                    f.write(js)
+                path = os.path.join(d, "setup.txt")
+                self.assertEqual(rv.main(["setup", "--path", path, "--facts", facts], out=io.StringIO()), 0)
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+                self.assertIn("Windows: Windows 11 Pro 24H2", text, shape)
+                self.assertIn("Test signing: active: True", text, shape)
+                self.assertNotIn("k: v", text, shape)
+                self.assertIn("AirPods Pro  XX:XX:XX:XX:3F:A1", text, shape)
+                self.assertNotIn(FULL, text, shape)
 
 
 class HelperTests(unittest.TestCase):
