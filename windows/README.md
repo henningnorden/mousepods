@@ -12,6 +12,10 @@ stays in the Python code shared with Linux (`l2cap_win.py`).
 
 The interface between driver and Python is `driver/public.h`.
 
+The driver targets KMDF 1.15 (`KMDF_VERSION_MINOR` in `driver/MousePodsL2cap.vcxproj`), not the
+1.33 the plan named: 1.15 is part of every Windows 10 and 11 and uses nothing newer, so the same
+package loads on any of them without a KMDF co-installer.
+
 ## Building
 
 GitHub Actions builds the driver on every push to the `windows-l2cap-driver` branch
