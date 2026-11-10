@@ -46,6 +46,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <TargetName>MousePodsL2cap</TargetName>
+    <!-- The NuGet WDK has stampinf.exe only in bin\<version>\x64, which the x64 props do not search -->
+    <ExecutablePath>$(ExecutablePath);$(WDKBinRoot_x64)</ExecutablePath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
