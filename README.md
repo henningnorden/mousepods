@@ -267,6 +267,15 @@ I reverse-engineered this together with **Claude** (Anthropic), used as an AI pa
 
 I held the AirPods, made the calls and checked every result on real hardware. The method, failures included, is in the journal.
 
+## Star history
+
+<a href="https://star-history.com/#starman-tech/mousepods&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=starman-tech/mousepods&type=Date&theme=dark">
+    <img alt="Star history of MousePods" src="https://api.star-history.com/svg?repos=starman-tech/mousepods&type=Date">
+  </picture>
+</a>
+
 ## Credits
 
 This builds on public work: [LibrePods](https://github.com/librepods-org/librepods) (AACP and the SensorDataWX start packets),

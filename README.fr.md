@@ -185,6 +185,15 @@ J'ai mené cette rétro-ingénierie avec **Claude** (Anthropic), utilisé comme 
 
 J'ai tenu les AirPods, pris les décisions et vérifié chaque résultat sur le vrai matériel.
 
+## Évolution des étoiles
+
+<a href="https://star-history.com/#starman-tech/mousepods&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=starman-tech/mousepods&type=Date&theme=dark">
+    <img alt="Star history of MousePods" src="https://api.star-history.com/svg?repos=starman-tech/mousepods&type=Date">
+  </picture>
+</a>
+
 ## Crédits
 
 S'appuie sur [LibrePods](https://github.com/librepods-org/librepods), [apple-wireshark](https://github.com/pabloaul/apple-wireshark),
