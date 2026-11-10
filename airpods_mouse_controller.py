@@ -475,6 +475,12 @@ class AAPClient:
                 pass
         self.pid = product_id(self.addr)
         s = l2cap.open_seqpacket(self.addr, 0x1001, IOS_MTU, 8)   # ctypes path if Python lacks AF_BLUETOOTH
+        self.attach(s, self.addr, self.pid)
+
+    def attach(self, sock, addr, pid):
+        """Start AAP on an already open channel (also used by the Windows driver path)."""
+        s = sock
+        self.addr, self.pid = addr, pid
         s.settimeout(None)
         self.sock = s
         for p, d in ((PKT_HANDSHAKE, 0.3), (PKT_FEATURES, 0.15), (PKT_NOTIFICATIONS, 0.15)):

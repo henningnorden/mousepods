@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: Apache-2.0
+"""AAP start on an open channel, and the Windows head tracking test program.
+
+Run:  python -m unittest tests.test_windows_headtrack -v
+"""
+import json
+import os
+import subprocess
+import sys
+import unittest
+from unittest import mock
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "windows", "tools"))
+import airpods_mouse_controller as amc  # noqa: E402
+import headtrack_test as ht  # noqa: E402
+import l2cap_win  # noqa: E402
+
+
+class FakeSock:
+    def __init__(self, packets=()):
+        self.sent = []
+        self.packets = list(packets)
+        self.timeout = "unset"
+        self.closed = False
+
+    def send(self, p):
+        self.sent.append(p)
+
+    def settimeout(self, t):
+        self.timeout = t
+
+    def recv(self, n):
+        if self.packets:
+            return self.packets.pop(0)
+        raise TimeoutError("timed out")
+
+    def close(self):
+        self.closed = True
+
+
+class FakeClock:
+    """Each call advances 5 ms; sleep-free."""
+
+    def __init__(self, step=0.005):
+        self.t = 0.0
+        self.step = step
+
+    def __call__(self):
+        self.t += self.step
+        return self.t
+
+
+class AttachTests(unittest.TestCase):
+    def test_attach_sends_start_packets(self):
+        c = amc.AAPClient("AA:BB:CC:DD:EE:FF")
+        s = FakeSock()
+        with mock.patch.object(amc.time, "sleep"):
+            c.attach(s, "AA:BB:CC:DD:EE:FF", "2013")
+        self.assertEqual(s.sent[:3], [amc.PKT_HANDSHAKE, amc.PKT_FEATURES, amc.PKT_NOTIFICATIONS])
+        self.assertIsNone(s.timeout)
+        self.assertIs(c.sock, s)
+        self.assertEqual(c.pid, "2013")
+        self.assertEqual(c.addr, "AA:BB:CC:DD:EE:FF")
+
+    def test_connect_uses_attach(self):
+        c = amc.AAPClient("AA:BB:CC:DD:EE:FF", auto_connect=False)
+        s = FakeSock()
+        with mock.patch.object(amc.l2cap, "open_seqpacket", return_value=s), \
+                mock.patch.object(amc, "product_id", return_value="2014"), \
+                mock.patch.object(c, "attach") as att:
+            c.connect()
+        att.assert_called_once_with(s, "AA:BB:CC:DD:EE:FF", "2014")
+
+
+def capture_packets():
+    with open(os.path.join(ROOT, "captures", "airpods3_glide_raw.json")) as f:
+        return [bytes.fromhex(h) for _t, _label, h in json.load(f)]
+
+
+class RunTests(unittest.TestCase):
+    def test_run_replays_capture(self):
+        sock = FakeSock(capture_packets())
+        lines = []
+        with mock.patch.object(amc.time, "sleep"):
+            res = ht.run(lambda addr: sock, "AA:BB:CC:DD:EE:FF", "2013", 2.0,
+                         clock=FakeClock(0.0005), out=lines.append)
+        self.assertGreater(res["blocks"], 0)
+        self.assertEqual(ht.classify(res), "ok")
+        self.assertTrue(res["ok"])
+        self.assertTrue(any(l.startswith("yaw") for l in lines))
+        self.assertTrue(sock.closed)
+
+    def test_run_no_answer(self):
+        sock = FakeSock()
+        with mock.patch.object(amc.time, "sleep"):
+            res = ht.run(lambda addr: sock, "AA:BB:CC:DD:EE:FF", None, 5.0,
+                         clock=FakeClock(0.5), out=lambda s: None)
+        self.assertEqual(ht.classify(res), "no_answer")
+        self.assertIsNone(res["first_reply_ms"])
+
+    def test_run_open_failures(self):
+        def boom(exc):
+            def f(addr):
+                raise exc
+            return f
+        cases = [
+            (PermissionError("no"), "refused_by_policy", 0, None),
+            (l2cap_win.DriverError(0xC0000001, 7, 3), "airpods_refused", 3, 0xC0000001),
+            (l2cap_win.DriverError(0xC0000001, 0, 0), "refused_by_policy", 0, 0xC0000001),
+            (FileNotFoundError("driver"), "windows_refused", 1, None),
+        ]
+        for exc, kind, stage, nt in cases:
+            res = ht.run(boom(exc), "AA:BB:CC:DD:EE:FF", None, 1.0, clock=FakeClock(),
+                         out=lambda s: None)
+            self.assertFalse(res["ok"])
+            self.assertEqual(res["stage"], stage)
+            self.assertEqual(res["ntstatus"], nt)
+            self.assertEqual(ht.classify(res), kind, exc)
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_classify(self):
+        def r(**kw):
+            base = {"blocks": 0, "stage": None, "first_reply_ms": None}
+            base.update(kw)
+            return base
+        self.assertEqual(ht.classify(r(blocks=5, first_reply_ms=20)), "ok")
+        for st in (1, 2, 4):
+            self.assertEqual(ht.classify(r(stage=st)), "windows_refused")
+        self.assertEqual(ht.classify(r(stage=3)), "airpods_refused")
+        self.assertEqual(ht.classify(r()), "no_answer")
+        self.assertEqual(ht.classify(r(first_reply_ms=30)), "no_motion")
+        self.assertEqual(ht.classify(r(stage=0)), "refused_by_policy")
+
+
+class ImportTests(unittest.TestCase):
+    def test_controller_imports_without_linux_modules(self):
+        code = (
+            "import sys\n"
+            "sys.modules['evdev'] = None\n"
+            "sys.modules['gi'] = None\n"
+            "sys.path.insert(0, %r)\n"
+            "import airpods_mouse_controller\n" % ROOT)
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
