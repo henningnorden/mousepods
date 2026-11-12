@@ -56,11 +56,28 @@ class TelemetryWritesTests(unittest.TestCase):
 
 
 class RendererTests(unittest.TestCase):
-    def test_gl_renderer_default_before_gtk_loads(self):
+    def test_gl_renderer_name_follows_gtk_version(self):
+        from desktop.renderer import gl_renderer
+        self.assertEqual(gl_renderer((4, 14)), "ngl")
+        self.assertEqual(gl_renderer((4, 17)), "ngl")
+        self.assertEqual(gl_renderer((4, 18)), "gl")     # renamed; "ngl" only warns from here on
+        self.assertEqual(gl_renderer((4, 22)), "gl")
+
+    def test_users_own_choice_wins(self):
+        from desktop.renderer import choose
+        env = {"GSK_RENDERER": "vulkan"}
+        self.assertEqual(choose(env, (4, 22)), "vulkan")
+        env = {}
+        self.assertEqual(choose(env, (4, 22)), "gl")
+        self.assertEqual(env["GSK_RENDERER"], "gl")
+        self.assertEqual(choose({"GSK_RENDERER": ""}, (4, 16)), "ngl")   # empty means unset
+
+    def test_app_chooses_before_any_window(self):
         src = read("desktop", "app.py")
-        setting = src.index('os.environ.setdefault("GSK_RENDERER", "ngl")')
-        self.assertLess(setting, src.index("import gi"))
-        self.assertNotRegex(src, r'os\.environ\["GSK_RENDERER"\]\s*=')   # a user's own choice wins
+        call = src.index("renderer.choose(os.environ")
+        self.assertLess(src.index("from gi.repository import"), call)
+        self.assertLess(call, src.index("class App("))
+        self.assertNotRegex(src, r'os\.environ\["GSK_RENDERER"\]\s*=')
 
 
 if __name__ == "__main__":
