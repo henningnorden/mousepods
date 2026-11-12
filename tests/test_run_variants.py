@@ -271,7 +271,8 @@ class MaskTests(unittest.TestCase):
         text = rv.render_report([rec], {"addr": FULL, "name": "Henning's AirPods Pro"})
         self._assert_masked(text)
         self.assertIn("XX:XX:XX:XX:3F:A1", text)
-        self.assertIn("Henning's AirPods Pro", text)
+        self.assertIn("AirPods Pro", text)
+        self.assertNotIn("Henning", text)
 
     def test_setup_writer_never_contains_a_full_address(self):
         with tempfile.TemporaryDirectory() as d:
@@ -593,6 +594,39 @@ class StepTests(unittest.TestCase):
             self.assertEqual(state["results"][0]["verdict"], "error")
             self.assertIn("boom", state["results"][0]["detail"])
             self.assertTrue(os.path.exists(os.path.join(d, "driver.log")))
+
+
+class DeviceNameTests(unittest.TestCase):
+    """Device names (often the owner's name) never reach the pushed files."""
+
+    def test_device_label(self):
+        self.assertEqual(rv.device_label("Henning's AirPods Pro"), "AirPods Pro")
+        self.assertEqual(rv.device_label("AirPods Max von Anna"), "AirPods Max")
+        self.assertEqual(rv.device_label("Jo's AirPods"), "AirPods")
+        self.assertEqual(rv.device_label("Pixel Buds of Sam"), "other device")
+        self.assertEqual(rv.device_label("(not in the paired list)"), "(not in the paired list)")
+
+    def test_setup_and_push_mask_hide_device_names(self):
+        with tempfile.TemporaryDirectory() as local, tempfile.TemporaryDirectory() as copy:
+            rv.write_setup(os.path.join(local, "setup.txt"), [["Windows", "11"]],
+                           [{"name": "Henning's AirPods Pro", "address": "A4:C3:F0:12:3F:A1", "connected": True},
+                            {"name": "Annas Keyboard", "address": "11:22:33:44:55:66", "connected": False}])
+            with open(os.path.join(local, "setup.txt"), encoding="utf-8") as f:
+                setup = f.read()
+            self.assertNotIn("Henning", setup)
+            self.assertNotIn("Annas Keyboard", setup)
+            self.assertIn("AirPods Pro", setup)
+            # a name that slipped into another file (e.g. a Windows tool's output) is hidden on push
+            with open(os.path.join(copy, "install.txt"), "w", encoding="utf-8") as f:
+                f.write("pnputil: Annas Keyboard connected\n")
+            self.assertEqual(rv.main(["mask", "--dir", copy, "--state", local], out=io.StringIO()), 0)
+            with open(os.path.join(copy, "install.txt"), encoding="utf-8") as f:
+                self.assertNotIn("Annas Keyboard", f.read())
+
+    def test_report_names_the_model_only(self):
+        text = rv.render_report([], {"stamp": "x", "name": "Henning's AirPods Pro", "addr": "A4:C3:F0:12:3F:A1"})
+        self.assertNotIn("Henning", text)
+        self.assertIn("AirPods Pro", text)
 
 
 if __name__ == "__main__":

@@ -388,6 +388,30 @@ def _facts_list(facts):
     return out
 
 
+HIDE_FILE = "hide.local.json"   # device names, kept on the VM: deleted from the copy that is pushed
+
+
+def device_label(name):
+    """What pushed files say instead of a device's own name (often the owner's name):
+    the model if it is an AirPods, else just "other device"."""
+    if not name or name.startswith("("):
+        return name
+    low = name.lower()
+    for model in ("AirPods Pro", "AirPods Max", "AirPods"):
+        if model.lower() in low:
+            return model
+    return "other device"
+
+
+def known_names(d):
+    """Device names saved by `setup` in the round folder, for the push masking."""
+    try:
+        with open(os.path.join(d, HIDE_FILE), encoding="utf-8") as f:
+            return [n for n in json.load(f) if isinstance(n, str)]
+    except (OSError, ValueError):
+        return []
+
+
 def write_setup(path, facts, devices=(), addrs=()):
     """setup.txt: facts as [name, value] pairs (or {"k","v"} objects); addresses masked."""
     if isinstance(devices, dict) and "value" in devices:
@@ -397,8 +421,11 @@ def write_setup(path, facts, devices=(), addrs=()):
     lines += ["%s: %s" % (k, v) for k, v in _facts_list(facts)]
     if devices:
         lines += ["", "Paired Bluetooth devices:"]
-        lines += ["  %s  %s  connected: %s" % (d.get("name"), d.get("address"), d.get("connected"))
+        lines += ["  %s  %s  connected: %s" % (device_label(d.get("name")), d.get("address"), d.get("connected"))
                   for d in devices]
+        names = sorted({d.get("name") for d in devices if d.get("name")})
+        with open(os.path.join(os.path.dirname(os.path.abspath(path)), HIDE_FILE), "w", encoding="utf-8") as f:
+            json.dump(names, f)
     addrs = list(addrs) + [d.get("address") for d in devices if d.get("address")]
     with open(path, "w", encoding="utf-8") as f:
         f.write(mask_text("\n".join(lines) + "\n", addrs=addrs))
@@ -519,7 +546,7 @@ def render_report(results, meta=None):
         if why:
             lines += ["**The round stopped early:** %s" % why, ""]
     facts = [("Commit", meta.get("commit")), ("Driver package", meta.get("driver")),
-             ("AirPods", "%s (%s)" % (meta.get("name"), mask_addr(meta.get("addr"))) if meta.get("addr") else None),
+             ("AirPods", "%s (%s)" % (device_label(meta.get("name")), mask_addr(meta.get("addr"))) if meta.get("addr") else None),
              ("Started", meta.get("started")), ("Finished", _now())]
     lines += ["- %s: %s" % (k, v) for k, v in facts if v]
     routes = sorted({str(r.get("route_loaded")) for r in variants if r.get("route_loaded")})
@@ -1079,7 +1106,7 @@ def main(argv=None, out=None):
         return 0
     if a.cmd == "mask":
         try:
-            mask_dir(a.dir, a.hide, known_addrs(a.state or a.dir, a.addr))
+            mask_dir(a.dir, list(a.hide) + known_names(a.state or a.dir), known_addrs(a.state or a.dir, a.addr))
         except MaskError as e:
             print("not pushing: %s" % e, file=sys.stderr)
             return 3

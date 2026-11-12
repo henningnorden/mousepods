@@ -272,6 +272,13 @@ function Last-Json($Result) {
 function Quote([string]$s) { '"' + $s + '"' }
 
 # AA:BB:CC:DD:3F:A1 -> XX:XX:XX:XX:3F:A1 (what may appear in pushed files)
+function Get-DeviceLabel([string]$Name) {
+    # pushed files name the model, not the device's own name (often the owner's name)
+    if (-not $Name -or $Name.StartsWith('(')) { return $Name }
+    foreach ($m in @('AirPods Pro', 'AirPods Max', 'AirPods')) { if ($Name -like "*$m*") { return $m } }
+    'other device'
+}
+
 function Get-MaskedAddr([string]$Addr) {
     if (-not $Addr) { return $Addr }
     $p = $Addr -split '[:-]'
@@ -339,6 +346,7 @@ function Push-RoundFolder([string]$Dir, [string]$Message) {
                 New-Item -ItemType Directory -Force -Path $dest | Out-Null
                 Copy-Item -Path (Join-Path $Dir '*') -Destination $dest -Recurse -Force
                 Get-ChildItem $dest -Filter '*.dmp' -Recurse | Remove-Item -Force    # never pushed
+                Get-ChildItem $dest -Filter 'hide.local.json' -Recurse | Remove-Item -Force   # device names, VM only
                 $ma = @('mask', '--dir', $dest, '--state', $Dir, '--hide', $env:USERNAME, $env:COMPUTERNAME)
                 if ($script:Addr) { $ma += @('--addr', $script:Addr) }
                 $m = Invoke-Py $ma
@@ -1000,7 +1008,7 @@ try {
         $round.name = $pick.name
     }
     $script:Addr = $round.addr
-    Say "AirPods: $($round.name) ($(Get-MaskedAddr $round.addr))" Green
+    Say "AirPods: $(Get-DeviceLabel $round.name) ($(Get-MaskedAddr $round.addr))" Green
     $audio = $facts['Default audio output']
     if ($audio -notlike '*AirPods*' -or $audio -like '*Hands-Free*') {
         Banner @("Windows plays sound on: $audio",
@@ -1041,11 +1049,11 @@ try {
     Expand-Archive -Path (Join-Path $ResultsTree "ci\$pkgSha\driver.zip") -DestinationPath $pkg -Force
     $round.pkg = $pkg
     $facts['Driver package'] = "ci/$pkgSha/driver.zip$note"
-    $facts['AirPods'] = "$($round.name) ($($round.addr))"
+    $facts['AirPods'] = "$(Get-DeviceLabel $round.name) ($($round.addr))"
     Write-Setup (Join-Path $roundDir 'setup.txt') $facts $devs
     $meta = Join-Path $roundDir 'meta.json'
     Set-Content -Path $meta -Encoding UTF8 -Value (@{ stamp = $stamp; commit = $head; driver = "ci/$pkgSha/driver.zip$note"
-            addr = (Get-MaskedAddr $round.addr); name = $round.name; started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json)
+            addr = (Get-MaskedAddr $round.addr); name = (Get-DeviceLabel $round.name); started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json)
     $null = Invoke-Py @('init', '--dir', $roundDir, '--meta', $meta, '--known', $round.addr)
     Remove-Item $meta -Force
 
