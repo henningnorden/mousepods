@@ -1,4 +1,6 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MS-PL
+// Copyright (c) Microsoft Corporation (Windows-driver-samples bthecho), modified for
+// MousePods. Licensed under the Microsoft Public License, see LICENSE-MS-PL.txt.
 // MousePods L2CAP driver: shared declarations.
 //
 // A thin pipe: it opens one L2CAP channel on PSM 0x1001 (AAP) to a paired
@@ -6,7 +8,7 @@
 // All protocol logic stays in Python.
 //
 // BRB handling follows Microsoft's Windows-driver-samples bluetooth/bthecho
-// (MIT licence, Copyright (c) Microsoft Corporation), see windows/README.md.
+// (MS-PL), see windows/README.md.
 
 #pragma once
 

@@ -211,5 +211,7 @@ script keeps them in `C:\ProgramData\MousePods\dumps` on the VM only.
 
 The BRB handling, the continuous reader and the close sequence are based on Microsoft's
 [Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples)
-`bluetooth/bthecho` sample, MIT licence, Copyright (c) Microsoft Corporation. No code from
-MagicAAP or any other closed driver is used.
+`bluetooth/bthecho` sample, Copyright (c) Microsoft Corporation, under the Microsoft Public
+License (MS-PL). The files derived from it (`driver.c`, `device.c`, `queue.c`, `l2cap.c`,
+`driver.h`) stay under MS-PL, see `driver/LICENSE-MS-PL.txt`; everything else in MousePods is
+Apache-2.0. No code from MagicAAP or any other closed driver is used.

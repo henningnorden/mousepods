@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MS-PL
+// Copyright (c) Microsoft Corporation (Windows-driver-samples bthecho), modified for
+// MousePods. Licensed under the Microsoft Public License, see LICENSE-MS-PL.txt.
 // MousePods L2CAP driver: device creation and the route to the Bluetooth stack.
 //
 // Route 2 (bthenum): the driver is loaded by BTHENUM for a service GUID and
 // gets the profile driver interface from its own stack, as in Microsoft's
-// Windows-driver-samples bluetooth/bthecho (MIT licence, Copyright (c)
-// Microsoft Corporation). Route 1 (root): a root-enumerated device opens the
+// Windows-driver-samples bluetooth/bthecho (MS-PL). Route 1 (root): a root-enumerated device opens the
 // local radio (GUID_BTHPORT_DEVICE_INTERFACE) as a remote I/O target and
 // queries the same interface from it with IRP_MN_QUERY_INTERFACE.
 

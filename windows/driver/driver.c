@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MS-PL
+// Copyright (c) Microsoft Corporation (Windows-driver-samples bthecho), modified for
+// MousePods. Licensed under the Microsoft Public License, see LICENSE-MS-PL.txt.
 // MousePods L2CAP driver: entry point.
 //
 // Structure follows Microsoft's Windows-driver-samples bluetooth/bthecho
-// (MIT licence, Copyright (c) Microsoft Corporation).
+// (MS-PL).
 
 #include <ntddk.h>
 #include <wdf.h>

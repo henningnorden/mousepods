@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MS-PL
+// Copyright (c) Microsoft Corporation (Windows-driver-samples bthecho), modified for
+// MousePods. Licensed under the Microsoft Public License, see LICENSE-MS-PL.txt.
 // MousePods L2CAP driver: the channel (open, close, continuous reader, send).
 //
 // BRB submission, the continuous reader and the close sequence are based on
-// Microsoft's Windows-driver-samples bluetooth/bthecho (MIT licence,
-// Copyright (c) Microsoft Corporation), reduced to one outgoing channel.
+// Microsoft's Windows-driver-samples bluetooth/bthecho (MS-PL), reduced to one outgoing channel.
 //
 // One channel per device. State changes happen under Dev->Lock:
 //   Idle -> Connecting -> Open -> Closing -> Idle
