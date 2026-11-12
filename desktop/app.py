@@ -13,7 +13,12 @@ import threading
 import urllib.parse
 import urllib.request
 
-import gi
+# GTK 4's default Vulkan renderer cannot import WebKit's dmabuf frames on some drivers (NVIDIA):
+# it then copies every frame through the CPU, which keeps a core half busy while the window is
+# open. The GL renderer imports them directly. Set before GTK loads; an explicit choice wins.
+os.environ.setdefault("GSK_RENDERER", "ngl")
+
+import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
